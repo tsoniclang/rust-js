@@ -1,4 +1,4 @@
-use tsonic_rust_js::{abi, data_view::DataView, wrappers, JsValue};
+use tsonic_rust_js::{abi, data_view::DataView, errors, wrappers, ArrayBuffer, JsValue};
 
 #[test]
 fn coercive_number_globals_follow_closed_value_rules() {
@@ -15,6 +15,10 @@ fn uri_helpers_encode_and_decode_utf8() {
     assert_eq!(
         abi::decode_uri_component("a%20b%2F%F0%9F%98%80").unwrap(),
         "a b/😀"
+    );
+    assert_eq!(
+        tsonic_rust_js::uri::decode_uri("https://x/a%20b").unwrap(),
+        "https://x/a b"
     );
     assert_eq!(
         abi::decode_uri_component("%zz").unwrap_err().kind(),
@@ -36,6 +40,26 @@ fn js_error_subtypes_and_string_raw_are_available() {
         tsonic_rust_js::aggregate_error("many").kind(),
         tsonic_rust_runtime::JsErrorKind::AggregateError
     );
+    assert_eq!(
+        errors::type_error("bad").kind(),
+        tsonic_rust_runtime::JsErrorKind::TypeError
+    );
+    assert_eq!(
+        errors::range_error("range").kind(),
+        tsonic_rust_runtime::JsErrorKind::RangeError
+    );
+    assert_eq!(
+        errors::syntax_error("syntax").kind(),
+        tsonic_rust_runtime::JsErrorKind::SyntaxError
+    );
+    assert_eq!(
+        errors::uri_error("uri").kind(),
+        tsonic_rust_runtime::JsErrorKind::URIError
+    );
+    assert_eq!(
+        errors::unsupported("unsupported").kind(),
+        tsonic_rust_runtime::JsErrorKind::Unsupported
+    );
     assert_eq!(tsonic_rust_js::string::raw(&["a", "c"], &["b"]), "abc");
 }
 
@@ -50,6 +74,13 @@ fn dataview_reads_and_writes_endian_values() {
     view.set_float64(8, 1.5, true).unwrap();
     assert_eq!(view.get_float64(8, true).unwrap(), 1.5);
     assert!(view.get_uint8(100).is_err());
+}
+
+#[test]
+fn array_buffer_mutable_bytes_are_visible_to_views() {
+    let mut buffer = ArrayBuffer::new(3);
+    buffer.as_mut_bytes().copy_from_slice(&[1, 2, 3]);
+    assert_eq!(buffer.as_bytes(), &[1, 2, 3]);
 }
 
 #[test]

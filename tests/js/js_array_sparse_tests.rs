@@ -1,7 +1,9 @@
-use tsonic_rust_js::array::JsArray;
+use tsonic_rust_js::array::{JsArray, JsSlot};
 
 #[test]
 fn sparse_array_length_delete_and_holes() {
+    assert_eq!(JsSlot::Present(1).as_ref(), Some(&1));
+    assert_eq!(JsSlot::<i32>::Hole.as_ref(), None);
     let mut xs = JsArray::from_dense(vec![1, 2]);
     xs.set_len(5);
     assert_eq!(xs.len(), 5);
