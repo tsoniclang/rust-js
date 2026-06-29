@@ -10,10 +10,17 @@ fn json_parse_and_stringify_closed_values() {
 
     let text = json::stringify(&JsValue::Object(object)).unwrap();
     assert_eq!(text, r#"{"a":1,"b":[true,null]}"#);
+    assert_eq!(
+        json::stringify_pretty(&json::parse(r#"{"pretty":false}"#).unwrap()).unwrap(),
+        r#"{"pretty":false}"#
+    );
 }
 
 #[test]
 fn json_omits_undefined_object_fields_and_nulls_array_slots() {
+    assert!(JsValue::Undefined.is_nullish());
+    assert!(JsValue::Null.is_nullish());
+    assert!(!JsValue::Bool(false).is_nullish());
     let object =
         JsObject::from_pairs([("keep", JsValue::Number(1.0)), ("skip", JsValue::Undefined)]);
     assert_eq!(

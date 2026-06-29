@@ -17,6 +17,16 @@ fn typed_array_get_set_fill_and_slice() {
 }
 
 #[test]
+fn typed_array_can_be_created_from_array_buffer() {
+    let mut buffer = tsonic_rust_js::ArrayBuffer::new(4);
+    buffer.as_mut_bytes().copy_from_slice(&[1, 0, 2, 0]);
+    let typed = tsonic_rust_js::Uint16Array::from_buffer(buffer);
+    assert_eq!(typed.len(), 2);
+    assert_eq!(typed.get(0), Some(1));
+    assert_eq!(typed.get(1), Some(2));
+}
+
+#[test]
 fn typed_array_subarray_is_shared_view() {
     let values = Uint8Array::from_vec(vec![1, 2, 3, 4]);
     let mut view = values.subarray(1, Some(3));

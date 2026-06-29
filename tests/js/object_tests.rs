@@ -8,6 +8,7 @@ fn object_own_properties_preserve_order() {
     object.set("b", JsValue::Number(3.0));
 
     assert_eq!(object.get("b"), JsValue::Number(3.0));
+    assert_eq!(object.get_ref("b"), Some(&JsValue::Number(3.0)));
     assert_eq!(object.get("missing"), JsValue::Undefined);
     assert!(object.has_own_property("a"));
     assert_eq!(object.keys(), vec!["b", "a"]);

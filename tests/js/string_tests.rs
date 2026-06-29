@@ -51,6 +51,8 @@ fn split_and_repeat_and_trim() {
         JsErrorKind::RangeError
     );
     assert_eq!(string::trim("  hi  "), "hi");
+    assert_eq!(string::trim_start("  hi  "), "hi  ");
+    assert_eq!(string::trim_end("  hi  "), "  hi");
 }
 
 #[test]

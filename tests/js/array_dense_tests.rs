@@ -3,6 +3,7 @@ use tsonic_rust_js::array::{dense, statics};
 #[test]
 fn dense_builders_and_length_ops() {
     let mut xs = dense::from_iter([1, 2, 3]);
+    assert_eq!(dense::of(vec![9, 8]), vec![9, 8]);
     assert_eq!(dense::concat(&[&[1, 2], &[3, 4]],), [1, 2, 3, 4]);
     assert_eq!(xs.len(), 3);
     assert_eq!(dense::push(&mut xs, 4), 4);
@@ -99,6 +100,10 @@ fn iter_helpers_and_clear() {
 fn array_statics_from_string_and_branding() {
     assert_eq!(statics::from_string("abc"), vec!["a", "b", "c"]);
     assert_eq!(statics::from_string("😀"), vec!["😀"]);
+    assert!(statics::is_array_value(&tsonic_rust_js::JsValue::from(
+        vec![tsonic_rust_js::JsValue::Number(1.0)]
+    )));
+    assert!(!statics::is_array_value(&tsonic_rust_js::JsValue::Null));
     let dense: Vec<f64> = Vec::new();
     let not_dense: i32 = 42;
     assert!(statics::is_array(&dense));
@@ -119,6 +124,8 @@ fn callback_copying_sort_and_flat_helpers() {
     let mut sorted = vec![10, 2, 1];
     dense::sort_by_js_string(&mut sorted);
     assert_eq!(sorted, vec![1, 10, 2]);
+    dense::sort_by(&mut sorted, |left, right| right.cmp(left));
+    assert_eq!(sorted, vec![10, 2, 1]);
     assert_eq!(dense::to_reversed(&xs), vec![2, 1, 3]);
     assert_eq!(dense::to_sorted_by_js_string(&[10, 2, 1]), vec![1, 10, 2]);
     assert_eq!(dense::to_spliced(&xs, 1, 1, vec![9, 8]), vec![3, 9, 8, 2]);

@@ -22,6 +22,12 @@ fn abort_controller_and_signal_record_reason() {
     let combined = AbortSignal::any(&[AbortSignal::new(), already]);
     assert!(combined.aborted());
     assert_eq!(combined.reason(), JsValue::Number(1.0));
+    let timeout = AbortSignal::timeout(1);
+    assert!(timeout.aborted());
+    assert_eq!(
+        timeout.reason(),
+        JsValue::String("TimeoutError".to_string())
+    );
 }
 
 #[test]
@@ -110,6 +116,8 @@ fn event_target_dispatches_and_removes_listeners() {
     );
     assert!(!target.dispatch_event(&mut event));
     assert!(event.default_prevented());
+    assert!(!event.return_value());
+    assert!(event.time_stamp() >= 0.0);
     assert!(!event.is_trusted());
     assert_eq!(event.event_phase(), 0);
     assert_eq!(event.target(), Some("ready"));
@@ -117,6 +125,8 @@ fn event_target_dispatches_and_removes_listeners() {
     assert_eq!(event.current_target(), None);
     assert_eq!(event.composed_path(), vec!["ready".to_string()]);
     EventListenerObject::handle_event(&mut event, |event| event.stop_propagation());
+    assert!(event.cancel_bubble());
+    event.stop_immediate_propagation();
     assert!(event.cancel_bubble());
     assert_eq!(
         seen.lock().unwrap().as_slice(),
@@ -132,6 +142,9 @@ fn event_target_dispatches_and_removes_listeners() {
 
     assert!(target.remove_event_listener(first));
     let mut third = Event::new("ready", EventInit::default());
+    third.init_event("ready", true, true);
+    assert!(third.bubbles());
+    assert!(third.cancelable());
     assert!(target.dispatch_event(&mut third));
     assert_eq!(seen.lock().unwrap().len(), 3);
 }
@@ -149,6 +162,9 @@ fn custom_event_carries_detail_and_init_state() {
         },
     );
     assert_eq!(custom.event().event_type(), "selected");
+    let mut custom_mut = custom.clone();
+    custom_mut.event_mut().prevent_default();
+    assert!(custom_mut.event().default_prevented());
     assert!(custom.event().bubbles());
     assert!(custom.event().cancelable());
     assert!(custom.event().composed());
@@ -178,6 +194,7 @@ fn blob_file_and_body_cover_text_and_bytes() {
     assert_eq!(blob.size(), 11);
     assert_eq!(blob.content_type(), "text/plain");
     assert_eq!(blob.text().unwrap(), "hello world");
+    assert_eq!(Blob::from_text("text").bytes(), b"text");
     assert_eq!(blob.array_buffer().as_bytes(), b"hello world");
     assert_eq!(blob.slice(6, None, "text/plain").text().unwrap(), "world");
 
@@ -287,6 +304,7 @@ fn request_and_response_cover_fetch_carriers() {
         Some("application/json".to_string())
     );
     assert_eq!(request.body().text().unwrap(), "{\"ok\":true}");
+    assert_eq!(request.body().bytes(), b"{\"ok\":true}");
     assert_eq!(request.text().unwrap(), "{\"ok\":true}");
     assert_eq!(request.json().unwrap().inspect(), "{ok: true}");
     assert_eq!(request.array_buffer().as_bytes(), b"{\"ok\":true}");
@@ -298,6 +316,7 @@ fn request_and_response_cover_fetch_carriers() {
     )])))
     .unwrap();
     assert_eq!(response.status(), 200);
+    assert_eq!(response.status_text(), "OK");
     assert!(response.ok());
     assert_eq!(
         response.headers().get("content-type"),
@@ -333,6 +352,7 @@ fn storage_and_navigator_cover_common_web_globals() {
     assert!(!navigator.user_agent().is_empty());
     assert!(!navigator.platform().is_empty());
     assert_eq!(navigator.language(), "en-US");
+    assert_eq!(navigator.languages(), &["en-US".to_string()]);
     assert!(navigator.hardware_concurrency() >= 1);
 }
 

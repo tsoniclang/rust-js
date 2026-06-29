@@ -31,4 +31,5 @@ fn map_iterable_constructor_and_for_each_are_closed() {
     let mut seen = Vec::new();
     map.for_each(|value, key, _| seen.push((*key, *value)));
     assert_eq!(seen, vec![(1, "b"), (2, "c")]);
+    assert_eq!(map.into_entries(), vec![(1, "b"), (2, "c")]);
 }
