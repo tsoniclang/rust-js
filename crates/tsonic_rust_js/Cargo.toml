@@ -1,0 +1,19 @@
+[package]
+name = "tsonic_rust_js"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tsonic_rust_runtime = { path = "../../../rust-runtime/crates/tsonic_rust_runtime" }
+
+[[test]]
+name = "no_forbidden_shortcuts"
+path = "../../tests/architecture/no_forbidden_shortcuts.rs"
+
+[[test]]
+name = "js_integration_tests"
+path = "../../tests/js_integration_tests.rs"
+
+[[test]]
+name = "abi_ledger_tests"
+path = "../../tests/abi_ledger_tests.rs"
