@@ -3,12 +3,12 @@ use tsonic_rust_js::{json, JsObject, JsValue};
 #[test]
 fn json_parse_and_stringify_closed_values() {
     let value = json::parse(r#"{"a":1,"b":[true,null]}"#).unwrap();
-    let JsValue::Object(object) = value else {
+    let JsValue::Object(object) = &value else {
         panic!("expected object");
     };
-    assert_eq!(object.get("a"), JsValue::Number(1.0));
+    assert_eq!(object.borrow().get("a"), JsValue::Number(1.0));
 
-    let text = json::stringify(&JsValue::Object(object)).unwrap();
+    let text = json::stringify(&value).unwrap();
     assert_eq!(text, r#"{"a":1,"b":[true,null]}"#);
     assert_eq!(
         json::stringify_pretty(&json::parse(r#"{"pretty":false}"#).unwrap()).unwrap(),
@@ -24,12 +24,33 @@ fn json_omits_undefined_object_fields_and_nulls_array_slots() {
     let object =
         JsObject::from_pairs([("keep", JsValue::Number(1.0)), ("skip", JsValue::Undefined)]);
     assert_eq!(
-        json::stringify(&JsValue::Object(object)).unwrap(),
+        json::stringify(&JsValue::object(object)).unwrap(),
         r#"{"keep":1}"#
     );
     assert_eq!(
         json::stringify(&JsValue::from(vec![JsValue::Undefined])).unwrap(),
         "[null]"
+    );
+}
+
+#[test]
+fn json_round_trips_non_ascii_strings() {
+    let text = "héllo — ünïcode ✓";
+    let parsed = json::parse("\"héllo — ünïcode ✓\"").unwrap();
+    assert_eq!(parsed, JsValue::String(text.to_string()));
+
+    let source = r#"{"msg":"héllo — ünïcode ✓"}"#;
+    let value = json::parse(source).unwrap();
+    assert_eq!(
+        value.as_object().expect("object").borrow().get("msg"),
+        JsValue::String(text.to_string())
+    );
+    let round_tripped = json::stringify(&value).unwrap();
+    assert_eq!(round_tripped, source);
+    let reparsed = json::parse(&round_tripped).unwrap();
+    assert_eq!(
+        reparsed.as_object().expect("object").borrow().get("msg"),
+        JsValue::String(text.to_string())
     );
 }
 

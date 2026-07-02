@@ -1,5 +1,6 @@
+use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex};
+use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::array_buffer::ArrayBuffer;
@@ -335,13 +336,13 @@ struct AbortState {
 
 #[derive(Debug, Clone)]
 pub struct AbortSignal {
-    state: Arc<Mutex<AbortState>>,
+    state: Rc<RefCell<AbortState>>,
 }
 
 impl AbortSignal {
     pub fn new() -> Self {
         Self {
-            state: Arc::new(Mutex::new(AbortState {
+            state: Rc::new(RefCell::new(AbortState {
                 aborted: false,
                 reason: JsValue::Undefined,
             })),
@@ -349,11 +350,11 @@ impl AbortSignal {
     }
 
     pub fn aborted(&self) -> bool {
-        self.state.lock().expect("abort signal lock").aborted
+        self.state.borrow().aborted
     }
 
     pub fn reason(&self) -> JsValue {
-        self.state.lock().expect("abort signal lock").reason.clone()
+        self.state.borrow().reason.clone()
     }
 
     pub fn throw_if_aborted(&self) -> JsResult<()> {
@@ -384,7 +385,7 @@ impl AbortSignal {
     }
 
     fn mark_aborted(&self, reason: JsValue) {
-        let mut state = self.state.lock().expect("abort signal lock");
+        let mut state = self.state.borrow_mut();
         if !state.aborted {
             state.aborted = true;
             state.reason = reason;

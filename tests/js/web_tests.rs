@@ -151,7 +151,7 @@ fn event_target_dispatches_and_removes_listeners() {
 
 #[test]
 fn custom_event_carries_detail_and_init_state() {
-    let detail = JsValue::Object(JsObject::from_pairs([("id", JsValue::Number(1.0))]));
+    let detail = JsValue::object(JsObject::from_pairs([("id", JsValue::Number(1.0))]));
     let custom = CustomEvent::new(
         "selected",
         detail.clone(),
@@ -310,7 +310,7 @@ fn request_and_response_cover_fetch_carriers() {
     assert_eq!(request.array_buffer().as_bytes(), b"{\"ok\":true}");
     assert_eq!(request.clone_request().method(), "POST");
 
-    let response = Response::json(&JsValue::Object(JsObject::from_pairs([(
+    let response = Response::json(&JsValue::object(JsObject::from_pairs([(
         "ok",
         JsValue::Bool(true),
     )])))
