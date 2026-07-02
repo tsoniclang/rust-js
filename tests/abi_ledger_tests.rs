@@ -5,6 +5,7 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
     let mut dense = vec![1_i32, 2_i32];
     assert_eq!(js::abi::array_dense_push(&mut dense, 3), 3);
     assert_eq!(js::abi::array_dense_at(&dense, -1), Some(&3));
+    assert_eq!(js::abi::array_dense_map(&dense, |&x| x * 2), vec![2, 4, 6]);
     assert!(js::abi::array_dense_includes(&dense, &2, 0));
     assert_eq!(js::abi::array_dense_index_of(&dense, &3, 0), 2);
     assert_eq!(js::abi::array_dense_join(&dense, ","), "1,2,3");
