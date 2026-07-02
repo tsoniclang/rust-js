@@ -1,4 +1,4 @@
-//! Closed JSON parser/stringifier for Stage 1 values.
+//! Closed JSON parser/stringifier for supported carrier values.
 
 use crate::errors::{syntax_error, type_error, JsResult};
 use crate::object::JsObject;

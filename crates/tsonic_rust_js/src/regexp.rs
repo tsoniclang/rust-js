@@ -102,7 +102,9 @@ fn parse_pattern(pattern: &str) -> JsResult<Pattern> {
             || pattern.contains('+')
             || pattern.contains('?') =>
         {
-            Err(unsupported("RegExp feature is outside the Stage 1 subset"))
+            Err(unsupported(
+                "RegExp feature is outside the supported subset",
+            ))
         }
         _ => Ok(Pattern::Literal(pattern.to_string())),
     }

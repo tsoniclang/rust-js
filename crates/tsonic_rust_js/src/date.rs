@@ -1,4 +1,4 @@
-//! Minimal UTC-only Date carrier for Stage 1.
+//! Minimal UTC-only Date carrier.
 
 use crate::errors::{range_error, JsResult};
 
