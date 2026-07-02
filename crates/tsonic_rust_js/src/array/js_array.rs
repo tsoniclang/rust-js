@@ -67,6 +67,17 @@ impl<T> JsArray<T> {
         self.slots.get(index).and_then(JsSlot::as_ref)
     }
 
+    /// `Array.prototype.at` semantics: negative indices count back from the
+    /// end; out-of-range and holes yield `None`.
+    pub fn at(&self, index: isize) -> Option<&T> {
+        let length = isize::try_from(self.length).ok()?;
+        let resolved = if index < 0 { length + index } else { index };
+        if resolved < 0 || resolved >= length {
+            return None;
+        }
+        self.get(usize::try_from(resolved).ok()?)
+    }
+
     pub fn set(&mut self, index: usize, value: T) {
         if index >= self.length {
             self.length = index + 1;

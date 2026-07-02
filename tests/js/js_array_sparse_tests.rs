@@ -46,3 +46,17 @@ fn sparse_array_splice_shift_unshift_and_entries() {
         vec![(0, Some(&0)), (1, Some(&9)), (2, Some(&10))]
     );
 }
+
+#[test]
+fn js_array_at_supports_negative_indices_and_holes() {
+    let mut values: JsArray<f64> = JsArray::from_dense(vec![1.0, 2.0, 3.0]);
+    values.set_len(5);
+    assert_eq!(values.at(0), Some(&1.0));
+    assert_eq!(values.at(-1), None);
+    assert_eq!(values.at(-5), Some(&1.0));
+    assert_eq!(values.at(-3), Some(&3.0));
+    assert_eq!(values.at(5), None);
+    assert_eq!(values.at(-6), None);
+    values.set(4, 9.0);
+    assert_eq!(values.at(-1), Some(&9.0));
+}

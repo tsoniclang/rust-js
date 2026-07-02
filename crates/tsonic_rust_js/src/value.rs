@@ -1,6 +1,8 @@
 //! Closed JS runtime value carrier.
 
+use std::cell::RefCell;
 use std::fmt;
+use std::rc::Rc;
 
 use crate::array::JsArray;
 use crate::equality::{same_value_zero_f64, strict_equal_f64, JsSameValueZero, JsStrictEqual};
@@ -13,8 +15,8 @@ pub enum JsValue {
     Bool(bool),
     Number(f64),
     String(String),
-    Object(JsObject),
-    Array(JsArray<Box<JsValue>>),
+    Object(Rc<RefCell<JsObject>>),
+    Array(Rc<RefCell<JsArray<JsValue>>>),
 }
 
 impl JsValue {
@@ -24,6 +26,32 @@ impl JsValue {
 
     pub const fn null() -> Self {
         Self::Null
+    }
+
+    /// Wraps an object payload in a fresh reference-identity handle.
+    pub fn object(object: JsObject) -> Self {
+        Self::Object(Rc::new(RefCell::new(object)))
+    }
+
+    /// Wraps an array payload in a fresh reference-identity handle.
+    pub fn array(values: JsArray<JsValue>) -> Self {
+        Self::Array(Rc::new(RefCell::new(values)))
+    }
+
+    /// Returns the object handle when the value is an object.
+    pub fn as_object(&self) -> Option<&Rc<RefCell<JsObject>>> {
+        match self {
+            Self::Object(object) => Some(object),
+            _ => None,
+        }
+    }
+
+    /// Returns the array handle when the value is an array.
+    pub fn as_array(&self) -> Option<&Rc<RefCell<JsArray<JsValue>>>> {
+        match self {
+            Self::Array(values) => Some(values),
+            _ => None,
+        }
     }
 
     pub fn is_nullish(&self) -> bool {
@@ -37,8 +65,9 @@ impl JsValue {
             Self::Bool(value) => value.to_string(),
             Self::Number(value) => format_js_number(*value),
             Self::String(value) => format!("{value:?}"),
-            Self::Object(value) => value.inspect(),
+            Self::Object(value) => value.borrow().inspect(),
             Self::Array(values) => {
+                let values = values.borrow();
                 let body = values
                     .values()
                     .iter()
@@ -66,19 +95,8 @@ impl JsSameValueZero for JsValue {
             (Self::Bool(left), Self::Bool(right)) => left == right,
             (Self::Number(left), Self::Number(right)) => same_value_zero_f64(*left, *right),
             (Self::String(left), Self::String(right)) => left == right,
-            (Self::Object(left), Self::Object(right)) => left == right,
-            (Self::Array(left), Self::Array(right)) => {
-                left.len() == right.len()
-                    && left
-                        .values()
-                        .iter()
-                        .zip(right.values().iter())
-                        .all(|(left, right)| match (left, right) {
-                            (Some(left), Some(right)) => left.same_value_zero(right),
-                            (None, None) => true,
-                            _ => false,
-                        })
-            }
+            (Self::Object(left), Self::Object(right)) => Rc::ptr_eq(left, right),
+            (Self::Array(left), Self::Array(right)) => Rc::ptr_eq(left, right),
             _ => false,
         }
     }
@@ -91,19 +109,8 @@ impl JsStrictEqual for JsValue {
             (Self::Bool(left), Self::Bool(right)) => left == right,
             (Self::Number(left), Self::Number(right)) => strict_equal_f64(*left, *right),
             (Self::String(left), Self::String(right)) => left == right,
-            (Self::Object(left), Self::Object(right)) => left == right,
-            (Self::Array(left), Self::Array(right)) => {
-                left.len() == right.len()
-                    && left
-                        .values()
-                        .iter()
-                        .zip(right.values().iter())
-                        .all(|(left, right)| match (left, right) {
-                            (Some(left), Some(right)) => left == right,
-                            (None, None) => true,
-                            _ => false,
-                        })
-            }
+            (Self::Object(left), Self::Object(right)) => Rc::ptr_eq(left, right),
+            (Self::Array(left), Self::Array(right)) => Rc::ptr_eq(left, right),
             _ => false,
         }
     }
@@ -111,9 +118,7 @@ impl JsStrictEqual for JsValue {
 
 impl From<Vec<JsValue>> for JsValue {
     fn from(values: Vec<JsValue>) -> Self {
-        Self::Array(JsArray::from_dense(
-            values.into_iter().map(Box::new).collect(),
-        ))
+        Self::array(JsArray::from_dense(values))
     }
 }
 

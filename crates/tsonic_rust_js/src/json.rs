@@ -1,4 +1,4 @@
-//! Closed JSON parser/stringifier for Stage 1 values.
+//! Closed JSON parser/stringifier for supported carrier values.
 
 use crate::errors::{syntax_error, type_error, JsResult};
 use crate::object::JsObject;
@@ -34,6 +34,7 @@ fn stringify_value(value: &JsValue) -> JsResult<Option<String>> {
         JsValue::Number(value) => Ok(Some(json_number(*value))),
         JsValue::String(value) => Ok(Some(format!("{:?}", value))),
         JsValue::Array(values) => {
+            let values = values.borrow();
             let mut parts = Vec::with_capacity(values.len());
             for value in values.values() {
                 parts.push(match value {
@@ -45,7 +46,7 @@ fn stringify_value(value: &JsValue) -> JsResult<Option<String>> {
         }
         JsValue::Object(object) => {
             let mut parts = Vec::new();
-            for (key, value) in object.entries() {
+            for (key, value) in object.borrow().entries() {
                 if let Some(value) = stringify_value(&value)? {
                     parts.push(format!("{:?}:{}", key, value));
                 }
@@ -103,13 +104,19 @@ impl<'a> Parser<'a> {
 
     fn parse_string(&mut self) -> JsResult<String> {
         self.expect(b'"')?;
-        let mut out = String::new();
+        let mut out = Vec::new();
         while let Some(byte) = self.next() {
             match byte {
-                b'"' => return Ok(out),
-                b'\\' => out.push(self.parse_escape()?),
+                b'"' => {
+                    return String::from_utf8(out)
+                        .map_err(|_| syntax_error("JSON string contains invalid UTF-8"));
+                }
+                b'\\' => {
+                    let mut buffer = [0_u8; 4];
+                    out.extend_from_slice(self.parse_escape()?.encode_utf8(&mut buffer).as_bytes());
+                }
                 0x00..=0x1f => return Err(syntax_error("JSON string contains control character")),
-                _ => out.push(byte as char),
+                _ => out.push(byte),
             }
         }
         Err(syntax_error("unterminated JSON string"))
@@ -187,7 +194,7 @@ impl<'a> Parser<'a> {
         self.skip_ws();
         if self.peek() == Some(b'}') {
             self.pos += 1;
-            return Ok(JsValue::Object(object));
+            return Ok(JsValue::object(object));
         }
         loop {
             self.skip_ws();
@@ -198,7 +205,7 @@ impl<'a> Parser<'a> {
             self.skip_ws();
             match self.next() {
                 Some(b',') => {}
-                Some(b'}') => return Ok(JsValue::Object(object)),
+                Some(b'}') => return Ok(JsValue::object(object)),
                 _ => return Err(syntax_error("JSON object expected comma or close brace")),
             }
         }
