@@ -2025,6 +2025,171 @@
     ]
   },
   {
+    "pattern": "[a-z]+",
+    "flags": "g",
+    "input": "ab😀cd😀x",
+    "op": "set-lastindex",
+    "setLastIndex": 2,
+    "expected": {
+      "result": "cd",
+      "lastIndex": 6
+    }
+  },
+  {
+    "pattern": "[a-z]+",
+    "flags": "g",
+    "input": "ab😀cd😀x",
+    "op": "set-lastindex",
+    "setLastIndex": 3,
+    "expected": {
+      "result": "cd",
+      "lastIndex": 6
+    }
+  },
+  {
+    "pattern": "[a-z]+",
+    "flags": "g",
+    "input": "ab😀cd😀x",
+    "op": "set-lastindex",
+    "setLastIndex": 4,
+    "expected": {
+      "result": "cd",
+      "lastIndex": 6
+    }
+  },
+  {
+    "pattern": "[a-z]+",
+    "flags": "g",
+    "input": "ab😀cd😀x",
+    "op": "set-lastindex",
+    "setLastIndex": 7,
+    "expected": {
+      "result": "x",
+      "lastIndex": 9
+    }
+  },
+  {
+    "pattern": "[a-z]+",
+    "flags": "g",
+    "input": "ab😀cd😀x",
+    "op": "set-lastindex",
+    "setLastIndex": 9,
+    "expected": {
+      "result": null,
+      "lastIndex": 0
+    }
+  },
+  {
+    "pattern": "[a-z]+",
+    "flags": "g",
+    "input": "ab😀cd😀x",
+    "op": "set-lastindex",
+    "setLastIndex": 42,
+    "expected": {
+      "result": null,
+      "lastIndex": 0
+    }
+  },
+  {
+    "pattern": "\\d",
+    "flags": "g",
+    "input": "1😀2😀3",
+    "op": "set-lastindex",
+    "setLastIndex": 1,
+    "expected": {
+      "result": "2",
+      "lastIndex": 4
+    }
+  },
+  {
+    "pattern": "\\d",
+    "flags": "g",
+    "input": "1😀2😀3",
+    "op": "set-lastindex",
+    "setLastIndex": 2,
+    "expected": {
+      "result": "2",
+      "lastIndex": 4
+    }
+  },
+  {
+    "pattern": "\\d",
+    "flags": "g",
+    "input": "1😀2😀3",
+    "op": "set-lastindex",
+    "setLastIndex": 3,
+    "expected": {
+      "result": "2",
+      "lastIndex": 4
+    }
+  },
+  {
+    "pattern": "\\d",
+    "flags": "g",
+    "input": "1😀2😀3",
+    "op": "set-lastindex",
+    "setLastIndex": 5,
+    "expected": {
+      "result": "3",
+      "lastIndex": 7
+    }
+  },
+  {
+    "pattern": "\\d",
+    "flags": "g",
+    "input": "1😀2😀3",
+    "op": "set-lastindex",
+    "setLastIndex": 8,
+    "expected": {
+      "result": null,
+      "lastIndex": 0
+    }
+  },
+  {
+    "pattern": "x",
+    "flags": "g",
+    "input": "💚x💚",
+    "op": "set-lastindex",
+    "setLastIndex": 0,
+    "expected": {
+      "result": "x",
+      "lastIndex": 3
+    }
+  },
+  {
+    "pattern": "x",
+    "flags": "g",
+    "input": "💚x💚",
+    "op": "set-lastindex",
+    "setLastIndex": 1,
+    "expected": {
+      "result": "x",
+      "lastIndex": 3
+    }
+  },
+  {
+    "pattern": "x",
+    "flags": "g",
+    "input": "💚x💚",
+    "op": "set-lastindex",
+    "setLastIndex": 3,
+    "expected": {
+      "result": null,
+      "lastIndex": 0
+    }
+  },
+  {
+    "pattern": "x",
+    "flags": "g",
+    "input": "💚x💚",
+    "op": "set-lastindex",
+    "setLastIndex": 4,
+    "expected": {
+      "result": null,
+      "lastIndex": 0
+    }
+  },
+  {
     "pattern": "\\d+",
     "flags": "g",
     "input": "a1b22c333",

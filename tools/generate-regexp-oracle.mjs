@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // Generates tests/oracle/regexp-vectors.json by running every vector through
 // Node's own RegExp implementation. Each entry records
-// {pattern, flags, input, op, replacement?, calls?, expected} where op is one
-// of "test" | "test-sequence" | "replace" | "split" | "search" | "exec" |
-// "match" | "matchAll".
+// {pattern, flags, input, op, replacement?, calls?, setLastIndex?, expected}
+// where op is one of "test" | "test-sequence" | "replace" | "split" |
+// "search" | "exec" | "match" | "matchAll" | "set-lastindex".
 //
 // Expected shapes for the match-carrier ops:
 // - exec: `calls` sequential re.exec() calls on one regexp instance; each
@@ -15,6 +15,12 @@
 //   (and that a non-global test leaves it untouched).
 // - match: null, or an array of matched texts (g flag), or a single
 //   {text, index, groups} object (no g flag).
+// - set-lastindex: `setLastIndex` is written to re.lastIndex, then one
+//   re.exec() runs; expected is {result, lastIndex} where result is the
+//   match text or null. These vectors prove that a writable lastIndex is
+//   exact even when it lands between the two code units of a surrogate
+//   pair: no atom in the accepted subset can match a lone surrogate, so a
+//   mid-pair start is equivalent to the next char boundary.
 // - matchAll: an array of {text, index, groups}, or {throws: "TypeError"}
 //   when the regexp lacks the g flag.
 // Group values are null for unmatched optional groups; `index`/`lastIndex`
@@ -46,6 +52,8 @@ const exec = (pattern, flags, input, calls) =>
 const testSequence = (pattern, flags, input, calls) =>
   cases.push({ pattern, flags, input, op: "test-sequence", calls });
 const match = (pattern, flags, input) => cases.push({ pattern, flags, input, op: "match" });
+const setLastIndex = (pattern, flags, input, value) =>
+  cases.push({ pattern, flags, input, op: "set-lastindex", setLastIndex: value });
 const matchAll = (pattern, flags, input) => cases.push({ pattern, flags, input, op: "matchAll" });
 
 // --- literals, dot, escapes -------------------------------------------------
@@ -269,6 +277,26 @@ match("💚", "", "a💚b");
 matchAll("💚|\\d", "g", "a💚💚b1");
 exec("💚", "g", "a💚b💚", 3);
 
+// --- writable lastIndex landing inside/around surrogate pairs ------------------
+// "ab😀cd😀x": a=0 b=1 😀=2..3 c=4 d=5 😀=6..7 x=8 (length 9).
+setLastIndex("[a-z]+", "g", "ab😀cd😀x", 2); // at a high surrogate (pair start)
+setLastIndex("[a-z]+", "g", "ab😀cd😀x", 3); // at the low surrogate (mid-pair)
+setLastIndex("[a-z]+", "g", "ab😀cd😀x", 4); // just after a pair
+setLastIndex("[a-z]+", "g", "ab😀cd😀x", 7); // mid-pair of the second astral char
+setLastIndex("[a-z]+", "g", "ab😀cd😀x", 9); // at end of input
+setLastIndex("[a-z]+", "g", "ab😀cd😀x", 42); // beyond input
+// "1😀2😀3": 1=0 😀=1..2 2=3 😀=4..5 3=6 (length 7).
+setLastIndex("\\d", "g", "1😀2😀3", 1); // at a high surrogate
+setLastIndex("\\d", "g", "1😀2😀3", 2); // mid-pair
+setLastIndex("\\d", "g", "1😀2😀3", 3); // just after a pair
+setLastIndex("\\d", "g", "1😀2😀3", 5); // mid-pair of the second astral char
+setLastIndex("\\d", "g", "1😀2😀3", 8); // beyond input
+// "💚x💚": 💚=0..1 x=2 💚=3..4 (length 5).
+setLastIndex("x", "g", "💚x💚", 0); // at a pair start
+setLastIndex("x", "g", "💚x💚", 1); // mid-pair, match begins at the next boundary
+setLastIndex("x", "g", "💚x💚", 3); // at the second pair start (no match left)
+setLastIndex("x", "g", "💚x💚", 4); // mid-pair with no match left
+
 // --- match with the g flag ----------------------------------------------------
 match("\\d+", "g", "a1b22c333");
 match("q", "g", "abc");
@@ -348,6 +376,12 @@ const results = cases.map((entry) => {
     case "match": {
       const m = entry.input.match(re);
       expected = m === null ? null : re.global ? [...m] : matchRecord(m);
+      break;
+    }
+    case "set-lastindex": {
+      re.lastIndex = entry.setLastIndex;
+      const m = re.exec(entry.input);
+      expected = { result: m === null ? null : m[0], lastIndex: re.lastIndex };
       break;
     }
     case "matchAll": {

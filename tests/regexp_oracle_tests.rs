@@ -179,8 +179,8 @@ fn check_exec_steps(
 fn regexp_engine_matches_node_oracle_vectors() {
     let vectors = load_vectors();
     assert!(
-        vectors.len() >= 210,
-        "expected at least 210 oracle vectors, found {}",
+        vectors.len() >= 228,
+        "expected at least 228 oracle vectors, found {}",
         vectors.len()
     );
 
@@ -256,6 +256,33 @@ fn regexp_engine_matches_node_oracle_vectors() {
                 }
             }
             "exec" => check_exec_steps(&label, &array_items(&expected), &mut regexp, &input),
+            // Writes `setLastIndex` (a UTF-16 offset that may land inside a
+            // surrogate pair) via `set_last_index`, runs one `exec`, and
+            // asserts the match text and resulting `lastIndex` recorded from
+            // Node — proving mid-pair starts are equivalent to the next char
+            // boundary for the accepted subset.
+            "set-lastindex" => {
+                regexp.set_last_index(get_number(entry, "setLastIndex") as i32);
+                let actual = regexp.exec(&input);
+                let text_outcome = match (object_field(&expected, "result"), &actual) {
+                    (JsValue::Null, None) => Ok(()),
+                    (JsValue::String(text), Some(matched)) if matched.text() == text => Ok(()),
+                    (expected_result, _) => Err(format!(
+                        "{label} from {}: expected {expected_result}, got {:?}",
+                        get_number(entry, "setLastIndex"),
+                        actual.as_ref().map(JsRegExpMatch::text)
+                    )),
+                };
+                text_outcome.and_then(|()| {
+                    let expected_last = get_number(&expected, "lastIndex");
+                    (f64::from(regexp.last_index()) == expected_last)
+                        .then_some(())
+                        .ok_or(format!(
+                            "{label}: expected lastIndex {expected_last}, got {}",
+                            regexp.last_index()
+                        ))
+                })
+            }
             "match" => {
                 if flags.contains('g') {
                     let expected = match &expected {
