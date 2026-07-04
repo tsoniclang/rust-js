@@ -71,7 +71,7 @@ Core surface (`get`/`set`/`has`/`add`/`delete`/`clear`/`keys`/`values`/
 The C# side additionally ships the ES2025 set-algebra methods (`union`,
 `intersection`, `difference`, `symmetricDifference`, `isSubsetOf`,
 `isSupersetOf`, `isDisjointFrom`): requires-set-algebra-emission — additive
-and straightforward once the compiler emits them; not part of the current
+and straightforward once the compiler emits them; not part of the
 closed surface.
 
 ## Date
