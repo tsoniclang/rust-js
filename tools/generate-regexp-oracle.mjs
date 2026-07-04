@@ -2,12 +2,17 @@
 // Generates tests/oracle/regexp-vectors.json by running every vector through
 // Node's own RegExp implementation. Each entry records
 // {pattern, flags, input, op, replacement?, calls?, expected} where op is one
-// of "test" | "replace" | "split" | "search" | "exec" | "match" | "matchAll".
+// of "test" | "test-sequence" | "replace" | "split" | "search" | "exec" |
+// "match" | "matchAll".
 //
 // Expected shapes for the match-carrier ops:
 // - exec: `calls` sequential re.exec() calls on one regexp instance; each
 //   step is {match: null | {text, index, groups}, lastIndex} so lastIndex
 //   progression (and its reset to 0 on a null result) is asserted.
+// - test-sequence: `calls` sequential re.test() calls on one regexp
+//   instance; each step is {result, lastIndex}, asserting that a global
+//   test advances lastIndex to the match end and resets it to 0 on failure
+//   (and that a non-global test leaves it untouched).
 // - match: null, or an array of matched texts (g flag), or a single
 //   {text, index, groups} object (no g flag).
 // - matchAll: an array of {text, index, groups}, or {throws: "TypeError"}
@@ -20,7 +25,11 @@
 // - only constructs from the supported subset appear here;
 // - split vectors never use capturing groups (the Rust engine rejects them
 //   because JS splices capture values into split output);
-// - empty-match advancement vectors stay within the BMP.
+// - empty-match advancement vectors stay within the BMP: the Rust engine
+//   fails closed (Unsupported) when a nullable pattern iterates over astral
+//   input, because JS advances one UTF-16 code unit past an empty match,
+//   which can split a surrogate pair. Astral inputs appear here only with
+//   non-nullable patterns, where behavior is exact.
 
 import { writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -34,6 +43,8 @@ const replace = (pattern, flags, input, replacement) =>
   cases.push({ pattern, flags, input, op: "replace", replacement });
 const exec = (pattern, flags, input, calls) =>
   cases.push({ pattern, flags, input, op: "exec", calls });
+const testSequence = (pattern, flags, input, calls) =>
+  cases.push({ pattern, flags, input, op: "test-sequence", calls });
 const match = (pattern, flags, input) => cases.push({ pattern, flags, input, op: "match" });
 const matchAll = (pattern, flags, input) => cases.push({ pattern, flags, input, op: "matchAll" });
 
@@ -223,6 +234,41 @@ exec("(a+)(b+)", "g", "aabbab", 4);
 exec("$", "g", "ab", 3);
 exec("a|b", "g", "xaybz", 4);
 
+// --- test: sequential g calls with lastIndex progression ----------------------
+testSequence("\\d+", "g", "a1b22c333", 5);
+testSequence("a", "g", "aaa", 5);
+testSequence("x", "g", "abc", 2);
+testSequence("b", "g", "abcabc", 4);
+testSequence("^a", "g", "aaa", 3);
+testSequence("(\\w)(\\d)?", "g", "a1 b", 4);
+testSequence("\\d", "g", "你1好2", 4);
+testSequence("a*", "g", "aab", 4);
+testSequence("o", "", "foo", 3);
+testSequence("q", "", "abc", 2);
+
+// --- empty-match iteration over BMP input (exact vs Node) ---------------------
+replace("x?", "g", "abc", "-");
+replace("(?:a|)", "g", "zaz", "<$&>");
+split("x?", "", "abc");
+split("a{0,2}", "", "bab");
+match("", "g", "ab");
+match("b*", "g", "abc");
+matchAll("x?", "g", "ab");
+matchAll("b{0,2}", "g", "abcb");
+
+// --- non-nullable patterns over astral input (exact vs Node) ------------------
+// Astral literals stay unquantified: without the `u` flag Node reads 💚 as
+// two code units, so a quantifier would bind to the trailing surrogate only.
+test("💚", "", "a💚b");
+search("💚", "", "a💚b");
+replace("💚", "g", "a💚b💚c", "x");
+replace("💚", "g", "a💚💚b", "[$&]");
+split("💚", "", "a💚b💚c");
+match("\\d+", "g", "💚1💚22");
+match("💚", "", "a💚b");
+matchAll("💚|\\d", "g", "a💚💚b1");
+exec("💚", "g", "a💚b💚", 3);
+
 // --- match with the g flag ----------------------------------------------------
 match("\\d+", "g", "a1b22c333");
 match("q", "g", "abc");
@@ -279,6 +325,14 @@ const results = cases.map((entry) => {
     case "replace":
       expected = entry.input.replace(re, entry.replacement);
       break;
+    case "test-sequence": {
+      const steps = [];
+      for (let call = 0; call < entry.calls; call += 1) {
+        steps.push({ result: re.test(entry.input), lastIndex: re.lastIndex });
+      }
+      expected = steps;
+      break;
+    }
     case "exec": {
       const steps = [];
       for (let call = 0; call < entry.calls; call += 1) {

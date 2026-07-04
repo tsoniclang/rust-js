@@ -3,7 +3,7 @@ use tsonic_rust_runtime::JsErrorKind;
 
 #[test]
 fn regexp_test_and_find_first() {
-    let re = JsRegExp::new("b+c", "").unwrap();
+    let mut re = JsRegExp::new("b+c", "").unwrap();
     assert!(re.test("abbcd"));
     assert!(!re.test("abd"));
     assert_eq!(re.find_first("abbcd"), Some((1, 4)));
@@ -27,18 +27,18 @@ fn regexp_classes_quantifiers_and_alternation() {
     let re = JsRegExp::new(r"\d{2}|\w+", "").unwrap();
     assert_eq!(re.find_first("!!42go"), Some((2, 4)));
 
-    let re = JsRegExp::new(r"a{2,}", "").unwrap();
+    let mut re = JsRegExp::new(r"a{2,}", "").unwrap();
     assert!(re.test("caaab"));
     assert!(!re.test("cab"));
 }
 
 #[test]
 fn regexp_anchors_and_flags() {
-    let re = JsRegExp::new("^b$", "m").unwrap();
+    let mut re = JsRegExp::new("^b$", "m").unwrap();
     assert!(re.test("a\nb\nc"));
     assert!(!JsRegExp::new("^b$", "").unwrap().test("a\nb\nc"));
 
-    let re = JsRegExp::new("abc", "i").unwrap();
+    let mut re = JsRegExp::new("abc", "i").unwrap();
     assert!(re.test("xAbCy"));
     assert_eq!(re.flags(), "i");
 }
@@ -46,15 +46,18 @@ fn regexp_anchors_and_flags() {
 #[test]
 fn regexp_replace_with_group_substitution() {
     let re = JsRegExp::new(r"(\w+)@(\w+)", "").unwrap();
-    assert_eq!(re.replace("mail: a@b, c@d", "$2:$1"), "mail: b:a, c@d");
+    assert_eq!(
+        re.replace("mail: a@b, c@d", "$2:$1").unwrap(),
+        "mail: b:a, c@d"
+    );
 
     let global = JsRegExp::new(r"(\w+)@(\w+)", "g").unwrap();
-    assert_eq!(global.replace("a@b c@d", "[$&]"), "[a@b] [c@d]");
-    assert_eq!(global.replace("a@b", "$$ $` $'"), "$  ");
+    assert_eq!(global.replace("a@b c@d", "[$&]").unwrap(), "[a@b] [c@d]");
+    assert_eq!(global.replace("a@b", "$$ $` $'").unwrap(), "$  ");
 
     // Unknown group references stay literal.
     let re = JsRegExp::new("a", "").unwrap();
-    assert_eq!(re.replace("a", "$1$0x"), "$1$0x");
+    assert_eq!(re.replace("a", "$1$0x").unwrap(), "$1$0x");
 }
 
 #[test]
@@ -125,8 +128,8 @@ fn regexp_rejects_constructs_outside_the_subset() {
 #[test]
 fn regexp_empty_match_iteration_terminates() {
     let re = JsRegExp::new("a*", "g").unwrap();
-    assert_eq!(re.replace("bab", "-"), "-b--b-");
-    assert_eq!(re.replace("", "x"), "x");
+    assert_eq!(re.replace("bab", "-").unwrap(), "-b--b-");
+    assert_eq!(re.replace("", "x").unwrap(), "x");
 
     // Loops with possibly-empty bodies must not spin forever.
     assert!(JsRegExp::new("(?:a|)*b", "").unwrap().test("b"));
@@ -224,14 +227,120 @@ fn regexp_match_carrier_exposes_groups() {
 fn regexp_match_strings_collects_all_texts_or_none() {
     let re = JsRegExp::new(r"\d+", "g").unwrap();
     assert_eq!(
-        re.match_strings("a1b22c333").unwrap(),
+        re.match_strings("a1b22c333").unwrap().unwrap(),
         vec!["1", "22", "333"]
     );
-    assert!(re.match_strings("abc").is_none());
+    assert!(re.match_strings("abc").unwrap().is_none());
 
     // Empty matches advance without spinning (JS: "baab".match(/a*/g)).
     let re = JsRegExp::new("a*", "g").unwrap();
-    assert_eq!(re.match_strings("baab").unwrap(), vec!["", "aa", "", ""]);
+    assert_eq!(
+        re.match_strings("baab").unwrap().unwrap(),
+        vec!["", "aa", "", ""]
+    );
+}
+
+#[test]
+fn regexp_global_test_advances_and_resets_last_index() {
+    // test delegates to exec: g starts at lastIndex, advances to the match
+    // end (UTF-16 code units), and resets to 0 when nothing matches.
+    let mut re = JsRegExp::new(r"\d+", "g").unwrap();
+    assert!(re.test("a1b22c333"));
+    assert_eq!(re.last_index(), 2);
+    assert!(re.test("a1b22c333"));
+    assert_eq!(re.last_index(), 5);
+    assert!(re.test("a1b22c333"));
+    assert_eq!(re.last_index(), 9);
+    assert!(!re.test("a1b22c333"));
+    assert_eq!(re.last_index(), 0);
+    assert!(re.test("a1b22c333"));
+    assert_eq!(re.last_index(), 2);
+
+    // lastIndex counts UTF-16 code units (你 is one, but 😀 would be two).
+    let mut re = JsRegExp::new(r"\d", "g").unwrap();
+    assert!(re.test("你1好2"));
+    assert_eq!(re.last_index(), 2);
+
+    // Non-global test is stateless and ignores lastIndex.
+    let mut re = JsRegExp::new("o", "").unwrap();
+    re.set_last_index(2);
+    assert!(re.test("foo"));
+    assert_eq!(re.last_index(), 2);
+    assert!(re.test("foo"));
+}
+
+#[test]
+fn regexp_nullable_pattern_over_astral_input_fails_closed() {
+    // JS advances one UTF-16 code unit after an empty match, splitting the
+    // surrogate pair of an astral char — unrepresentable in a Rust String —
+    // so every iterating operation rejects deterministically.
+    let split_err = JsRegExp::new("x?", "").unwrap().split("a💚b").unwrap_err();
+    assert_eq!(split_err.kind(), JsErrorKind::Unsupported);
+
+    let replace_err = JsRegExp::new("a*", "g")
+        .unwrap()
+        .replace("a💚b", "-")
+        .unwrap_err();
+    assert_eq!(replace_err.kind(), JsErrorKind::Unsupported);
+
+    let match_err = JsRegExp::new("(?:a|)", "g")
+        .unwrap()
+        .match_strings("💚")
+        .unwrap_err();
+    assert_eq!(match_err.kind(), JsErrorKind::Unsupported);
+
+    let match_all_err = JsRegExp::new("b{0,2}", "g")
+        .unwrap()
+        .match_all("💚")
+        .unwrap_err();
+    assert_eq!(match_all_err.kind(), JsErrorKind::Unsupported);
+
+    // Bare anchors are nullable too.
+    let anchor_err = JsRegExp::new("^", "gm")
+        .unwrap()
+        .split("💚\n💚")
+        .unwrap_err();
+    assert_eq!(anchor_err.kind(), JsErrorKind::Unsupported);
+
+    // Non-g replace never iterates empty matches: always Ok, exact.
+    let re = JsRegExp::new("a*", "").unwrap();
+    assert_eq!(re.replace("a💚b", "-").unwrap(), "-💚b");
+}
+
+#[test]
+fn regexp_non_nullable_patterns_over_astral_input_stay_exact() {
+    // Node: "a💚b💚c".replace(/💚/g, "x") === "axbxc"
+    let re = JsRegExp::new("💚", "g").unwrap();
+    assert_eq!(re.replace("a💚b💚c", "x").unwrap(), "axbxc");
+
+    // Node: "a💚b".split(/💚/) → ["a", "b"]
+    assert_eq!(
+        JsRegExp::new("💚", "").unwrap().split("a💚b").unwrap(),
+        vec!["a", "b"]
+    );
+
+    // Node: "💚1💚22".match(/\d+/g) → ["1", "22"]
+    assert_eq!(
+        JsRegExp::new(r"\d+", "g")
+            .unwrap()
+            .match_strings("💚1💚22")
+            .unwrap()
+            .unwrap(),
+        vec!["1", "22"]
+    );
+
+    // Node: [..."a💚💚b1".matchAll(/💚|\d/g)] — UTF-16 indexes 1, 3, 6.
+    // (The astral literal stays unquantified: without the `u` flag Node
+    // reads 💚 as two code units, so `💚+` would bind `+` to the trailing
+    // surrogate only.)
+    let matches = JsRegExp::new(r"💚|\d", "g")
+        .unwrap()
+        .match_all("a💚💚b1")
+        .unwrap();
+    assert_eq!(matches.len(), 3);
+    assert_eq!((matches[0].text().as_str(), matches[0].index()), ("💚", 1));
+    assert_eq!((matches[1].text().as_str(), matches[1].index()), ("💚", 3));
+    assert_eq!((matches[2].text().as_str(), matches[2].index()), ("1", 6));
 }
 
 #[test]

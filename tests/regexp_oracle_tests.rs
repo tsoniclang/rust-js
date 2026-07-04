@@ -106,6 +106,37 @@ fn check_match_record(
     Ok(())
 }
 
+/// Drives `calls` sequential `test` calls on one regexp instance, asserting
+/// each boolean result and the `lastIndex` progression/reset recorded by
+/// Node (a global `test` delegates to `exec`; a non-global one is
+/// stateless).
+fn check_test_steps(
+    label: &str,
+    steps: &[JsValue],
+    regexp: &mut JsRegExp,
+    input: &str,
+) -> Result<(), String> {
+    for (call, step) in steps.iter().enumerate() {
+        let step_label = format!("{label} call {call}");
+        let actual = regexp.test(input);
+        let expected = match object_field(step, "result") {
+            JsValue::Bool(value) => value,
+            other => return Err(format!("{step_label}: bad expected result {other}")),
+        };
+        if actual != expected {
+            return Err(format!("{step_label}: expected {expected}, got {actual}"));
+        }
+        let expected_last = get_number(step, "lastIndex");
+        if f64::from(regexp.last_index()) != expected_last {
+            return Err(format!(
+                "{step_label}: expected lastIndex {expected_last}, got {}",
+                regexp.last_index()
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Drives `calls` sequential `exec` calls on one regexp instance, asserting
 /// each result and the `lastIndex` progression/reset recorded by Node.
 fn check_exec_steps(
@@ -148,8 +179,8 @@ fn check_exec_steps(
 fn regexp_engine_matches_node_oracle_vectors() {
     let vectors = load_vectors();
     assert!(
-        vectors.len() >= 180,
-        "expected at least 180 oracle vectors, found {}",
+        vectors.len() >= 210,
+        "expected at least 210 oracle vectors, found {}",
         vectors.len()
     );
 
@@ -189,16 +220,19 @@ fn regexp_engine_matches_node_oracle_vectors() {
                 }
                 other => Err(format!("{label}: bad expected value {other}")),
             },
+            "test-sequence" => {
+                check_test_steps(&label, &array_items(&expected), &mut regexp, &input)
+            }
             "replace" => {
                 let replacement = get_string(entry, "replacement");
-                match expected {
-                    JsValue::String(expected) => {
-                        let actual = regexp.replace(&input, &replacement);
+                match (expected, regexp.replace(&input, &replacement)) {
+                    (JsValue::String(expected), Ok(actual)) => {
                         (actual == expected).then_some(()).ok_or(format!(
                             "{label} with {replacement:?}: expected {expected:?}, got {actual:?}"
                         ))
                     }
-                    other => Err(format!("{label}: bad expected value {other}")),
+                    (_, Err(error)) => Err(format!("{label}: replace rejected: {error:?}")),
+                    (other, _) => Err(format!("{label}: bad expected value {other}")),
                 }
             }
             "split" => {
@@ -236,10 +270,12 @@ fn regexp_engine_matches_node_oracle_vectors() {
                                 .collect::<Vec<_>>(),
                         ),
                     };
-                    let actual = regexp.match_strings(&input);
-                    (actual == expected)
-                        .then_some(())
-                        .ok_or(format!("{label}: expected {expected:?}, got {actual:?}"))
+                    match regexp.match_strings(&input) {
+                        Ok(actual) => (actual == expected)
+                            .then_some(())
+                            .ok_or(format!("{label}: expected {expected:?}, got {actual:?}")),
+                        Err(error) => Err(format!("{label}: match rejected: {error:?}")),
+                    }
                 } else {
                     match (&expected, regexp.match_first(&input)) {
                         (JsValue::Null, None) => Ok(()),

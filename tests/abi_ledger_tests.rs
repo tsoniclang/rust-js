@@ -30,10 +30,10 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
         js::abi::JsDate::from_millis(0.0).to_iso_string().unwrap(),
         "1970-01-01T00:00:00.000Z"
     );
-    let re = js::abi::JsRegExp::new("a(b+)c", "g").unwrap();
+    let mut re = js::abi::JsRegExp::new("a(b+)c", "g").unwrap();
     assert!(re.test("xabbc"));
     assert_eq!(re.find_first("xabbc"), Some((1, 5)));
-    assert_eq!(re.replace("abc abbc", "[$1]"), "[b] [bb]");
+    assert_eq!(re.replace("abc abbc", "[$1]").unwrap(), "[b] [bb]");
     assert_eq!(re.search("xabc"), 1);
     assert_eq!(
         js::abi::JsRegExp::new(",", "")
