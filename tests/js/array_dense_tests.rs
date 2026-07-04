@@ -120,6 +120,8 @@ fn callback_copying_sort_and_flat_helpers() {
     assert!(dense::some(&xs, |value| *value == 2));
     assert!(dense::every(&xs, |value| *value > 0));
     assert_eq!(dense::find(&xs, |value| *value == 1), Some(&1));
+    assert_eq!(dense::find_index(&xs, |value| *value == 1), 1);
+    assert_eq!(dense::find_index(&xs, |value| *value == 99), -1);
 
     let mut sorted = vec![10, 2, 1];
     dense::sort_by_js_string(&mut sorted);

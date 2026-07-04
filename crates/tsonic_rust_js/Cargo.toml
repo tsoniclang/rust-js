@@ -21,3 +21,7 @@ path = "../../tests/js_integration_tests.rs"
 [[test]]
 name = "abi_ledger_tests"
 path = "../../tests/abi_ledger_tests.rs"
+
+[[test]]
+name = "regexp_oracle_tests"
+path = "../../tests/regexp_oracle_tests.rs"

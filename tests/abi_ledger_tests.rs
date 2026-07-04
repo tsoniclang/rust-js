@@ -30,7 +30,28 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
         js::abi::JsDate::from_millis(0.0).to_iso_string().unwrap(),
         "1970-01-01T00:00:00.000Z"
     );
-    assert!(js::abi::JsRegExp::new("abc", "").unwrap().test("abc"));
+    let re = js::abi::JsRegExp::new("a(b+)c", "g").unwrap();
+    assert!(re.test("xabbc"));
+    assert_eq!(re.find_first("xabbc"), Some((1, 5)));
+    assert_eq!(re.replace("abc abbc", "[$1]"), "[b] [bb]");
+    assert_eq!(re.search("xabc"), 1);
+    assert_eq!(
+        js::abi::JsRegExp::new(",", "")
+            .unwrap()
+            .split("a,b")
+            .unwrap(),
+        vec!["a", "b"]
+    );
+
+    assert_eq!(js::abi::array_dense_find_index(&dense, |&x| x == 2), 1);
+    assert_eq!(js::abi::js_string_pad_start("5", 3, "0"), "005");
+    assert_eq!(js::abi::js_string_pad_end("5", 3, "0"), "500");
+    assert_eq!(js::abi::js_string_repeat("ab", 2).unwrap(), "abab");
+    assert_eq!(js::abi::js_string_trim_start(" a "), "a ");
+    assert_eq!(js::abi::js_string_trim_end(" a "), " a");
+    assert_eq!(js::abi::js_string_at("abc", -1).as_deref(), Some("c"));
+    assert_eq!(js::abi::js_string_char_at("abc", 1), "b");
+    assert_eq!(js::abi::js_string_code_point_at("😀", 0), Some(0x1F600));
 
     let buffer = js::abi::ArrayBuffer::new(4);
     assert_eq!(buffer.byte_length(), 4);

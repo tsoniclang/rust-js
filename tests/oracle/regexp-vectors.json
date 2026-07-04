@@ -1,0 +1,1117 @@
+[
+  {
+    "pattern": "abc",
+    "flags": "",
+    "input": "xxabcxx",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "abc",
+    "flags": "",
+    "input": "xxabxcx",
+    "op": "test",
+    "expected": false
+  },
+  {
+    "pattern": "a.c",
+    "flags": "",
+    "input": "abc",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "a.c",
+    "flags": "",
+    "input": "a\nc",
+    "op": "test",
+    "expected": false
+  },
+  {
+    "pattern": "a\\.c",
+    "flags": "",
+    "input": "abc",
+    "op": "test",
+    "expected": false
+  },
+  {
+    "pattern": "a\\.c",
+    "flags": "",
+    "input": "a.c",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "\\+\\*\\?",
+    "flags": "",
+    "input": "x+*?y",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "a\\/b",
+    "flags": "",
+    "input": "a/b",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "\\\\",
+    "flags": "",
+    "input": "back\\slash",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "\\n",
+    "flags": "",
+    "input": "line1\nline2",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "\\t\\r\\f\\v",
+    "flags": "",
+    "input": "a\t\r\f\u000bb",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "\\x41\\u0042",
+    "flags": "",
+    "input": "zABz",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "\\0",
+    "flags": "",
+    "input": "a\u0000b",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "a.c",
+    "flags": "",
+    "input": "zzabc",
+    "op": "search",
+    "expected": 2
+  },
+  {
+    "pattern": "q",
+    "flags": "",
+    "input": "zzabc",
+    "op": "search",
+    "expected": -1
+  },
+  {
+    "pattern": "[abc]",
+    "flags": "",
+    "input": "zzz",
+    "op": "test",
+    "expected": false
+  },
+  {
+    "pattern": "[abc]",
+    "flags": "",
+    "input": "zbz",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "[a-z]+",
+    "flags": "",
+    "input": "HELLO there",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "[^a-z]",
+    "flags": "",
+    "input": "abcZ",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "[^a-z]",
+    "flags": "",
+    "input": "abc",
+    "op": "test",
+    "expected": false
+  },
+  {
+    "pattern": "[a-zA-Z0-9_]+",
+    "flags": "",
+    "input": "!!id_42!!",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "[-abc]",
+    "flags": "",
+    "input": "x-y",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "[abc-]",
+    "flags": "",
+    "input": "x-y",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "[\\]]",
+    "flags": "",
+    "input": "a]b",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "[\\d]+",
+    "flags": "",
+    "input": "abc123",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "[^\\d]+",
+    "flags": "",
+    "input": "123",
+    "op": "test",
+    "expected": false
+  },
+  {
+    "pattern": "[\\w\\s]+",
+    "flags": "",
+    "input": "a b",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "[a-c][x-z]",
+    "flags": "",
+    "input": "by",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "[a-c][x-z]",
+    "flags": "",
+    "input": "bw",
+    "op": "test",
+    "expected": false
+  },
+  {
+    "pattern": "[]a",
+    "flags": "",
+    "input": "a",
+    "op": "test",
+    "expected": false
+  },
+  {
+    "pattern": "[^]",
+    "flags": "",
+    "input": "\n",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "[0-9]",
+    "flags": "",
+    "input": "abc42",
+    "op": "search",
+    "expected": 3
+  },
+  {
+    "pattern": "\\d+",
+    "flags": "",
+    "input": "order 66",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "\\D+",
+    "flags": "",
+    "input": "123",
+    "op": "test",
+    "expected": false
+  },
+  {
+    "pattern": "\\D+",
+    "flags": "",
+    "input": "123abc",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "\\w+",
+    "flags": "",
+    "input": "hi_there9",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "\\W",
+    "flags": "",
+    "input": "abc_123",
+    "op": "test",
+    "expected": false
+  },
+  {
+    "pattern": "\\W",
+    "flags": "",
+    "input": "abc!123",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "\\s",
+    "flags": "",
+    "input": "a b",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "\\s",
+    "flags": "",
+    "input": "a b",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "\\s",
+    "flags": "",
+    "input": "ab",
+    "op": "test",
+    "expected": false
+  },
+  {
+    "pattern": "\\S+",
+    "flags": "",
+    "input": "   x  ",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "\\d",
+    "flags": "",
+    "input": "abc123",
+    "op": "search",
+    "expected": 3
+  },
+  {
+    "pattern": "\\S",
+    "flags": "",
+    "input": "   !",
+    "op": "search",
+    "expected": 3
+  },
+  {
+    "pattern": "ab*c",
+    "flags": "",
+    "input": "ac",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "ab*c",
+    "flags": "",
+    "input": "abbbc",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "ab+c",
+    "flags": "",
+    "input": "ac",
+    "op": "test",
+    "expected": false
+  },
+  {
+    "pattern": "ab+c",
+    "flags": "",
+    "input": "abbc",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "ab?c",
+    "flags": "",
+    "input": "ac",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "ab?c",
+    "flags": "",
+    "input": "abc",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "ab?c",
+    "flags": "",
+    "input": "abbc",
+    "op": "test",
+    "expected": false
+  },
+  {
+    "pattern": "a{3}",
+    "flags": "",
+    "input": "aa",
+    "op": "test",
+    "expected": false
+  },
+  {
+    "pattern": "a{3}",
+    "flags": "",
+    "input": "aaa",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "a{2,}",
+    "flags": "",
+    "input": "aa",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "a{2,}",
+    "flags": "",
+    "input": "a",
+    "op": "test",
+    "expected": false
+  },
+  {
+    "pattern": "a{2,4}b",
+    "flags": "",
+    "input": "aaaaab",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "a{2,4}b",
+    "flags": "",
+    "input": "ab",
+    "op": "test",
+    "expected": false
+  },
+  {
+    "pattern": "a{0,2}b",
+    "flags": "",
+    "input": "b",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "ba{2,3}",
+    "flags": "",
+    "input": "xbaab",
+    "op": "search",
+    "expected": 1
+  },
+  {
+    "pattern": "a{2,4}",
+    "flags": "",
+    "input": "aaaaaa",
+    "op": "replace",
+    "replacement": "<$&>",
+    "expected": "<aaaa>aa"
+  },
+  {
+    "pattern": "x*",
+    "flags": "",
+    "input": "yyy",
+    "op": "replace",
+    "replacement": "-",
+    "expected": "-yyy"
+  },
+  {
+    "pattern": ".*c",
+    "flags": "",
+    "input": "abcabc",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": ".*c",
+    "flags": "",
+    "input": "abcabcd",
+    "op": "replace",
+    "replacement": "[$&]",
+    "expected": "[abcabc]d"
+  },
+  {
+    "pattern": "a+a",
+    "flags": "",
+    "input": "aaaa",
+    "op": "replace",
+    "replacement": "<$&>",
+    "expected": "<aaaa>"
+  },
+  {
+    "pattern": "[a-z]*bc",
+    "flags": "",
+    "input": "xxabcbc!",
+    "op": "replace",
+    "replacement": "<$&>",
+    "expected": "<xxabcbc>!"
+  },
+  {
+    "pattern": "^abc",
+    "flags": "",
+    "input": "abcdef",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "^abc",
+    "flags": "",
+    "input": "xabc",
+    "op": "test",
+    "expected": false
+  },
+  {
+    "pattern": "abc$",
+    "flags": "",
+    "input": "xxabc",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "abc$",
+    "flags": "",
+    "input": "abcx",
+    "op": "test",
+    "expected": false
+  },
+  {
+    "pattern": "^abc$",
+    "flags": "",
+    "input": "abc",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "^b",
+    "flags": "",
+    "input": "a\nb",
+    "op": "test",
+    "expected": false
+  },
+  {
+    "pattern": "^b",
+    "flags": "m",
+    "input": "a\nb",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "b$",
+    "flags": "",
+    "input": "b\na",
+    "op": "test",
+    "expected": false
+  },
+  {
+    "pattern": "b$",
+    "flags": "m",
+    "input": "b\na",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "^$",
+    "flags": "",
+    "input": "",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "^$",
+    "flags": "m",
+    "input": "a\n\nb",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "^a",
+    "flags": "g",
+    "input": "aaa",
+    "op": "replace",
+    "replacement": "X",
+    "expected": "Xaa"
+  },
+  {
+    "pattern": "^",
+    "flags": "m",
+    "input": "a\nb",
+    "op": "replace",
+    "replacement": "> ",
+    "expected": "> a\nb"
+  },
+  {
+    "pattern": "^",
+    "flags": "gm",
+    "input": "a\nb",
+    "op": "replace",
+    "replacement": "> ",
+    "expected": "> a\n> b"
+  },
+  {
+    "pattern": "$",
+    "flags": "gm",
+    "input": "a\nb",
+    "op": "replace",
+    "replacement": "!",
+    "expected": "a!\nb!"
+  },
+  {
+    "pattern": "^b$",
+    "flags": "m",
+    "input": "aa\nb\ncc",
+    "op": "search",
+    "expected": 3
+  },
+  {
+    "pattern": "a|b",
+    "flags": "",
+    "input": "zzb",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "ab|cd",
+    "flags": "",
+    "input": "acd",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "a|ab",
+    "flags": "",
+    "input": "abc",
+    "op": "replace",
+    "replacement": "<$&>",
+    "expected": "<a>bc"
+  },
+  {
+    "pattern": "ab|a",
+    "flags": "",
+    "input": "abc",
+    "op": "replace",
+    "replacement": "<$&>",
+    "expected": "<ab>c"
+  },
+  {
+    "pattern": "^x|y$",
+    "flags": "g",
+    "input": "xzy",
+    "op": "replace",
+    "replacement": "-",
+    "expected": "-z-"
+  },
+  {
+    "pattern": "cat|dog|bird",
+    "flags": "",
+    "input": "hotdog!",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "a(b|c)d",
+    "flags": "",
+    "input": "zacdz",
+    "op": "replace",
+    "replacement": "[$1]",
+    "expected": "z[c]z"
+  },
+  {
+    "pattern": "b|c",
+    "flags": "",
+    "input": "abc",
+    "op": "search",
+    "expected": 1
+  },
+  {
+    "pattern": "(\\d+)-(\\d+)",
+    "flags": "",
+    "input": "call 12-34 now",
+    "op": "replace",
+    "replacement": "$2-$1",
+    "expected": "call 34-12 now"
+  },
+  {
+    "pattern": "(\\w+) (\\w+)",
+    "flags": "",
+    "input": "hello world",
+    "op": "replace",
+    "replacement": "$2 $1",
+    "expected": "world hello"
+  },
+  {
+    "pattern": "(a+)(b*)",
+    "flags": "",
+    "input": "aab",
+    "op": "replace",
+    "replacement": "[$1|$2]",
+    "expected": "[aa|b]"
+  },
+  {
+    "pattern": "(a+)(b*)",
+    "flags": "",
+    "input": "aa",
+    "op": "replace",
+    "replacement": "[$1|$2]",
+    "expected": "[aa|]"
+  },
+  {
+    "pattern": "(a)|(b)",
+    "flags": "g",
+    "input": "ab",
+    "op": "replace",
+    "replacement": "<$1:$2>",
+    "expected": "<a:><:b>"
+  },
+  {
+    "pattern": "((a)(b))",
+    "flags": "",
+    "input": "ab",
+    "op": "replace",
+    "replacement": "$1-$2-$3",
+    "expected": "ab-a-b"
+  },
+  {
+    "pattern": "(a)",
+    "flags": "",
+    "input": "a",
+    "op": "replace",
+    "replacement": "$2",
+    "expected": "$2"
+  },
+  {
+    "pattern": "(a)",
+    "flags": "",
+    "input": "a",
+    "op": "replace",
+    "replacement": "$0",
+    "expected": "$0"
+  },
+  {
+    "pattern": "(a)",
+    "flags": "",
+    "input": "a",
+    "op": "replace",
+    "replacement": "$$1",
+    "expected": "$1"
+  },
+  {
+    "pattern": "(a)",
+    "flags": "",
+    "input": "a",
+    "op": "replace",
+    "replacement": "$&$&",
+    "expected": "aa"
+  },
+  {
+    "pattern": "(a)b",
+    "flags": "",
+    "input": "xaby",
+    "op": "replace",
+    "replacement": "$`",
+    "expected": "xxy"
+  },
+  {
+    "pattern": "(a)b",
+    "flags": "",
+    "input": "xaby",
+    "op": "replace",
+    "replacement": "$'",
+    "expected": "xyy"
+  },
+  {
+    "pattern": "(\\d)(\\d)(\\d)(\\d)(\\d)(\\d)(\\d)(\\d)(\\d)(\\d)(\\d)",
+    "flags": "",
+    "input": "01234567890",
+    "op": "replace",
+    "replacement": "$11|$10|$1",
+    "expected": "0|9|0"
+  },
+  {
+    "pattern": "a(?:bc)d",
+    "flags": "",
+    "input": "xabcdy",
+    "op": "replace",
+    "replacement": "[$&]",
+    "expected": "x[abcd]y"
+  },
+  {
+    "pattern": "(?:ab)+",
+    "flags": "",
+    "input": "ababab",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "abc",
+    "flags": "i",
+    "input": "xAbCy",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "[a-z]+",
+    "flags": "i",
+    "input": "HELLO",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "[^a-z]",
+    "flags": "i",
+    "input": "AbC",
+    "op": "test",
+    "expected": false
+  },
+  {
+    "pattern": "ÉCOLE",
+    "flags": "i",
+    "input": "école",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "école",
+    "flags": "i",
+    "input": "ÉCOLE",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "[à-ö]",
+    "flags": "i",
+    "input": "Ä",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "hello",
+    "flags": "i",
+    "input": "say Hello twice Hello",
+    "op": "replace",
+    "replacement": "bye",
+    "expected": "say bye twice Hello"
+  },
+  {
+    "pattern": "hello",
+    "flags": "gi",
+    "input": "say Hello twice heLLo",
+    "op": "replace",
+    "replacement": "bye",
+    "expected": "say bye twice bye"
+  },
+  {
+    "pattern": "b",
+    "flags": "i",
+    "input": "aBc",
+    "op": "search",
+    "expected": 1
+  },
+  {
+    "pattern": "o",
+    "flags": "",
+    "input": "foo boo",
+    "op": "replace",
+    "replacement": "0",
+    "expected": "f0o boo"
+  },
+  {
+    "pattern": "o",
+    "flags": "g",
+    "input": "foo boo",
+    "op": "replace",
+    "replacement": "0",
+    "expected": "f00 b00"
+  },
+  {
+    "pattern": "\\d+",
+    "flags": "g",
+    "input": "a1b22c333",
+    "op": "replace",
+    "replacement": "#",
+    "expected": "a#b#c#"
+  },
+  {
+    "pattern": "\\d+",
+    "flags": "",
+    "input": "a1b22c333",
+    "op": "replace",
+    "replacement": "#",
+    "expected": "a#b22c333"
+  },
+  {
+    "pattern": "\\s+",
+    "flags": "g",
+    "input": "a  b\tc",
+    "op": "replace",
+    "replacement": " ",
+    "expected": "a b c"
+  },
+  {
+    "pattern": "q",
+    "flags": "g",
+    "input": "aaa",
+    "op": "replace",
+    "replacement": "z",
+    "expected": "aaa"
+  },
+  {
+    "pattern": ",",
+    "flags": "",
+    "input": "a,b,c",
+    "op": "split",
+    "expected": [
+      "a",
+      "b",
+      "c"
+    ]
+  },
+  {
+    "pattern": ",",
+    "flags": "",
+    "input": "a,,c",
+    "op": "split",
+    "expected": [
+      "a",
+      "",
+      "c"
+    ]
+  },
+  {
+    "pattern": ",",
+    "flags": "",
+    "input": ",a,",
+    "op": "split",
+    "expected": [
+      "",
+      "a",
+      ""
+    ]
+  },
+  {
+    "pattern": ",",
+    "flags": "",
+    "input": "",
+    "op": "split",
+    "expected": [
+      ""
+    ]
+  },
+  {
+    "pattern": "",
+    "flags": "",
+    "input": "abc",
+    "op": "split",
+    "expected": [
+      "a",
+      "b",
+      "c"
+    ]
+  },
+  {
+    "pattern": "",
+    "flags": "",
+    "input": "",
+    "op": "split",
+    "expected": []
+  },
+  {
+    "pattern": "\\s*,\\s*",
+    "flags": "",
+    "input": "a , b,c ,d",
+    "op": "split",
+    "expected": [
+      "a",
+      "b",
+      "c",
+      "d"
+    ]
+  },
+  {
+    "pattern": "\\s+",
+    "flags": "",
+    "input": "a b  c",
+    "op": "split",
+    "expected": [
+      "a",
+      "b",
+      "c"
+    ]
+  },
+  {
+    "pattern": "(?:,|;)",
+    "flags": "",
+    "input": "a,b;c",
+    "op": "split",
+    "expected": [
+      "a",
+      "b",
+      "c"
+    ]
+  },
+  {
+    "pattern": "x",
+    "flags": "",
+    "input": "abc",
+    "op": "split",
+    "expected": [
+      "abc"
+    ]
+  },
+  {
+    "pattern": "o",
+    "flags": "g",
+    "input": "foo boo",
+    "op": "split",
+    "expected": [
+      "f",
+      "",
+      " b",
+      "",
+      ""
+    ]
+  },
+  {
+    "pattern": "\\d",
+    "flags": "",
+    "input": "a1b2c",
+    "op": "split",
+    "expected": [
+      "a",
+      "b",
+      "c"
+    ]
+  },
+  {
+    "pattern": "a*",
+    "flags": "",
+    "input": "baaab",
+    "op": "split",
+    "expected": [
+      "b",
+      "b"
+    ]
+  },
+  {
+    "pattern": "",
+    "flags": "",
+    "input": "abc",
+    "op": "replace",
+    "replacement": "-",
+    "expected": "-abc"
+  },
+  {
+    "pattern": "",
+    "flags": "g",
+    "input": "abc",
+    "op": "replace",
+    "replacement": "-",
+    "expected": "-a-b-c-"
+  },
+  {
+    "pattern": "a*",
+    "flags": "g",
+    "input": "bab",
+    "op": "replace",
+    "replacement": "-",
+    "expected": "-b--b-"
+  },
+  {
+    "pattern": "b*",
+    "flags": "g",
+    "input": "abc",
+    "op": "replace",
+    "replacement": "!",
+    "expected": "!a!!c!"
+  },
+  {
+    "pattern": "$",
+    "flags": "",
+    "input": "abc",
+    "op": "replace",
+    "replacement": "!",
+    "expected": "abc!"
+  },
+  {
+    "pattern": "^",
+    "flags": "",
+    "input": "abc",
+    "op": "replace",
+    "replacement": ">",
+    "expected": ">abc"
+  },
+  {
+    "pattern": "a*",
+    "flags": "",
+    "input": "",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "a*",
+    "flags": "",
+    "input": "bbb",
+    "op": "search",
+    "expected": 0
+  },
+  {
+    "pattern": "你好",
+    "flags": "",
+    "input": "说你好吗",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "好",
+    "flags": "g",
+    "input": "好上加好",
+    "op": "replace",
+    "replacement": "x",
+    "expected": "x上加x"
+  },
+  {
+    "pattern": "、",
+    "flags": "",
+    "input": "一、二、三",
+    "op": "split",
+    "expected": [
+      "一",
+      "二",
+      "三"
+    ]
+  },
+  {
+    "pattern": "[α-ω]+",
+    "flags": "",
+    "input": "χαος",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "好",
+    "flags": "",
+    "input": "说你好",
+    "op": "search",
+    "expected": 2
+  },
+  {
+    "pattern": "[é]",
+    "flags": "g",
+    "input": "café résumé",
+    "op": "replace",
+    "replacement": "e",
+    "expected": "cafe resume"
+  }
+]
