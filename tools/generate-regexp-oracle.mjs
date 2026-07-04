@@ -29,6 +29,10 @@
 // Constraints kept in sync with the Rust engine subset
 // (crates/tsonic_rust_js/src/regexp/):
 // - only constructs from the supported subset appear here;
+// - no `.`, negated classes (`[^...]`, `\D \W \S`), astral chars inside
+//   classes, or class ranges reaching past U+D7FF: their non-`u` semantics
+//   are defined over UTF-16 code units (Node's /./.exec("😀") yields a lone
+//   high surrogate), so the Rust engine rejects them at construction;
 // - split vectors never use capturing groups (the Rust engine rejects them
 //   because JS splices capture values into split output);
 // - empty-match advancement vectors stay within the BMP: the Rust engine
@@ -56,11 +60,9 @@ const setLastIndex = (pattern, flags, input, value) =>
   cases.push({ pattern, flags, input, op: "set-lastindex", setLastIndex: value });
 const matchAll = (pattern, flags, input) => cases.push({ pattern, flags, input, op: "matchAll" });
 
-// --- literals, dot, escapes -------------------------------------------------
+// --- literals and escapes -------------------------------------------------
 test("abc", "", "xxabcxx");
 test("abc", "", "xxabxcx");
-test("a.c", "", "abc");
-test("a.c", "", "a\nc");
 test("a\\.c", "", "abc");
 test("a\\.c", "", "a.c");
 test("\\+\\*\\?", "", "x+*?y");
@@ -70,41 +72,35 @@ test("\\n", "", "line1\nline2");
 test("\\t\\r\\f\\v", "", "a\t\r\f\vb");
 test("\\x41\\u0042", "", "zABz");
 test("\\0", "", "a\0b");
-search("a.c", "", "zzabc");
 search("q", "", "zzabc");
 
 // --- character classes ------------------------------------------------------
 test("[abc]", "", "zzz");
 test("[abc]", "", "zbz");
 test("[a-z]+", "", "HELLO there");
-test("[^a-z]", "", "abcZ");
-test("[^a-z]", "", "abc");
 test("[a-zA-Z0-9_]+", "", "!!id_42!!");
 test("[-abc]", "", "x-y");
 test("[abc-]", "", "x-y");
 test("[\\]]", "", "a]b");
 test("[\\d]+", "", "abc123");
-test("[^\\d]+", "", "123");
 test("[\\w\\s]+", "", "a b");
 test("[a-c][x-z]", "", "by");
 test("[a-c][x-z]", "", "bw");
 test("[]a", "", "a");
-test("[^]", "", "\n");
 search("[0-9]", "", "abc42");
+// Ranges capped at U+D7FF (the retained boundary) stay exact, including
+// over astral input: neither half of a surrogate pair (Node) nor an
+// astral scalar (Rust) falls inside a range that stops at U+D7FF.
+test("[\\u0100-\\ud7ff]", "", "aЖb");
+test("[\\x61-\\ud7ff]+", "", "😀");
 
 // --- class escapes in and out of classes ------------------------------------
 test("\\d+", "", "order 66");
-test("\\D+", "", "123");
-test("\\D+", "", "123abc");
 test("\\w+", "", "hi_there9");
-test("\\W", "", "abc_123");
-test("\\W", "", "abc!123");
 test("\\s", "", "a b");
 test("\\s", "", "a b");
 test("\\s", "", "ab");
-test("\\S+", "", "   x  ");
 search("\\d", "", "abc123");
-search("\\S", "", "   !");
 
 // --- quantifiers ------------------------------------------------------------
 test("ab*c", "", "ac");
@@ -126,8 +122,8 @@ replace("a{2,4}", "", "aaaaaa", "<$&>");
 replace("x*", "", "yyy", "-");
 
 // --- greedy backtracking ----------------------------------------------------
-test(".*c", "", "abcabc");
-replace(".*c", "", "abcabcd", "[$&]");
+test("[a-z]*c", "", "abcabc");
+replace("[a-z]*c", "", "abcabcd", "[$&]");
 replace("a+a", "", "aaaa", "<$&>");
 replace("[a-z]*bc", "", "xxabcbc!", "<$&>");
 
@@ -179,7 +175,6 @@ test("(?:ab)+", "", "ababab");
 // --- i flag -------------------------------------------------------------------
 test("abc", "i", "xAbCy");
 test("[a-z]+", "i", "HELLO");
-test("[^a-z]", "i", "AbC");
 test("ÉCOLE", "i", "école");
 test("école", "i", "ÉCOLE");
 test("[à-ö]", "i", "Ä");
@@ -266,7 +261,11 @@ matchAll("b{0,2}", "g", "abcb");
 
 // --- non-nullable patterns over astral input (exact vs Node) ------------------
 // Astral literals stay unquantified: without the `u` flag Node reads 💚 as
-// two code units, so a quantifier would bind to the trailing surrogate only.
+// two code units, so a quantifier would bind to the trailing surrogate only
+// (the Rust engine rejects a directly quantified astral literal for that
+// reason). A grouped astral literal repeats the whole pair and is exact.
+test("(?:💚)+", "", "a💚💚b");
+replace("(?:💚)+", "g", "a💚💚b💚", "x");
 test("💚", "", "a💚b");
 search("💚", "", "a💚b");
 replace("💚", "g", "a💚b💚c", "x");
@@ -307,7 +306,6 @@ match("好", "g", "好上加好");
 match("^", "gm", "a\nb");
 match("\\w+", "g", "  ");
 match("ab?", "g", "abaab");
-match(".", "g", "aé你");
 
 // --- match without the g flag ---------------------------------------------------
 match("\\d+", "", "a1b22");
@@ -328,8 +326,7 @@ matchAll("(a)|(b)", "g", "ab");
 matchAll("\\d", "g", "你1好2");
 matchAll("\\d+", "", "a1");
 matchAll("(a+)(b*)", "g", "aabab");
-matchAll("^.", "gm", "ab\ncd");
-matchAll(".", "", "abc");
+matchAll("^[a-z]", "gm", "ab\ncd");
 
 const matchRecord = (m) => ({
   text: m[0],

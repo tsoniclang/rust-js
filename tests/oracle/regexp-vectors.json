@@ -14,20 +14,6 @@
     "expected": false
   },
   {
-    "pattern": "a.c",
-    "flags": "",
-    "input": "abc",
-    "op": "test",
-    "expected": true
-  },
-  {
-    "pattern": "a.c",
-    "flags": "",
-    "input": "a\nc",
-    "op": "test",
-    "expected": false
-  },
-  {
     "pattern": "a\\.c",
     "flags": "",
     "input": "abc",
@@ -91,13 +77,6 @@
     "expected": true
   },
   {
-    "pattern": "a.c",
-    "flags": "",
-    "input": "zzabc",
-    "op": "search",
-    "expected": 2
-  },
-  {
     "pattern": "q",
     "flags": "",
     "input": "zzabc",
@@ -124,20 +103,6 @@
     "input": "HELLO there",
     "op": "test",
     "expected": true
-  },
-  {
-    "pattern": "[^a-z]",
-    "flags": "",
-    "input": "abcZ",
-    "op": "test",
-    "expected": true
-  },
-  {
-    "pattern": "[^a-z]",
-    "flags": "",
-    "input": "abc",
-    "op": "test",
-    "expected": false
   },
   {
     "pattern": "[a-zA-Z0-9_]+",
@@ -175,13 +140,6 @@
     "expected": true
   },
   {
-    "pattern": "[^\\d]+",
-    "flags": "",
-    "input": "123",
-    "op": "test",
-    "expected": false
-  },
-  {
     "pattern": "[\\w\\s]+",
     "flags": "",
     "input": "a b",
@@ -210,18 +168,25 @@
     "expected": false
   },
   {
-    "pattern": "[^]",
-    "flags": "",
-    "input": "\n",
-    "op": "test",
-    "expected": true
-  },
-  {
     "pattern": "[0-9]",
     "flags": "",
     "input": "abc42",
     "op": "search",
     "expected": 3
+  },
+  {
+    "pattern": "[\\u0100-\\ud7ff]",
+    "flags": "",
+    "input": "aЖb",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "[\\x61-\\ud7ff]+",
+    "flags": "",
+    "input": "😀",
+    "op": "test",
+    "expected": false
   },
   {
     "pattern": "\\d+",
@@ -231,37 +196,9 @@
     "expected": true
   },
   {
-    "pattern": "\\D+",
-    "flags": "",
-    "input": "123",
-    "op": "test",
-    "expected": false
-  },
-  {
-    "pattern": "\\D+",
-    "flags": "",
-    "input": "123abc",
-    "op": "test",
-    "expected": true
-  },
-  {
     "pattern": "\\w+",
     "flags": "",
     "input": "hi_there9",
-    "op": "test",
-    "expected": true
-  },
-  {
-    "pattern": "\\W",
-    "flags": "",
-    "input": "abc_123",
-    "op": "test",
-    "expected": false
-  },
-  {
-    "pattern": "\\W",
-    "flags": "",
-    "input": "abc!123",
     "op": "test",
     "expected": true
   },
@@ -287,23 +224,9 @@
     "expected": false
   },
   {
-    "pattern": "\\S+",
-    "flags": "",
-    "input": "   x  ",
-    "op": "test",
-    "expected": true
-  },
-  {
     "pattern": "\\d",
     "flags": "",
     "input": "abc123",
-    "op": "search",
-    "expected": 3
-  },
-  {
-    "pattern": "\\S",
-    "flags": "",
-    "input": "   !",
     "op": "search",
     "expected": 3
   },
@@ -429,14 +352,14 @@
     "expected": "-yyy"
   },
   {
-    "pattern": ".*c",
+    "pattern": "[a-z]*c",
     "flags": "",
     "input": "abcabc",
     "op": "test",
     "expected": true
   },
   {
-    "pattern": ".*c",
+    "pattern": "[a-z]*c",
     "flags": "",
     "input": "abcabcd",
     "op": "replace",
@@ -767,13 +690,6 @@
     "input": "HELLO",
     "op": "test",
     "expected": true
-  },
-  {
-    "pattern": "[^a-z]",
-    "flags": "i",
-    "input": "AbC",
-    "op": "test",
-    "expected": false
   },
   {
     "pattern": "ÉCOLE",
@@ -1911,6 +1827,21 @@
     ]
   },
   {
+    "pattern": "(?:💚)+",
+    "flags": "",
+    "input": "a💚💚b",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "(?:💚)+",
+    "flags": "g",
+    "input": "a💚💚b💚",
+    "op": "replace",
+    "replacement": "x",
+    "expected": "axbx"
+  },
+  {
     "pattern": "💚",
     "flags": "",
     "input": "a💚b",
@@ -2282,17 +2213,6 @@
     ]
   },
   {
-    "pattern": ".",
-    "flags": "g",
-    "input": "aé你",
-    "op": "match",
-    "expected": [
-      "a",
-      "é",
-      "你"
-    ]
-  },
-  {
     "pattern": "\\d+",
     "flags": "",
     "input": "a1b22",
@@ -2540,7 +2460,7 @@
     ]
   },
   {
-    "pattern": "^.",
+    "pattern": "^[a-z]",
     "flags": "gm",
     "input": "ab\ncd",
     "op": "matchAll",
@@ -2556,14 +2476,5 @@
         "groups": []
       }
     ]
-  },
-  {
-    "pattern": ".",
-    "flags": "",
-    "input": "abc",
-    "op": "matchAll",
-    "expected": {
-      "throws": "TypeError"
-    }
   }
 ]

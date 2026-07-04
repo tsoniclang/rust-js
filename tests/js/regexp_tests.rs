@@ -21,7 +21,7 @@ fn regexp_classes_quantifiers_and_alternation() {
     let re = JsRegExp::new(r"[a-c]+", "").unwrap();
     assert_eq!(re.find_first("zzabcaz"), Some((2, 6)));
 
-    let re = JsRegExp::new(r"[^0-9]{2,3}", "").unwrap();
+    let re = JsRegExp::new(r"[a-z]{2,3}", "").unwrap();
     assert_eq!(re.find_first("12abcd3"), Some((2, 5)));
 
     let re = JsRegExp::new(r"\d{2}|\w+", "").unwrap();
@@ -123,6 +123,63 @@ fn regexp_rejects_constructs_outside_the_subset() {
             "pattern {pattern:?} flags {flags:?}"
         );
     }
+}
+
+#[test]
+fn regexp_rejects_code_unit_sensitive_constructs_at_construction() {
+    // `.`, negated classes, and classes reaching surrogate/astral code
+    // points match lone surrogates in Node's non-`u` mode (e.g.
+    // /./.exec("😀") yields the high surrogate alone) — unrepresentable in
+    // a Rust String — so they are rejected fail-closed at construction,
+    // independent of any input searched.
+    let cases: &[(&str, &str)] = &[
+        (r".", ""),
+        (r"a.c", ""),
+        (r".*", "g"),
+        (r"[^a]", ""),
+        (r"[^a-z0-9]", ""),
+        (r"[^]", ""),
+        (r"\D", ""),
+        (r"\W", ""),
+        (r"\S", ""),
+        (r"[\D]", ""),
+        (r"[\W]", ""),
+        (r"[\S]", ""),
+        (r"[\x00-￿]", ""), // range covers surrogate code points
+        (r"[퟿-]", ""),    // crosses the surrogate gap
+        (r"[a-]", ""),    // upper bound past U+D7FF
+        (r"[😀]", ""),     // astral class member = surrogate pair members in Node
+        (r"[😀-😁]", ""),  // astral range
+        (r"😀+", ""),      // quantifier binds to the low surrogate in Node
+        (r"a😀?b", ""),
+        (r"😀{2}", ""),
+    ];
+    for (pattern, flags) in cases {
+        let err = JsRegExp::new(pattern, flags).unwrap_err();
+        assert_eq!(
+            err.kind(),
+            JsErrorKind::SyntaxError,
+            "pattern {pattern:?} flags {flags:?}"
+        );
+        assert!(
+            err.message().contains("outside the oracle-proven subset"),
+            "pattern {pattern:?}: unexpected message {:?}",
+            err.message()
+        );
+    }
+
+    // The retained boundary: positive classes with ranges up to U+D7FF (and
+    // BMP singles above the surrogate gap) stay accepted and exact.
+    assert!(JsRegExp::new(r"[\x00-퟿]", "").is_ok());
+    assert!(JsRegExp::new(r"[a-z你￿]", "").is_ok());
+    let mut boundary = JsRegExp::new(r"[\x61-퟿]+", "").unwrap();
+    assert!(!boundary.test("😀")); // Node: neither surrogate half is in range
+    assert!(boundary.test("aЖ你"));
+
+    // A grouped astral literal repeats the whole surrogate pair in Node too,
+    // so it stays accepted and exact (unlike a directly quantified one).
+    let mut grouped = JsRegExp::new(r"(?:💚)+", "").unwrap();
+    assert!(grouped.test("a💚💚b"));
 }
 
 #[test]

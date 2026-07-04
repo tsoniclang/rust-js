@@ -179,8 +179,8 @@ fn check_exec_steps(
 fn regexp_engine_matches_node_oracle_vectors() {
     let vectors = load_vectors();
     assert!(
-        vectors.len() >= 228,
-        "expected at least 228 oracle vectors, found {}",
+        vectors.len() >= 216,
+        "expected at least 216 oracle vectors, found {}",
         vectors.len()
     );
 

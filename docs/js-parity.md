@@ -104,8 +104,8 @@ immutable millisecond value).
 docs in `crates/tsonic_rust_js/src/regexp/mod.rs` and the Node-generated
 vectors in `tests/oracle/regexp-vectors.json`):
 
-- implemented: literals, `.`, character classes with ranges/negation, class
-  escapes `\d \D \w \W \s \S`, identity/control/hex escapes, greedy
+- implemented: literals, positive character classes with ranges capped at
+  U+D7FF, class escapes `\d \w \s`, identity/control/hex escapes, greedy
   `* + ? {n} {n,} {n,m}`, `^ $`, alternation, capturing and non-capturing
   groups; flags `i g m`; operations `test`, `find_first`, `replace` (with
   `$$ $& $` $' $1..$99` substitution), `split`, `search`, `exec` (stateful
@@ -125,3 +125,17 @@ vectors in `tests/oracle/regexp-vectors.json`):
   `\p`/`\P`, `\c`, `\k`, `\u{...}`, flags `d s u v y`, quantifier bounds
   above 1000, and `split` over patterns with capturing groups (JS splices
   captures into the result; use `(?:...)`).
+- also rejected at construction (code-unit-sensitive constructs): `.`,
+  negated classes (`[^...]` and `\D \W \S`, inside or outside classes),
+  class ranges reaching past U+D7FF, astral chars inside classes, and
+  quantifiers on a bare astral literal. Their non-`u` semantics are defined
+  over UTF-16 code units, not scalar values: Node's `/./.exec("😀")` yields
+  a *lone high surrogate* — a string a Rust `String` cannot represent —
+  negated/surrogate-range classes likewise match lone surrogates, and a
+  quantifier after an astral literal binds to its trailing low surrogate
+  only. Rejecting the constructs at construction is fail-closed and
+  independent of the input searched (unlike a per-call guard). Positive BMP
+  classes (ranges up to U+D7FF, singles up to U+FFFF), unquantified astral
+  literals, and grouped-and-quantified astral literals (`(?:😀)+`, which
+  repeat the whole surrogate pair) remain exact, proven by the oracle
+  vectors.
