@@ -1,4 +1,4 @@
-# JS parity delta (r11): tsonic_rust_js vs Tsonic.CSharp.Js
+# JS runtime parity inventory
 
 Scope of this comparison: the String, dense-Array, Math/Number, JSON, Map/Set,
 Date, and RegExp surfaces of `crates/tsonic_rust_js` measured against
@@ -62,7 +62,7 @@ backend. No delta.
 `json::parse` / `json::stringify` are implemented (ABI `json_parse` /
 `json_stringify`) over the closed `JsValue` carrier. `stringify` with a
 `replacer`/`space` argument is requires-formatting-contract:
-`json::stringify_pretty` currently normalizes to compact output.
+`json::stringify_pretty` normalizes to compact output.
 
 ## Map / Set
 
@@ -81,7 +81,7 @@ UTC-based surface is implemented in `date.rs` (`now`, `from_millis`, `parse`,
 getters/setters, `getTimezoneOffset`, and the locale renderers present in the
 C# `Date.cs` are requires-timezone-contract: the closed runtime has no IANA
 tzdata source. `Date.UTC`-style construction and UTC setters are
-requires-date-mutation-contract (the current carrier is an immutable
+requires-date-mutation-contract (the carrier is an immutable
 millisecond value).
 
 ## RegExp
