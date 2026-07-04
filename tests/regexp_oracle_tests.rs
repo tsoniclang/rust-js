@@ -179,8 +179,8 @@ fn check_exec_steps(
 fn regexp_engine_matches_node_oracle_vectors() {
     let vectors = load_vectors();
     assert!(
-        vectors.len() >= 216,
-        "expected at least 216 oracle vectors, found {}",
+        vectors.len() >= 217,
+        "expected at least 217 oracle vectors, found {}",
         vectors.len()
     );
 
@@ -260,9 +260,12 @@ fn regexp_engine_matches_node_oracle_vectors() {
             // surrogate pair) via `set_last_index`, runs one `exec`, and
             // asserts the match text and resulting `lastIndex` recorded from
             // Node — proving mid-pair starts are equivalent to the next char
-            // boundary for the accepted subset.
+            // boundary for non-nullable patterns. Nullable patterns reject
+            // the write itself, so these vectors are all non-nullable.
             "set-lastindex" => {
-                regexp.set_last_index(get_number(entry, "setLastIndex") as i32);
+                regexp
+                    .set_last_index(get_number(entry, "setLastIndex") as i32)
+                    .expect("set-lastindex oracle vectors use non-nullable patterns");
                 let actual = regexp.exec(&input);
                 let text_outcome = match (object_field(&expected, "result"), &actual) {
                     (JsValue::Null, None) => Ok(()),

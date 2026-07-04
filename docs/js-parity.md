@@ -111,11 +111,18 @@ vectors in `tests/oracle/regexp-vectors.json`):
   `$$ $& $` $' $1..$99` substitution), `split`, `search`, `exec` (stateful
   `lastIndex` contract under `g`: UTF-16 code-unit progression, reset to 0 on
   no match; `last_index`/`set_last_index` accessors — writable `lastIndex`
-  is exact for the accepted subset, including values that land between the
+  is exact for non-nullable patterns, including values that land between the
   two code units of a surrogate pair: no accepted atom can match a lone
   surrogate, so scanning from a mid-pair position is equivalent to scanning
   from the next char boundary, proven by the `set-lastindex` oracle
-  vectors), `match_first`,
+  vectors. Nullable patterns — ones that can match the empty string — reject
+  manual `lastIndex` assignment with a deterministic `Unsupported` error:
+  Node can match empty *at* a mid-pair position (`/a*/g` with
+  `lastIndex = 1` on `"💚"` matches `""` at UTF-16 index 1), which no Rust
+  `String` can express. Exec-driven `lastIndex` values always land on char
+  boundaries, so the natural exec flow stays exact for nullable patterns
+  too, proven by the nullable-over-astral `exec` oracle vector),
+  `match_first`,
   `match_strings`, `match_all` (`TypeError` without `g`), and the flag
   getters `global`/`ignore_case`/`multiline`. Match results are carried by
   `JsRegExpMatch` (`text`, UTF-16 `index`, `input`, 1-based `group`,

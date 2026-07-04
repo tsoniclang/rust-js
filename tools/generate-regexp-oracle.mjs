@@ -18,9 +18,13 @@
 // - set-lastindex: `setLastIndex` is written to re.lastIndex, then one
 //   re.exec() runs; expected is {result, lastIndex} where result is the
 //   match text or null. These vectors prove that a writable lastIndex is
-//   exact even when it lands between the two code units of a surrogate
-//   pair: no atom in the accepted subset can match a lone surrogate, so a
-//   mid-pair start is equivalent to the next char boundary.
+//   exact for non-nullable patterns even when it lands between the two
+//   code units of a surrogate pair: no atom in the accepted subset can
+//   match a lone surrogate, so a mid-pair start is equivalent to the next
+//   char boundary. Nullable patterns must not appear here — they can match
+//   empty AT a mid-pair position (Node: /a*/g with lastIndex 1 on "💚"
+//   matches "" at index 1), so the Rust engine rejects the lastIndex write
+//   itself for nullable patterns.
 // - matchAll: an array of {text, index, groups}, or {throws: "TypeError"}
 //   when the regexp lacks the g flag.
 // Group values are null for unmatched optional groups; `index`/`lastIndex`
@@ -275,8 +279,14 @@ match("\\d+", "g", "💚1💚22");
 match("💚", "", "a💚b");
 matchAll("💚|\\d", "g", "a💚💚b1");
 exec("💚", "g", "a💚b💚", 3);
+// Nullable pattern over astral input: natural-flow exec stays on char
+// boundaries (the empty match at 0 leaves lastIndex at 0 on every call), so
+// it is exact even though manual lastIndex writes are rejected for /a*/.
+exec("a*", "g", "💚a", 3);
 
 // --- writable lastIndex landing inside/around surrogate pairs ------------------
+// Non-nullable patterns only: the Rust engine rejects manual lastIndex
+// writes on nullable patterns (see the set-lastindex note above).
 // "ab😀cd😀x": a=0 b=1 😀=2..3 c=4 d=5 😀=6..7 x=8 (length 9).
 setLastIndex("[a-z]+", "g", "ab😀cd😀x", 2); // at a high surrogate (pair start)
 setLastIndex("[a-z]+", "g", "ab😀cd😀x", 3); // at the low surrogate (mid-pair)

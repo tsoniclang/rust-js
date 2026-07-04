@@ -1956,6 +1956,39 @@
     ]
   },
   {
+    "pattern": "a*",
+    "flags": "g",
+    "input": "💚a",
+    "op": "exec",
+    "calls": 3,
+    "expected": [
+      {
+        "match": {
+          "text": "",
+          "index": 0,
+          "groups": []
+        },
+        "lastIndex": 0
+      },
+      {
+        "match": {
+          "text": "",
+          "index": 0,
+          "groups": []
+        },
+        "lastIndex": 0
+      },
+      {
+        "match": {
+          "text": "",
+          "index": 0,
+          "groups": []
+        },
+        "lastIndex": 0
+      }
+    ]
+  },
+  {
     "pattern": "[a-z]+",
     "flags": "g",
     "input": "ab😀cd😀x",

@@ -200,7 +200,7 @@ fn regexp_flag_and_last_index_getters() {
     assert!(re.ignore_case());
     assert!(re.multiline());
     assert_eq!(re.last_index(), 0);
-    re.set_last_index(3);
+    re.set_last_index(3).unwrap();
     assert_eq!(re.last_index(), 3);
 
     let re = JsRegExp::new("a", "").unwrap();
@@ -232,19 +232,19 @@ fn regexp_exec_advances_and_resets_last_index() {
     assert_eq!(re.exec("a1b22c333").unwrap().text(), "1");
 
     // lastIndex beyond the input: no match, reset to 0.
-    re.set_last_index(99);
+    re.set_last_index(99).unwrap();
     assert!(re.exec("a1").is_none());
     assert_eq!(re.last_index(), 0);
 
     // Negative lastIndex behaves like 0 (ToLength clamp).
-    re.set_last_index(-5);
+    re.set_last_index(-5).unwrap();
     assert_eq!(re.exec("a1").unwrap().index(), 1);
 }
 
 #[test]
 fn regexp_exec_without_g_ignores_state() {
     let mut re = JsRegExp::new("o", "").unwrap();
-    re.set_last_index(2);
+    re.set_last_index(2).unwrap();
     let m = re.exec("foo").unwrap();
     assert_eq!((m.text(), m.index()), ("o".to_string(), 1));
     // Non-global exec never touches lastIndex.
@@ -320,7 +320,7 @@ fn regexp_global_test_advances_and_resets_last_index() {
 
     // Non-global test is stateless and ignores lastIndex.
     let mut re = JsRegExp::new("o", "").unwrap();
-    re.set_last_index(2);
+    re.set_last_index(2).unwrap();
     assert!(re.test("foo"));
     assert_eq!(re.last_index(), 2);
     assert!(re.test("foo"));
@@ -362,6 +362,48 @@ fn regexp_nullable_pattern_over_astral_input_fails_closed() {
     // Non-g replace never iterates empty matches: always Ok, exact.
     let re = JsRegExp::new("a*", "").unwrap();
     assert_eq!(re.replace("a💚b", "-").unwrap(), "-💚b");
+}
+
+#[test]
+fn regexp_nullable_pattern_rejects_manual_last_index() {
+    // Node: /a*/g with lastIndex = 1 on "💚" matches "" at UTF-16 index 1 —
+    // inside the surrogate pair, a position no Rust String can express — so
+    // manual lastIndex writes on nullable patterns fail closed at the
+    // setter, deterministically and regardless of value or input.
+    let mut re = JsRegExp::new("a*", "g").unwrap();
+    let err = re.set_last_index(1).unwrap_err();
+    assert_eq!(err.kind(), JsErrorKind::Unsupported);
+    assert!(err.message().contains("outside the oracle-proven subset"));
+    // The write is rejected before mutating state, and repeats identically.
+    assert_eq!(re.last_index(), 0);
+    assert_eq!(
+        re.set_last_index(0).unwrap_err().kind(),
+        JsErrorKind::Unsupported
+    );
+
+    // Other nullable shapes reject too, global or not.
+    for (pattern, flags) in [("x?", "g"), ("(?:a|)", "g"), ("^", "gm"), ("a*", "")] {
+        let mut nullable = JsRegExp::new(pattern, flags).unwrap();
+        assert_eq!(
+            nullable.set_last_index(2).unwrap_err().kind(),
+            JsErrorKind::Unsupported,
+            "pattern {pattern:?} flags {flags:?}"
+        );
+    }
+}
+
+#[test]
+fn regexp_nullable_exec_over_astral_input_stays_exact() {
+    // Natural-flow exec keeps lastIndex on char boundaries even for
+    // nullable patterns over astral input, so it stays exact without the
+    // setter. Node: /a*/g on "💚a" matches "" at index 0 on every call
+    // (the empty match leaves lastIndex at 0), never entering the pair.
+    let mut re = JsRegExp::new("a*", "g").unwrap();
+    for _ in 0..3 {
+        let m = re.exec("💚a").unwrap();
+        assert_eq!((m.text().as_str(), m.index()), ("", 0));
+        assert_eq!(re.last_index(), 0);
+    }
 }
 
 #[test]
@@ -420,7 +462,7 @@ fn regexp_match_all_requires_the_g_flag() {
 
     // matchAll is stateless: lastIndex is not consulted or mutated.
     let mut re = JsRegExp::new("a", "g").unwrap();
-    re.set_last_index(2);
+    re.set_last_index(2).unwrap();
     assert_eq!(re.match_all("aaa").unwrap().len(), 3);
     assert_eq!(re.last_index(), 2);
 }
