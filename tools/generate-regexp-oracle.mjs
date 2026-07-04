@@ -1,8 +1,19 @@
 #!/usr/bin/env node
 // Generates tests/oracle/regexp-vectors.json by running every vector through
 // Node's own RegExp implementation. Each entry records
-// {pattern, flags, input, op, replacement?, expected} where op is one of
-// "test" | "replace" | "split" | "search".
+// {pattern, flags, input, op, replacement?, calls?, expected} where op is one
+// of "test" | "replace" | "split" | "search" | "exec" | "match" | "matchAll".
+//
+// Expected shapes for the match-carrier ops:
+// - exec: `calls` sequential re.exec() calls on one regexp instance; each
+//   step is {match: null | {text, index, groups}, lastIndex} so lastIndex
+//   progression (and its reset to 0 on a null result) is asserted.
+// - match: null, or an array of matched texts (g flag), or a single
+//   {text, index, groups} object (no g flag).
+// - matchAll: an array of {text, index, groups}, or {throws: "TypeError"}
+//   when the regexp lacks the g flag.
+// Group values are null for unmatched optional groups; `index`/`lastIndex`
+// are UTF-16 code-unit offsets.
 //
 // Constraints kept in sync with the Rust engine subset
 // (crates/tsonic_rust_js/src/regexp/):
@@ -21,6 +32,10 @@ const search = (pattern, flags, input) => cases.push({ pattern, flags, input, op
 const split = (pattern, flags, input) => cases.push({ pattern, flags, input, op: "split" });
 const replace = (pattern, flags, input, replacement) =>
   cases.push({ pattern, flags, input, op: "replace", replacement });
+const exec = (pattern, flags, input, calls) =>
+  cases.push({ pattern, flags, input, op: "exec", calls });
+const match = (pattern, flags, input) => cases.push({ pattern, flags, input, op: "match" });
+const matchAll = (pattern, flags, input) => cases.push({ pattern, flags, input, op: "matchAll" });
 
 // --- literals, dot, escapes -------------------------------------------------
 test("abc", "", "xxabcxx");
@@ -194,6 +209,60 @@ test("[α-ω]+", "", "χαος");
 search("好", "", "说你好");
 replace("[é]", "g", "café résumé", "e");
 
+// --- exec: sequential g calls with lastIndex progression ---------------------
+exec("\\d+", "g", "a1b22c333", 5);
+exec("a", "g", "aaa", 5);
+exec("a*", "g", "aab", 4);
+exec("x", "g", "abc", 2);
+exec("(\\w)(\\d)?", "g", "a1 b", 4);
+exec("o", "", "foo", 3);
+exec("b", "g", "abcabc", 4);
+exec("^a", "g", "aaa", 3);
+exec("\\d", "g", "你1好2", 4);
+exec("(a+)(b+)", "g", "aabbab", 4);
+exec("$", "g", "ab", 3);
+exec("a|b", "g", "xaybz", 4);
+
+// --- match with the g flag ----------------------------------------------------
+match("\\d+", "g", "a1b22c333");
+match("q", "g", "abc");
+match("a*", "g", "baab");
+match("[aeiou]", "g", "education");
+match("(\\d)(\\d)", "g", "1234 56");
+match("好", "g", "好上加好");
+match("^", "gm", "a\nb");
+match("\\w+", "g", "  ");
+match("ab?", "g", "abaab");
+match(".", "g", "aé你");
+
+// --- match without the g flag ---------------------------------------------------
+match("\\d+", "", "a1b22");
+match("(\\w+) (\\w+)", "", "hello world x");
+match("q", "", "abc");
+match("(a)|(b)", "", "zb");
+match("好", "", "说你好");
+match("a{2,3}", "i", "xAAAy");
+match("(?:ab)+", "", "zababz");
+match("^$", "m", "a\n\nb");
+
+// --- matchAll -------------------------------------------------------------------
+matchAll("\\d+", "g", "a1b22c333");
+matchAll("(\\w)(\\d)", "g", "a1 b2 c");
+matchAll("q", "g", "abc");
+matchAll("a*", "g", "baab");
+matchAll("(a)|(b)", "g", "ab");
+matchAll("\\d", "g", "你1好2");
+matchAll("\\d+", "", "a1");
+matchAll("(a+)(b*)", "g", "aabab");
+matchAll("^.", "gm", "ab\ncd");
+matchAll(".", "", "abc");
+
+const matchRecord = (m) => ({
+  text: m[0],
+  index: m.index,
+  groups: m.slice(1).map((group) => (group === undefined ? null : group)),
+});
+
 const results = cases.map((entry) => {
   const re = new RegExp(entry.pattern, entry.flags);
   let expected;
@@ -210,6 +279,31 @@ const results = cases.map((entry) => {
     case "replace":
       expected = entry.input.replace(re, entry.replacement);
       break;
+    case "exec": {
+      const steps = [];
+      for (let call = 0; call < entry.calls; call += 1) {
+        const m = re.exec(entry.input);
+        steps.push({
+          match: m === null ? null : matchRecord(m),
+          lastIndex: re.lastIndex,
+        });
+      }
+      expected = steps;
+      break;
+    }
+    case "match": {
+      const m = entry.input.match(re);
+      expected = m === null ? null : re.global ? [...m] : matchRecord(m);
+      break;
+    }
+    case "matchAll": {
+      try {
+        expected = [...entry.input.matchAll(re)].map(matchRecord);
+      } catch (error) {
+        expected = { throws: error.constructor.name };
+      }
+      break;
+    }
     default:
       throw new Error(`unknown op ${entry.op}`);
   }

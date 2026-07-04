@@ -119,9 +119,17 @@ fn callback_copying_sort_and_flat_helpers() {
     assert_eq!(dense::reduce(&xs, 0, |sum, value| sum + value), 6);
     assert!(dense::some(&xs, |value| *value == 2));
     assert!(dense::every(&xs, |value| *value > 0));
-    assert_eq!(dense::find(&xs, |value| *value == 1), Some(&1));
+    assert_eq!(dense::find(&xs, |value| *value == 1), Some(1));
+    assert_eq!(dense::find(&xs, |value| *value == 99), None);
     assert_eq!(dense::find_index(&xs, |value| *value == 1), 1);
     assert_eq!(dense::find_index(&xs, |value| *value == 99), -1);
+
+    // findLast / findLastIndex scan from the back.
+    let ys = vec![1, 2, 3, 2];
+    assert_eq!(dense::find_last(&ys, |value| *value == 2), Some(2));
+    assert_eq!(dense::find_last_index(&ys, |value| *value == 2), 3);
+    assert_eq!(dense::find_last(&ys, |value| *value == 99), None);
+    assert_eq!(dense::find_last_index(&ys, |value| *value == 99), -1);
 
     let mut sorted = vec![10, 2, 1];
     dense::sort_by_js_string(&mut sorted);

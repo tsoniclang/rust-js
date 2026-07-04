@@ -132,3 +132,129 @@ fn regexp_empty_match_iteration_terminates() {
     assert!(JsRegExp::new("(?:a|)*b", "").unwrap().test("b"));
     assert!(JsRegExp::new("(?:a|){3}b", "").unwrap().test("ab"));
 }
+
+#[test]
+fn regexp_flag_and_last_index_getters() {
+    let mut re = JsRegExp::new("a", "gim").unwrap();
+    assert!(re.global());
+    assert!(re.ignore_case());
+    assert!(re.multiline());
+    assert_eq!(re.last_index(), 0);
+    re.set_last_index(3);
+    assert_eq!(re.last_index(), 3);
+
+    let re = JsRegExp::new("a", "").unwrap();
+    assert!(!re.global());
+    assert!(!re.ignore_case());
+    assert!(!re.multiline());
+}
+
+#[test]
+fn regexp_exec_advances_and_resets_last_index() {
+    let mut re = JsRegExp::new(r"\d+", "g").unwrap();
+    let first = re.exec("a1b22c333").unwrap();
+    assert_eq!(first.text(), "1");
+    assert_eq!(first.index(), 1);
+    assert_eq!(first.input(), "a1b22c333");
+    assert_eq!(re.last_index(), 2);
+
+    let second = re.exec("a1b22c333").unwrap();
+    assert_eq!((second.text(), second.index()), ("22".to_string(), 3));
+    assert_eq!(re.last_index(), 5);
+
+    let third = re.exec("a1b22c333").unwrap();
+    assert_eq!((third.text(), third.index()), ("333".to_string(), 6));
+    assert_eq!(re.last_index(), 9);
+
+    // Exhausted: null result resets lastIndex to 0, then matching restarts.
+    assert!(re.exec("a1b22c333").is_none());
+    assert_eq!(re.last_index(), 0);
+    assert_eq!(re.exec("a1b22c333").unwrap().text(), "1");
+
+    // lastIndex beyond the input: no match, reset to 0.
+    re.set_last_index(99);
+    assert!(re.exec("a1").is_none());
+    assert_eq!(re.last_index(), 0);
+
+    // Negative lastIndex behaves like 0 (ToLength clamp).
+    re.set_last_index(-5);
+    assert_eq!(re.exec("a1").unwrap().index(), 1);
+}
+
+#[test]
+fn regexp_exec_without_g_ignores_state() {
+    let mut re = JsRegExp::new("o", "").unwrap();
+    re.set_last_index(2);
+    let m = re.exec("foo").unwrap();
+    assert_eq!((m.text(), m.index()), ("o".to_string(), 1));
+    // Non-global exec never touches lastIndex.
+    assert_eq!(re.last_index(), 2);
+    assert_eq!(re.exec("foo").unwrap().index(), 1);
+}
+
+#[test]
+fn regexp_exec_reports_utf16_indexes_and_last_index() {
+    let mut re = JsRegExp::new(r"\d", "g").unwrap();
+    let m = re.exec("你1好2").unwrap();
+    assert_eq!((m.text(), m.index()), ("1".to_string(), 1));
+    assert_eq!(re.last_index(), 2);
+    let m = re.exec("你1好2").unwrap();
+    assert_eq!((m.text(), m.index()), ("2".to_string(), 3));
+}
+
+#[test]
+fn regexp_match_carrier_exposes_groups() {
+    let re = JsRegExp::new(r"(\w+)@(\w+)|(!)", "").unwrap();
+    let m = re.match_first("mail: a@b").unwrap();
+    assert_eq!(m.text(), "a@b");
+    assert_eq!(m.index(), 6);
+    assert_eq!(m.input(), "mail: a@b");
+    assert_eq!(m.group_count(), 3);
+    assert_eq!(m.group(0), Some("a@b".to_string()));
+    assert_eq!(m.group(1), Some("a".to_string()));
+    assert_eq!(m.group(2), Some("b".to_string()));
+    // Unmatched alternation branch and out-of-range groups are None.
+    assert_eq!(m.group(3), None);
+    assert_eq!(m.group(4), None);
+
+    assert!(re.match_first("no matches here?").is_none());
+}
+
+#[test]
+fn regexp_match_strings_collects_all_texts_or_none() {
+    let re = JsRegExp::new(r"\d+", "g").unwrap();
+    assert_eq!(
+        re.match_strings("a1b22c333").unwrap(),
+        vec!["1", "22", "333"]
+    );
+    assert!(re.match_strings("abc").is_none());
+
+    // Empty matches advance without spinning (JS: "baab".match(/a*/g)).
+    let re = JsRegExp::new("a*", "g").unwrap();
+    assert_eq!(re.match_strings("baab").unwrap(), vec!["", "aa", "", ""]);
+}
+
+#[test]
+fn regexp_match_all_requires_the_g_flag() {
+    let err = JsRegExp::new(r"\d", "")
+        .unwrap()
+        .match_all("a1")
+        .unwrap_err();
+    assert_eq!(err.kind(), JsErrorKind::TypeError);
+
+    let re = JsRegExp::new(r"(\w)(\d)?", "g").unwrap();
+    let matches = re.match_all("a1 b").unwrap();
+    assert_eq!(matches.len(), 2);
+    assert_eq!(matches[0].text(), "a1");
+    assert_eq!(matches[0].group(1), Some("a".to_string()));
+    assert_eq!(matches[0].group(2), Some("1".to_string()));
+    assert_eq!(matches[1].text(), "b");
+    assert_eq!(matches[1].group(2), None);
+    assert_eq!(matches[1].index(), 3);
+
+    // matchAll is stateless: lastIndex is not consulted or mutated.
+    let mut re = JsRegExp::new("a", "g").unwrap();
+    re.set_last_index(2);
+    assert_eq!(re.match_all("aaa").unwrap().len(), 3);
+    assert_eq!(re.last_index(), 2);
+}

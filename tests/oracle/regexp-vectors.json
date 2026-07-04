@@ -1113,5 +1113,828 @@
     "op": "replace",
     "replacement": "e",
     "expected": "cafe resume"
+  },
+  {
+    "pattern": "\\d+",
+    "flags": "g",
+    "input": "a1b22c333",
+    "op": "exec",
+    "calls": 5,
+    "expected": [
+      {
+        "match": {
+          "text": "1",
+          "index": 1,
+          "groups": []
+        },
+        "lastIndex": 2
+      },
+      {
+        "match": {
+          "text": "22",
+          "index": 3,
+          "groups": []
+        },
+        "lastIndex": 5
+      },
+      {
+        "match": {
+          "text": "333",
+          "index": 6,
+          "groups": []
+        },
+        "lastIndex": 9
+      },
+      {
+        "match": null,
+        "lastIndex": 0
+      },
+      {
+        "match": {
+          "text": "1",
+          "index": 1,
+          "groups": []
+        },
+        "lastIndex": 2
+      }
+    ]
+  },
+  {
+    "pattern": "a",
+    "flags": "g",
+    "input": "aaa",
+    "op": "exec",
+    "calls": 5,
+    "expected": [
+      {
+        "match": {
+          "text": "a",
+          "index": 0,
+          "groups": []
+        },
+        "lastIndex": 1
+      },
+      {
+        "match": {
+          "text": "a",
+          "index": 1,
+          "groups": []
+        },
+        "lastIndex": 2
+      },
+      {
+        "match": {
+          "text": "a",
+          "index": 2,
+          "groups": []
+        },
+        "lastIndex": 3
+      },
+      {
+        "match": null,
+        "lastIndex": 0
+      },
+      {
+        "match": {
+          "text": "a",
+          "index": 0,
+          "groups": []
+        },
+        "lastIndex": 1
+      }
+    ]
+  },
+  {
+    "pattern": "a*",
+    "flags": "g",
+    "input": "aab",
+    "op": "exec",
+    "calls": 4,
+    "expected": [
+      {
+        "match": {
+          "text": "aa",
+          "index": 0,
+          "groups": []
+        },
+        "lastIndex": 2
+      },
+      {
+        "match": {
+          "text": "",
+          "index": 2,
+          "groups": []
+        },
+        "lastIndex": 2
+      },
+      {
+        "match": {
+          "text": "",
+          "index": 2,
+          "groups": []
+        },
+        "lastIndex": 2
+      },
+      {
+        "match": {
+          "text": "",
+          "index": 2,
+          "groups": []
+        },
+        "lastIndex": 2
+      }
+    ]
+  },
+  {
+    "pattern": "x",
+    "flags": "g",
+    "input": "abc",
+    "op": "exec",
+    "calls": 2,
+    "expected": [
+      {
+        "match": null,
+        "lastIndex": 0
+      },
+      {
+        "match": null,
+        "lastIndex": 0
+      }
+    ]
+  },
+  {
+    "pattern": "(\\w)(\\d)?",
+    "flags": "g",
+    "input": "a1 b",
+    "op": "exec",
+    "calls": 4,
+    "expected": [
+      {
+        "match": {
+          "text": "a1",
+          "index": 0,
+          "groups": [
+            "a",
+            "1"
+          ]
+        },
+        "lastIndex": 2
+      },
+      {
+        "match": {
+          "text": "b",
+          "index": 3,
+          "groups": [
+            "b",
+            null
+          ]
+        },
+        "lastIndex": 4
+      },
+      {
+        "match": null,
+        "lastIndex": 0
+      },
+      {
+        "match": {
+          "text": "a1",
+          "index": 0,
+          "groups": [
+            "a",
+            "1"
+          ]
+        },
+        "lastIndex": 2
+      }
+    ]
+  },
+  {
+    "pattern": "o",
+    "flags": "",
+    "input": "foo",
+    "op": "exec",
+    "calls": 3,
+    "expected": [
+      {
+        "match": {
+          "text": "o",
+          "index": 1,
+          "groups": []
+        },
+        "lastIndex": 0
+      },
+      {
+        "match": {
+          "text": "o",
+          "index": 1,
+          "groups": []
+        },
+        "lastIndex": 0
+      },
+      {
+        "match": {
+          "text": "o",
+          "index": 1,
+          "groups": []
+        },
+        "lastIndex": 0
+      }
+    ]
+  },
+  {
+    "pattern": "b",
+    "flags": "g",
+    "input": "abcabc",
+    "op": "exec",
+    "calls": 4,
+    "expected": [
+      {
+        "match": {
+          "text": "b",
+          "index": 1,
+          "groups": []
+        },
+        "lastIndex": 2
+      },
+      {
+        "match": {
+          "text": "b",
+          "index": 4,
+          "groups": []
+        },
+        "lastIndex": 5
+      },
+      {
+        "match": null,
+        "lastIndex": 0
+      },
+      {
+        "match": {
+          "text": "b",
+          "index": 1,
+          "groups": []
+        },
+        "lastIndex": 2
+      }
+    ]
+  },
+  {
+    "pattern": "^a",
+    "flags": "g",
+    "input": "aaa",
+    "op": "exec",
+    "calls": 3,
+    "expected": [
+      {
+        "match": {
+          "text": "a",
+          "index": 0,
+          "groups": []
+        },
+        "lastIndex": 1
+      },
+      {
+        "match": null,
+        "lastIndex": 0
+      },
+      {
+        "match": {
+          "text": "a",
+          "index": 0,
+          "groups": []
+        },
+        "lastIndex": 1
+      }
+    ]
+  },
+  {
+    "pattern": "\\d",
+    "flags": "g",
+    "input": "你1好2",
+    "op": "exec",
+    "calls": 4,
+    "expected": [
+      {
+        "match": {
+          "text": "1",
+          "index": 1,
+          "groups": []
+        },
+        "lastIndex": 2
+      },
+      {
+        "match": {
+          "text": "2",
+          "index": 3,
+          "groups": []
+        },
+        "lastIndex": 4
+      },
+      {
+        "match": null,
+        "lastIndex": 0
+      },
+      {
+        "match": {
+          "text": "1",
+          "index": 1,
+          "groups": []
+        },
+        "lastIndex": 2
+      }
+    ]
+  },
+  {
+    "pattern": "(a+)(b+)",
+    "flags": "g",
+    "input": "aabbab",
+    "op": "exec",
+    "calls": 4,
+    "expected": [
+      {
+        "match": {
+          "text": "aabb",
+          "index": 0,
+          "groups": [
+            "aa",
+            "bb"
+          ]
+        },
+        "lastIndex": 4
+      },
+      {
+        "match": {
+          "text": "ab",
+          "index": 4,
+          "groups": [
+            "a",
+            "b"
+          ]
+        },
+        "lastIndex": 6
+      },
+      {
+        "match": null,
+        "lastIndex": 0
+      },
+      {
+        "match": {
+          "text": "aabb",
+          "index": 0,
+          "groups": [
+            "aa",
+            "bb"
+          ]
+        },
+        "lastIndex": 4
+      }
+    ]
+  },
+  {
+    "pattern": "$",
+    "flags": "g",
+    "input": "ab",
+    "op": "exec",
+    "calls": 3,
+    "expected": [
+      {
+        "match": {
+          "text": "",
+          "index": 2,
+          "groups": []
+        },
+        "lastIndex": 2
+      },
+      {
+        "match": {
+          "text": "",
+          "index": 2,
+          "groups": []
+        },
+        "lastIndex": 2
+      },
+      {
+        "match": {
+          "text": "",
+          "index": 2,
+          "groups": []
+        },
+        "lastIndex": 2
+      }
+    ]
+  },
+  {
+    "pattern": "a|b",
+    "flags": "g",
+    "input": "xaybz",
+    "op": "exec",
+    "calls": 4,
+    "expected": [
+      {
+        "match": {
+          "text": "a",
+          "index": 1,
+          "groups": []
+        },
+        "lastIndex": 2
+      },
+      {
+        "match": {
+          "text": "b",
+          "index": 3,
+          "groups": []
+        },
+        "lastIndex": 4
+      },
+      {
+        "match": null,
+        "lastIndex": 0
+      },
+      {
+        "match": {
+          "text": "a",
+          "index": 1,
+          "groups": []
+        },
+        "lastIndex": 2
+      }
+    ]
+  },
+  {
+    "pattern": "\\d+",
+    "flags": "g",
+    "input": "a1b22c333",
+    "op": "match",
+    "expected": [
+      "1",
+      "22",
+      "333"
+    ]
+  },
+  {
+    "pattern": "q",
+    "flags": "g",
+    "input": "abc",
+    "op": "match",
+    "expected": null
+  },
+  {
+    "pattern": "a*",
+    "flags": "g",
+    "input": "baab",
+    "op": "match",
+    "expected": [
+      "",
+      "aa",
+      "",
+      ""
+    ]
+  },
+  {
+    "pattern": "[aeiou]",
+    "flags": "g",
+    "input": "education",
+    "op": "match",
+    "expected": [
+      "e",
+      "u",
+      "a",
+      "i",
+      "o"
+    ]
+  },
+  {
+    "pattern": "(\\d)(\\d)",
+    "flags": "g",
+    "input": "1234 56",
+    "op": "match",
+    "expected": [
+      "12",
+      "34",
+      "56"
+    ]
+  },
+  {
+    "pattern": "好",
+    "flags": "g",
+    "input": "好上加好",
+    "op": "match",
+    "expected": [
+      "好",
+      "好"
+    ]
+  },
+  {
+    "pattern": "^",
+    "flags": "gm",
+    "input": "a\nb",
+    "op": "match",
+    "expected": [
+      "",
+      ""
+    ]
+  },
+  {
+    "pattern": "\\w+",
+    "flags": "g",
+    "input": "  ",
+    "op": "match",
+    "expected": null
+  },
+  {
+    "pattern": "ab?",
+    "flags": "g",
+    "input": "abaab",
+    "op": "match",
+    "expected": [
+      "ab",
+      "a",
+      "ab"
+    ]
+  },
+  {
+    "pattern": ".",
+    "flags": "g",
+    "input": "aé你",
+    "op": "match",
+    "expected": [
+      "a",
+      "é",
+      "你"
+    ]
+  },
+  {
+    "pattern": "\\d+",
+    "flags": "",
+    "input": "a1b22",
+    "op": "match",
+    "expected": {
+      "text": "1",
+      "index": 1,
+      "groups": []
+    }
+  },
+  {
+    "pattern": "(\\w+) (\\w+)",
+    "flags": "",
+    "input": "hello world x",
+    "op": "match",
+    "expected": {
+      "text": "hello world",
+      "index": 0,
+      "groups": [
+        "hello",
+        "world"
+      ]
+    }
+  },
+  {
+    "pattern": "q",
+    "flags": "",
+    "input": "abc",
+    "op": "match",
+    "expected": null
+  },
+  {
+    "pattern": "(a)|(b)",
+    "flags": "",
+    "input": "zb",
+    "op": "match",
+    "expected": {
+      "text": "b",
+      "index": 1,
+      "groups": [
+        null,
+        "b"
+      ]
+    }
+  },
+  {
+    "pattern": "好",
+    "flags": "",
+    "input": "说你好",
+    "op": "match",
+    "expected": {
+      "text": "好",
+      "index": 2,
+      "groups": []
+    }
+  },
+  {
+    "pattern": "a{2,3}",
+    "flags": "i",
+    "input": "xAAAy",
+    "op": "match",
+    "expected": {
+      "text": "AAA",
+      "index": 1,
+      "groups": []
+    }
+  },
+  {
+    "pattern": "(?:ab)+",
+    "flags": "",
+    "input": "zababz",
+    "op": "match",
+    "expected": {
+      "text": "abab",
+      "index": 1,
+      "groups": []
+    }
+  },
+  {
+    "pattern": "^$",
+    "flags": "m",
+    "input": "a\n\nb",
+    "op": "match",
+    "expected": {
+      "text": "",
+      "index": 2,
+      "groups": []
+    }
+  },
+  {
+    "pattern": "\\d+",
+    "flags": "g",
+    "input": "a1b22c333",
+    "op": "matchAll",
+    "expected": [
+      {
+        "text": "1",
+        "index": 1,
+        "groups": []
+      },
+      {
+        "text": "22",
+        "index": 3,
+        "groups": []
+      },
+      {
+        "text": "333",
+        "index": 6,
+        "groups": []
+      }
+    ]
+  },
+  {
+    "pattern": "(\\w)(\\d)",
+    "flags": "g",
+    "input": "a1 b2 c",
+    "op": "matchAll",
+    "expected": [
+      {
+        "text": "a1",
+        "index": 0,
+        "groups": [
+          "a",
+          "1"
+        ]
+      },
+      {
+        "text": "b2",
+        "index": 3,
+        "groups": [
+          "b",
+          "2"
+        ]
+      }
+    ]
+  },
+  {
+    "pattern": "q",
+    "flags": "g",
+    "input": "abc",
+    "op": "matchAll",
+    "expected": []
+  },
+  {
+    "pattern": "a*",
+    "flags": "g",
+    "input": "baab",
+    "op": "matchAll",
+    "expected": [
+      {
+        "text": "",
+        "index": 0,
+        "groups": []
+      },
+      {
+        "text": "aa",
+        "index": 1,
+        "groups": []
+      },
+      {
+        "text": "",
+        "index": 3,
+        "groups": []
+      },
+      {
+        "text": "",
+        "index": 4,
+        "groups": []
+      }
+    ]
+  },
+  {
+    "pattern": "(a)|(b)",
+    "flags": "g",
+    "input": "ab",
+    "op": "matchAll",
+    "expected": [
+      {
+        "text": "a",
+        "index": 0,
+        "groups": [
+          "a",
+          null
+        ]
+      },
+      {
+        "text": "b",
+        "index": 1,
+        "groups": [
+          null,
+          "b"
+        ]
+      }
+    ]
+  },
+  {
+    "pattern": "\\d",
+    "flags": "g",
+    "input": "你1好2",
+    "op": "matchAll",
+    "expected": [
+      {
+        "text": "1",
+        "index": 1,
+        "groups": []
+      },
+      {
+        "text": "2",
+        "index": 3,
+        "groups": []
+      }
+    ]
+  },
+  {
+    "pattern": "\\d+",
+    "flags": "",
+    "input": "a1",
+    "op": "matchAll",
+    "expected": {
+      "throws": "TypeError"
+    }
+  },
+  {
+    "pattern": "(a+)(b*)",
+    "flags": "g",
+    "input": "aabab",
+    "op": "matchAll",
+    "expected": [
+      {
+        "text": "aab",
+        "index": 0,
+        "groups": [
+          "aa",
+          "b"
+        ]
+      },
+      {
+        "text": "ab",
+        "index": 3,
+        "groups": [
+          "a",
+          "b"
+        ]
+      }
+    ]
+  },
+  {
+    "pattern": "^.",
+    "flags": "gm",
+    "input": "ab\ncd",
+    "op": "matchAll",
+    "expected": [
+      {
+        "text": "a",
+        "index": 0,
+        "groups": []
+      },
+      {
+        "text": "c",
+        "index": 3,
+        "groups": []
+      }
+    ]
+  },
+  {
+    "pattern": ".",
+    "flags": "",
+    "input": "abc",
+    "op": "matchAll",
+    "expected": {
+      "throws": "TypeError"
+    }
   }
 ]

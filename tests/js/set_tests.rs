@@ -30,3 +30,66 @@ fn set_iterable_constructor_and_for_each_are_closed() {
     set.for_each(|value, _, _| seen.push(*value));
     assert_eq!(seen, vec![1, 2]);
 }
+
+#[test]
+fn set_algebra_preserves_insertion_order() {
+    let left = JsSet::from_values([1, 2, 3, 4]);
+    let right = JsSet::from_values([3, 5, 1]);
+
+    // union: receiver order first, then the other's unseen values.
+    assert_eq!(
+        left.union(&right).values(),
+        vec![&1, &2, &3, &4, &5],
+        "union order"
+    );
+    assert_eq!(right.union(&left).values(), vec![&3, &5, &1, &2, &4]);
+
+    // intersection/difference follow the receiver's order.
+    assert_eq!(left.intersection(&right).values(), vec![&1, &3]);
+    assert_eq!(right.intersection(&left).values(), vec![&3, &1]);
+    assert_eq!(left.difference(&right).values(), vec![&2, &4]);
+    assert_eq!(right.difference(&left).values(), vec![&5]);
+
+    // symmetricDifference: receiver-only values, then the other's.
+    assert_eq!(left.symmetric_difference(&right).values(), vec![&2, &4, &5]);
+    assert_eq!(right.symmetric_difference(&left).values(), vec![&5, &2, &4]);
+}
+
+#[test]
+fn set_algebra_predicates() {
+    let small = JsSet::from_values([1, 2]);
+    let big = JsSet::from_values([3, 2, 1]);
+    let other = JsSet::from_values([4, 5]);
+    let empty: JsSet<i32> = JsSet::new();
+
+    assert!(small.is_subset_of(&big));
+    assert!(!big.is_subset_of(&small));
+    assert!(big.is_superset_of(&small));
+    assert!(!small.is_superset_of(&big));
+    assert!(small.is_disjoint_from(&other));
+    assert!(!small.is_disjoint_from(&big));
+
+    // The empty set is a subset of everything and disjoint from everything.
+    assert!(empty.is_subset_of(&small));
+    assert!(small.is_superset_of(&empty));
+    assert!(empty.is_disjoint_from(&empty));
+    assert!(small.is_subset_of(&small) && small.is_superset_of(&small));
+}
+
+#[test]
+fn set_algebra_uses_same_value_zero() {
+    let with_nan = JsSet::from_values([f64::NAN, 1.0]);
+    let other_nan = JsSet::from_values([f64::NAN]);
+    assert_eq!(with_nan.intersection(&other_nan).len(), 1);
+    assert_eq!(with_nan.union(&other_nan).len(), 2);
+    assert_eq!(with_nan.difference(&other_nan).len(), 1);
+    assert_eq!(with_nan.symmetric_difference(&other_nan).len(), 1);
+    assert!(other_nan.is_subset_of(&with_nan));
+    assert!(!other_nan.is_disjoint_from(&with_nan));
+
+    // SameValueZero: 0 and -0 are the same member.
+    let zero = JsSet::from_values([0.0_f64]);
+    let negative_zero = JsSet::from_values([-0.0_f64]);
+    assert!(zero.is_subset_of(&negative_zero));
+    assert_eq!(zero.union(&negative_zero).len(), 1);
+}
