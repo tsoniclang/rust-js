@@ -65,7 +65,8 @@ fn js_error_subtypes_and_string_raw_are_available() {
 
 #[test]
 fn dataview_reads_and_writes_endian_values() {
-    let mut view = DataView::new(abi::ArrayBuffer::new(16));
+    let buffer = abi::ArrayBuffer::new(16);
+    let mut view = DataView::new(buffer.clone());
     view.set_uint8(0, 255).unwrap();
     assert_eq!(view.get_uint8(0).unwrap(), 255);
     view.set_int32(1, 0x01020304, false).unwrap();
@@ -74,13 +75,15 @@ fn dataview_reads_and_writes_endian_values() {
     view.set_float64(8, 1.5, true).unwrap();
     assert_eq!(view.get_float64(8, true).unwrap(), 1.5);
     assert!(view.get_uint8(100).is_err());
+    assert!(view.get_float64(usize::MAX, true).is_err());
+    assert_eq!(buffer.as_bytes()[0], 255);
 }
 
 #[test]
 fn array_buffer_mutable_bytes_are_visible_to_views() {
-    let mut buffer = ArrayBuffer::new(3);
+    let buffer = ArrayBuffer::new(3);
     buffer.as_mut_bytes().copy_from_slice(&[1, 2, 3]);
-    assert_eq!(buffer.as_bytes(), &[1, 2, 3]);
+    assert_eq!(&*buffer.as_bytes(), &[1, 2, 3]);
 }
 
 #[test]

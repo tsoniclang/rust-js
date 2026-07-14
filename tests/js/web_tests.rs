@@ -195,7 +195,7 @@ fn blob_file_and_body_cover_text_and_bytes() {
     assert_eq!(blob.content_type(), "text/plain");
     assert_eq!(blob.text().unwrap(), "hello world");
     assert_eq!(Blob::from_text("text").bytes(), b"text");
-    assert_eq!(blob.array_buffer().as_bytes(), b"hello world");
+    assert_eq!(&*blob.array_buffer().as_bytes(), b"hello world");
     assert_eq!(blob.slice(6, None, "text/plain").text().unwrap(), "world");
 
     let file = File::new(
@@ -210,7 +210,7 @@ fn blob_file_and_body_cover_text_and_bytes() {
     assert_eq!(file.size(), 11);
     assert_eq!(file.content_type(), "text/plain");
     assert_eq!(file.text().unwrap(), "hello world");
-    assert_eq!(file.array_buffer().as_bytes(), b"hello world");
+    assert_eq!(&*file.array_buffer().as_bytes(), b"hello world");
 
     assert_eq!(Body::Blob(blob).text().unwrap(), "hello world");
 }
@@ -307,7 +307,7 @@ fn request_and_response_cover_fetch_carriers() {
     assert_eq!(request.body().bytes(), b"{\"ok\":true}");
     assert_eq!(request.text().unwrap(), "{\"ok\":true}");
     assert_eq!(request.json().unwrap().inspect(), "{ok: true}");
-    assert_eq!(request.array_buffer().as_bytes(), b"{\"ok\":true}");
+    assert_eq!(&*request.array_buffer().as_bytes(), b"{\"ok\":true}");
     assert_eq!(request.clone_request().method(), "POST");
 
     let response = Response::json(&JsValue::object(JsObject::from_pairs([(

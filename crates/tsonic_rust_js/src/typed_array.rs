@@ -150,7 +150,7 @@ impl<T: TypedElement> TypedArray<T> {
         let len = buffer.byte_length() / T::BYTES_PER_ELEMENT;
         Self {
             shared: SharedBytes {
-                bytes: Rc::new(RefCell::new(buffer.as_bytes().to_vec())),
+                bytes: buffer.shared_bytes(),
                 byte_offset: 0,
                 len,
             },
@@ -189,7 +189,10 @@ impl<T: TypedElement> TypedArray<T> {
     }
 
     pub fn set_from_slice(&mut self, source: &[T], offset: usize) -> crate::JsResult<()> {
-        if offset + source.len() > self.len() {
+        let end = offset
+            .checked_add(source.len())
+            .ok_or_else(|| crate::range_error("typed array set source out of bounds"))?;
+        if end > self.len() {
             return Err(crate::range_error("typed array set source out of bounds"));
         }
         for (index, value) in source.iter().copied().enumerate() {

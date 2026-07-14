@@ -185,9 +185,9 @@ fn parse_date_fields(text: &str) -> Option<(i32, u32, u32)> {
     if bytes.len() != 10 || bytes[4] != b'-' || bytes[7] != b'-' {
         return None;
     }
-    let year = parse_digits(&text[0..4])? as i32;
-    let month = parse_digits(&text[5..7])? as u32;
-    let day = parse_digits(&text[8..10])? as u32;
+    let year = parse_digits(&bytes[0..4])? as i32;
+    let month = parse_digits(&bytes[5..7])? as u32;
+    let day = parse_digits(&bytes[8..10])? as u32;
     if !(1..=12).contains(&month) || day < 1 || day > days_in_month(year, month) {
         return None;
     }
@@ -198,17 +198,18 @@ fn parse_date_fields(text: &str) -> Option<(i32, u32, u32)> {
 /// millisecond offset from midnight of the date part (negative offsets from
 /// positive timezones included).
 fn parse_time_with_offset(text: &str) -> Option<i64> {
-    let (time, offset_millis) = if let Some(time) = text.strip_suffix('Z') {
+    let bytes = text.as_bytes();
+    let (time, offset_millis) = if let Some(time) = bytes.strip_suffix(b"Z") {
         (time, 0_i64)
     } else {
-        let split_at = text.len().checked_sub(6)?;
-        let offset = text.get(split_at..)?;
-        let sign = match offset.as_bytes()[0] {
+        let split_at = bytes.len().checked_sub(6)?;
+        let offset = bytes.get(split_at..)?;
+        let sign = match offset[0] {
             b'+' => 1_i64,
             b'-' => -1_i64,
             _ => return None,
         };
-        if offset.as_bytes()[3] != b':' {
+        if offset[3] != b':' {
             return None;
         }
         let hours = parse_digits(&offset[1..3])? as i64;
@@ -217,28 +218,27 @@ fn parse_time_with_offset(text: &str) -> Option<i64> {
             return None;
         }
         (
-            &text[..split_at],
+            &bytes[..split_at],
             sign * (hours * 3_600_000 + minutes * 60_000),
         )
     };
 
-    let bytes = time.as_bytes();
-    if bytes.len() < 8 || bytes[2] != b':' || bytes[5] != b':' {
+    if time.len() < 8 || time[2] != b':' || time[5] != b':' {
         return None;
     }
     let hour = parse_digits(&time[0..2])? as i64;
     let minute = parse_digits(&time[3..5])? as i64;
     let second = parse_digits(&time[6..8])? as i64;
     let milli = match &time[8..] {
-        "" => 0_i64,
+        [] => 0_i64,
         fraction => {
-            let digits = fraction.strip_prefix('.')?;
+            let digits = fraction.strip_prefix(b".")?;
             if digits.is_empty() || digits.len() > 3 {
                 return None;
             }
-            let mut padded = digits.to_string();
+            let mut padded = digits.to_vec();
             while padded.len() < 3 {
-                padded.push('0');
+                padded.push(b'0');
             }
             parse_digits(&padded)? as i64
         }
@@ -249,11 +249,13 @@ fn parse_time_with_offset(text: &str) -> Option<i64> {
     Some(hour * 3_600_000 + minute * 60_000 + second * 1_000 + milli - offset_millis)
 }
 
-fn parse_digits(text: &str) -> Option<u64> {
-    if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
+fn parse_digits(bytes: &[u8]) -> Option<u64> {
+    if bytes.is_empty() || !bytes.iter().all(u8::is_ascii_digit) {
         return None;
     }
-    text.parse::<u64>().ok()
+    bytes.iter().try_fold(0_u64, |value, byte| {
+        value.checked_mul(10)?.checked_add(u64::from(byte - b'0'))
+    })
 }
 
 fn days_in_month(year: i32, month: u32) -> u32 {

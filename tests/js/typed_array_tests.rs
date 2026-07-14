@@ -18,12 +18,14 @@ fn typed_array_get_set_fill_and_slice() {
 
 #[test]
 fn typed_array_can_be_created_from_array_buffer() {
-    let mut buffer = tsonic_rust_js::ArrayBuffer::new(4);
+    let buffer = tsonic_rust_js::ArrayBuffer::new(4);
     buffer.as_mut_bytes().copy_from_slice(&[1, 0, 2, 0]);
-    let typed = tsonic_rust_js::Uint16Array::from_buffer(buffer);
+    let mut typed = tsonic_rust_js::Uint16Array::from_buffer(buffer.clone());
     assert_eq!(typed.len(), 2);
     assert_eq!(typed.get(0), Some(1));
     assert_eq!(typed.get(1), Some(2));
+    typed.set_index(0, 9);
+    assert_eq!(&*buffer.as_bytes(), &[9, 0, 2, 0]);
 }
 
 #[test]
@@ -42,5 +44,6 @@ fn typed_array_set_source_and_map_helpers() {
     assert_eq!(values.get(1), Some(9));
     assert_eq!(values.get(2), Some(8));
     assert!(values.set_from_slice(&[1, 2, 3], 3).is_err());
+    assert!(values.set_from_slice(&[1], usize::MAX).is_err());
     assert_eq!(values.map(|value| value + 1), vec![2, 10, 9, 5]);
 }

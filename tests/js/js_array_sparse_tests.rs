@@ -10,6 +10,8 @@ fn sparse_array_length_delete_and_holes() {
     assert!(xs.has_index(1));
     assert!(!xs.has_index(3));
     assert!(xs.delete_at(1));
+    assert!(xs.delete_at(1));
+    assert!(xs.delete_at(100));
     assert_eq!(xs.len(), 5);
     assert!(!xs.has_index(1));
     assert_eq!(xs.get(1), None);
@@ -51,12 +53,16 @@ fn sparse_array_splice_shift_unshift_and_entries() {
 fn js_array_at_supports_negative_indices_and_holes() {
     let mut values: JsArray<f64> = JsArray::from_dense(vec![1.0, 2.0, 3.0]);
     values.set_len(5);
-    assert_eq!(values.at(0), Some(&1.0));
-    assert_eq!(values.at(-1), None);
-    assert_eq!(values.at(-5), Some(&1.0));
-    assert_eq!(values.at(-3), Some(&3.0));
-    assert_eq!(values.at(5), None);
-    assert_eq!(values.at(-6), None);
+    assert_eq!(values.at(0.0), Some(&1.0));
+    assert_eq!(values.at(-1.0), None);
+    assert_eq!(values.at(-5.0), Some(&1.0));
+    assert_eq!(values.at(-3.0), Some(&3.0));
+    assert_eq!(values.at(5.0), None);
+    assert_eq!(values.at(-6.0), None);
     values.set(4, 9.0);
-    assert_eq!(values.at(-1), Some(&9.0));
+    assert_eq!(values.at(-1.0), Some(&9.0));
+    assert_eq!(values.at(1.9), Some(&2.0));
+    assert_eq!(values.at(f64::NAN), Some(&1.0));
+    assert_eq!(values.at(f64::INFINITY), None);
+    assert_eq!(values.at(f64::NEG_INFINITY), None);
 }

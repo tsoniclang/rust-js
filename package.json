@@ -1,0 +1,29 @@
+{
+  "name": "@tsonic/rust-js",
+  "version": "0.0.1",
+  "description": "Rust JavaScript surface runtime artifacts for Tsonic",
+  "type": "module",
+  "files": [
+    "crates",
+    "tests",
+    "tools",
+    "docs",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "test": "cargo test --workspace"
+  },
+  "peerDependencies": {
+    "@tsonic/rust-runtime": "0.0.1"
+  },
+  "devDependencies": {
+    "@tsonic/rust-runtime": "file:../rust-runtime"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

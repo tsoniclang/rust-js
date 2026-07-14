@@ -1,4 +1,5 @@
 use super::slot::JsSlot;
+use crate::coercion::relative_index;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JsArray<T> {
@@ -55,9 +56,8 @@ impl<T> JsArray<T> {
         if self.slots.len() <= index {
             self.slots.resize_with(index + 1, || JsSlot::Hole);
         }
-        let existed = matches!(self.slots[index], JsSlot::Present(_));
         self.slots[index] = JsSlot::Hole;
-        existed
+        true
     }
 
     pub fn get(&self, index: usize) -> Option<&T> {
@@ -69,13 +69,8 @@ impl<T> JsArray<T> {
 
     /// `Array.prototype.at` semantics: negative indices count back from the
     /// end; out-of-range and holes yield `None`.
-    pub fn at(&self, index: isize) -> Option<&T> {
-        let length = isize::try_from(self.length).ok()?;
-        let resolved = if index < 0 { length + index } else { index };
-        if resolved < 0 || resolved >= length {
-            return None;
-        }
-        self.get(usize::try_from(resolved).ok()?)
+    pub fn at(&self, index: f64) -> Option<&T> {
+        self.get(relative_index(index, self.length)?)
     }
 
     pub fn set(&mut self, index: usize, value: T) {

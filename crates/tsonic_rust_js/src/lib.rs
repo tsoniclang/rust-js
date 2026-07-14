@@ -3,6 +3,7 @@
 pub mod abi;
 pub mod array;
 pub mod array_buffer;
+mod coercion;
 pub mod console;
 pub mod data_view;
 pub mod date;

@@ -16,8 +16,8 @@ Date, and RegExp surfaces of `crates/tsonic_rust_js` measured against
 
 | Member | Disposition |
 | --- | --- |
-| `padStart` | implemented — `string::pad_start`, ABI `js_string_pad_start` |
-| `padEnd` | implemented — `string::pad_end`, ABI `js_string_pad_end` |
+| `padStart` | implemented — `string::pad_start` / `pad_start_with`, ABI `js_string_pad_start` / `js_string_pad_start_with`; applies `ToLength`, uses the default space filler when omitted, and fails with `RangeError` at the closed runtime allocation limit |
+| `padEnd` | implemented — `string::pad_end` / `pad_end_with`, ABI `js_string_pad_end` / `js_string_pad_end_with`; applies `ToLength`, uses the default space filler when omitted, and fails with `RangeError` at the closed runtime allocation limit |
 | `repeat` | implemented — `string::repeat`, ABI `js_string_repeat` |
 | `trimStart` | implemented — `string::trim_start`, ABI `js_string_trim_start` |
 | `trimEnd` | implemented — `string::trim_end`, ABI `js_string_trim_end` |
@@ -62,7 +62,11 @@ backend. No delta.
 ## JSON
 
 `json::parse` / `json::stringify` are implemented (ABI `json_parse` /
-`json_stringify`) over the closed `JsValue` carrier. The `space` argument is
+`json_stringify`) over the closed `JsValue` carrier. Stringification returns
+`Option<String>` so top-level `undefined` remains distinct from an empty JSON
+string. Parsing and stringification enforce explicit input, output, depth, and
+node/member limits; allocation or borrow failures are deterministic `JsError`
+values. The `space` argument is
 implemented as `json::stringify_with_indent` (ABI
 `json_stringify_with_indent`): it takes a pre-resolved indent string — the
 compiler lowers a numeric `space` to `" ".repeat(n)` clamped to 0..=10 and a
@@ -126,7 +130,10 @@ vectors in `tests/oracle/regexp-vectors.json`):
   `match_strings`, `match_all` (`TypeError` without `g`), and the flag
   getters `global`/`ignore_case`/`multiline`. Match results are carried by
   `JsRegExpMatch` (`text`, UTF-16 `index`, `input`, 1-based `group`,
-  `group_count`).
+  `group_count`). Matching operations are fallible and enforce a deterministic
+  VM step budget derived from program and input size. Exhaustion reports a
+  `RangeError` rather than returning a false no-match result or allowing
+  adversarial backtracking to run without a bound.
 - rejected-by-architecture (deterministic `SyntaxError` at construction):
   lazy quantifiers, backreferences, lookaround, named groups, `\b`/`\B`,
   `\p`/`\P`, `\c`, `\k`, `\u{...}`, flags `d s u v y`, quantifier bounds

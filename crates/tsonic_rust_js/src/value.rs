@@ -1,6 +1,7 @@
 //! Closed JS runtime value carrier.
 
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::fmt;
 use std::rc::Rc;
 
@@ -59,24 +60,114 @@ impl JsValue {
     }
 
     pub fn inspect(&self) -> String {
-        match self {
-            Self::Undefined => "undefined".to_string(),
-            Self::Null => "null".to_string(),
-            Self::Bool(value) => value.to_string(),
-            Self::Number(value) => format_js_number(*value),
-            Self::String(value) => format!("{value:?}"),
-            Self::Object(value) => value.borrow().inspect(),
-            Self::Array(values) => {
-                let values = values.borrow();
-                let body = values
-                    .values()
-                    .iter()
-                    .map(|value| value.map(|value| value.inspect()).unwrap_or_default())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                format!("[{body}]")
-            }
+        self.inspect_with_limits(Some(2), Some(100))
+    }
+
+    pub fn inspect_with_limits(
+        &self,
+        max_depth: Option<usize>,
+        max_entries: Option<usize>,
+    ) -> String {
+        InspectState {
+            active: HashSet::new(),
+            max_depth: max_depth.unwrap_or(MAX_INSPECT_DEPTH),
+            max_entries: max_entries.unwrap_or(usize::MAX),
         }
+        .render(self, 0)
+    }
+}
+
+const MAX_INSPECT_DEPTH: usize = 64;
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum ContainerId {
+    Object(usize),
+    Array(usize),
+}
+
+struct InspectState {
+    active: HashSet<ContainerId>,
+    max_depth: usize,
+    max_entries: usize,
+}
+
+impl InspectState {
+    fn render(&mut self, value: &JsValue, depth: usize) -> String {
+        match value {
+            JsValue::Undefined => "undefined".to_string(),
+            JsValue::Null => "null".to_string(),
+            JsValue::Bool(value) => value.to_string(),
+            JsValue::Number(value) => format_js_number(*value),
+            JsValue::String(value) => format!("{value:?}"),
+            JsValue::Object(object) => self.render_object(object, depth),
+            JsValue::Array(values) => self.render_array(values, depth),
+        }
+    }
+
+    fn render_object(&mut self, object: &Rc<RefCell<JsObject>>, depth: usize) -> String {
+        if depth > self.max_depth {
+            return "[Object]".to_string();
+        }
+        let id = ContainerId::Object(Rc::as_ptr(object) as usize);
+        if !self.active.insert(id) {
+            return "[Circular]".to_string();
+        }
+        let entries = match object.try_borrow() {
+            Ok(object) => object.entries(),
+            Err(_) => {
+                self.active.remove(&id);
+                return "[Uninspectable]".to_string();
+            }
+        };
+        let total = entries.len();
+        let mut rendered = entries
+            .into_iter()
+            .take(self.max_entries)
+            .map(|(key, value)| format!("{key}: {}", self.render(&value, depth + 1)))
+            .collect::<Vec<_>>();
+        append_remaining(&mut rendered, total, self.max_entries);
+        self.active.remove(&id);
+        format!("{{{}}}", rendered.join(", "))
+    }
+
+    fn render_array(&mut self, values: &Rc<RefCell<JsArray<JsValue>>>, depth: usize) -> String {
+        if depth > self.max_depth {
+            return "[Array]".to_string();
+        }
+        let id = ContainerId::Array(Rc::as_ptr(values) as usize);
+        if !self.active.insert(id) {
+            return "[Circular]".to_string();
+        }
+        let values = match values.try_borrow() {
+            Ok(values) => values
+                .values()
+                .into_iter()
+                .map(|value| value.cloned())
+                .collect::<Vec<_>>(),
+            Err(_) => {
+                self.active.remove(&id);
+                return "[Uninspectable]".to_string();
+            }
+        };
+        let total = values.len();
+        let mut rendered = values
+            .into_iter()
+            .take(self.max_entries)
+            .map(|value| {
+                value
+                    .map(|value| self.render(&value, depth + 1))
+                    .unwrap_or_default()
+            })
+            .collect::<Vec<_>>();
+        append_remaining(&mut rendered, total, self.max_entries);
+        self.active.remove(&id);
+        format!("[{}]", rendered.join(", "))
+    }
+}
+
+fn append_remaining(rendered: &mut Vec<String>, total: usize, max_entries: usize) {
+    if total > max_entries {
+        rendered.push(format!("... {} more items", total - max_entries));
     }
 }
 

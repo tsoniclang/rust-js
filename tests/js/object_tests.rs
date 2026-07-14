@@ -27,3 +27,19 @@ fn object_assign_copies_left_to_right() {
     assert_eq!(target.get("x"), JsValue::Number(2.0));
     assert_eq!(target.get("y"), JsValue::Bool(true));
 }
+
+#[test]
+fn object_keys_follow_ecmascript_array_index_order() {
+    let object = JsObject::from_pairs([
+        ("2", JsValue::Number(2.0)),
+        ("1", JsValue::Number(1.0)),
+        ("01", JsValue::Number(3.0)),
+        ("4294967294", JsValue::Number(4.0)),
+        ("4294967295", JsValue::Number(5.0)),
+    ]);
+
+    assert_eq!(
+        object.keys(),
+        vec!["1", "2", "4294967294", "01", "4294967295"]
+    );
+}
