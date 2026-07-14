@@ -5,18 +5,21 @@ use tsonic_rust_runtime::JsErrorKind;
 fn utf16_length_and_indexes() {
     assert_eq!(string::js_len("abc"), 3);
     assert_eq!(string::js_len("😀"), 2);
-    assert_eq!(string::char_at("abc", 5), "");
-    assert_eq!(string::at("abc", 1).as_deref(), Some("b"));
-    assert_eq!(string::at("abc", -1).as_deref(), Some("c"));
-    assert_eq!(string::at("abc", 9), None);
+    assert_eq!(string::char_at("abc", 5.0), "");
+    assert_eq!(string::at("abc", 1.0).as_deref(), Some("b"));
+    assert_eq!(string::at("abc", -1.0).as_deref(), Some("c"));
+    assert_eq!(string::at("abc", 9.0), None);
+    assert_eq!(string::at("abc", 1.9).as_deref(), Some("b"));
+    assert_eq!(string::at("abc", f64::NAN).as_deref(), Some("a"));
+    assert_eq!(string::at("abc", f64::INFINITY), None);
 }
 
 #[test]
 fn utf16_code_units_and_points() {
-    assert_eq!(string::char_code_at("😀", 0), Some(0xD83D as f64));
-    assert_eq!(string::char_code_at("😀", 1), Some(0xDE00 as f64));
-    assert_eq!(string::code_point_at("😀", 0), Some(0x1F600));
-    assert_eq!(string::code_point_at("😀", 1), Some(0xDE00));
+    assert_eq!(string::char_code_at("😀", 0.0), Some(0xD83D as f64));
+    assert_eq!(string::char_code_at("😀", 1.0), Some(0xDE00 as f64));
+    assert_eq!(string::code_point_at("😀", 0.0), Some(0x1F600));
+    assert_eq!(string::code_point_at("😀", 1.0), Some(0xDE00));
 }
 
 #[test]
@@ -57,8 +60,33 @@ fn split_and_repeat_and_trim() {
 
 #[test]
 fn pad_helpers_and_case() {
-    assert_eq!(string::pad_start("5", 3, "0"), "005");
-    assert_eq!(string::pad_end("5", 3, "0"), "500");
+    assert_eq!(string::pad_start_with("5", 3.0, "0").as_deref(), Ok("005"));
+    assert_eq!(string::pad_end_with("5", 3.0, "0").as_deref(), Ok("500"));
+    assert_eq!(
+        string::pad_start_with("x", 4.0, "ab").as_deref(),
+        Ok("abax")
+    );
+    assert_eq!(string::pad_end_with("x", 4.0, "ab").as_deref(), Ok("xaba"));
+    assert_eq!(string::pad_start("x", 3.0).as_deref(), Ok("  x"));
+    assert_eq!(string::pad_end("x", 3.0).as_deref(), Ok("x  "));
+    assert_eq!(string::pad_start_with("x", -3.9, "0").as_deref(), Ok("x"));
+    assert_eq!(
+        string::pad_start_with("x", f64::NAN, "0").as_deref(),
+        Ok("x")
+    );
+    assert_eq!(string::pad_start_with("x", 3.9, "0").as_deref(), Ok("00x"));
+    assert_eq!(
+        string::pad_start_with("x", f64::INFINITY, "").as_deref(),
+        Ok("x")
+    );
+    assert_eq!(
+        string::pad_start("x", f64::INFINITY).unwrap_err().kind(),
+        JsErrorKind::RangeError
+    );
+    assert_eq!(
+        string::pad_start_with("x", 2.0, "😀").unwrap_err().kind(),
+        JsErrorKind::Unsupported
+    );
     assert_eq!(string::to_lower_case("AbC"), "abc");
     assert_eq!(string::to_upper_case("AbC"), "ABC");
 }
@@ -87,8 +115,8 @@ fn search_edge_cases() {
 fn conversion_helpers() {
     assert_eq!(string::to_lower_case("HELLO"), "hello");
     assert_eq!(string::to_upper_case("hello"), "HELLO");
-    assert_eq!(string::char_at("😀", 5), "");
-    assert_eq!(string::at("😀", 1).as_deref(), Some("\u{FFFD}"));
-    assert_eq!(string::code_point_at("😀", 0), Some(0x1f600));
-    assert_eq!(string::code_point_at("😀", 1), Some(0xDE00));
+    assert_eq!(string::char_at("😀", 5.0), "");
+    assert_eq!(string::at("😀", 1.0).as_deref(), Some("\u{FFFD}"));
+    assert_eq!(string::code_point_at("😀", 0.0), Some(0x1f600));
+    assert_eq!(string::code_point_at("😀", 1.0), Some(0xDE00));
 }

@@ -36,11 +36,16 @@
 //! (exec-driven `lastIndex` values always land on char boundaries).
 //! Non-nullable patterns over astral input and nullable patterns over BMP
 //! input keep exact oracle-proven behavior.
+//!
+//! Every matching operation is guarded by a deterministic VM step budget
+//! derived from the compiled program and input size. Exhaustion is a
+//! `RangeError`, never a false no-match result, so adversarial backtracking
+//! cannot spin a generated process indefinitely.
 
 mod parser;
 mod vm;
 
-use crate::errors::{type_error, unsupported, JsResult};
+use crate::errors::{range_error, type_error, unsupported, JsResult};
 
 /// Match carrier mirroring the JS `RegExpMatchArray` shape: the whole match
 /// (`text`), its UTF-16 code-unit `index`, the `input` searched, and the
@@ -182,7 +187,7 @@ impl JsRegExp {
     /// at `lastIndex` (UTF-16 code units) and `lastIndex` advances to the
     /// match end, or resets to 0 when no match is found; without `g` the
     /// search always starts at 0 and `lastIndex` is untouched.
-    pub fn exec(&mut self, input: &str) -> Option<JsRegExpMatch> {
+    pub fn exec(&mut self, input: &str) -> JsResult<Option<JsRegExpMatch>> {
         let chars: Vec<char> = input.chars().collect();
         let start = if self.global {
             let last = self.last_index.max(0) as usize;
@@ -190,34 +195,48 @@ impl JsRegExp {
                 Some(index) => index,
                 None => {
                     self.last_index = 0;
-                    return None;
+                    return Ok(None);
                 }
             }
         } else {
             0
         };
-        match self.find_from(&chars, start) {
+        let mut budget = vm::ExecutionBudget::for_search(&self.program, chars.len());
+        match self.find_from(&chars, start, &mut budget)? {
             Some(caps) => {
                 if self.global {
                     self.last_index = utf16_index(&chars, match_bounds(&caps).1) as i32;
                 }
-                Some(build_match(&chars, input, &caps, self.program_groups()))
+                Ok(Some(build_match(
+                    &chars,
+                    input,
+                    &caps,
+                    self.program_groups(),
+                )))
             }
             None => {
                 if self.global {
                     self.last_index = 0;
                 }
-                None
+                Ok(None)
             }
         }
     }
 
     /// Stateless first match (JS `String.prototype.match` without `g`,
     /// ignoring `lastIndex`).
-    pub fn match_first(&self, input: &str) -> Option<JsRegExpMatch> {
+    pub fn match_first(&self, input: &str) -> JsResult<Option<JsRegExpMatch>> {
         let chars: Vec<char> = input.chars().collect();
-        let caps = self.find_from(&chars, 0)?;
-        Some(build_match(&chars, input, &caps, self.program_groups()))
+        let mut budget = vm::ExecutionBudget::for_search(&self.program, chars.len());
+        let Some(caps) = self.find_from(&chars, 0, &mut budget)? else {
+            return Ok(None);
+        };
+        Ok(Some(build_match(
+            &chars,
+            input,
+            &caps,
+            self.program_groups(),
+        )))
     }
 
     /// Mirrors `String.prototype.match` with the `g` flag: the texts of all
@@ -227,7 +246,7 @@ impl JsRegExp {
         self.check_empty_match_iteration(input)?;
         let chars: Vec<char> = input.chars().collect();
         let texts: Vec<String> = self
-            .collect_matches(&chars)
+            .collect_matches(&chars)?
             .iter()
             .map(|caps| {
                 let (start, end) = match_bounds(caps);
@@ -248,7 +267,7 @@ impl JsRegExp {
         self.check_empty_match_iteration(input)?;
         let chars: Vec<char> = input.chars().collect();
         Ok(self
-            .collect_matches(&chars)
+            .collect_matches(&chars)?
             .iter()
             .map(|caps| build_match(&chars, input, caps, self.program_groups()))
             .collect())
@@ -258,10 +277,11 @@ impl JsRegExp {
     /// matches by one char. Callers guard the nullable-pattern/astral-input
     /// combination via `check_empty_match_iteration`, so advancing by one
     /// char here is exactly JS's one UTF-16 code unit.
-    fn collect_matches(&self, chars: &[char]) -> Vec<Vec<Option<usize>>> {
+    fn collect_matches(&self, chars: &[char]) -> JsResult<Vec<Vec<Option<usize>>>> {
         let mut out = Vec::new();
         let mut from = 0_usize;
-        while let Some(caps) = self.find_from(chars, from) {
+        let mut budget = vm::ExecutionBudget::for_search(&self.program, chars.len());
+        while let Some(caps) = self.find_from(chars, from, &mut budget)? {
             let (start, end) = match_bounds(&caps);
             from = if end == start { end + 1 } else { end };
             out.push(caps);
@@ -269,21 +289,24 @@ impl JsRegExp {
                 break;
             }
         }
-        out
+        Ok(out)
     }
 
     /// Mirrors `RegExp.prototype.test`, which delegates to `exec`: with the
     /// `g` flag the search starts at `lastIndex`, which advances to the match
     /// end (UTF-16 code units) on success and resets to 0 on failure; without
     /// `g` the call is stateless and ignores `lastIndex`.
-    pub fn test(&mut self, input: &str) -> bool {
-        self.exec(input).is_some()
+    pub fn test(&mut self, input: &str) -> JsResult<bool> {
+        Ok(self.exec(input)?.is_some())
     }
 
     /// Byte offsets `(start, end)` of the first match in `input`.
-    pub fn find_first(&self, input: &str) -> Option<(usize, usize)> {
+    pub fn find_first(&self, input: &str) -> JsResult<Option<(usize, usize)>> {
         let chars: Vec<char> = input.chars().collect();
-        let caps = self.find_from(&chars, 0)?;
+        let mut budget = vm::ExecutionBudget::for_search(&self.program, chars.len());
+        let Some(caps) = self.find_from(&chars, 0, &mut budget)? else {
+            return Ok(None);
+        };
         let (start, end) = match_bounds(&caps);
         let mut byte = 0_usize;
         let mut byte_start = 0_usize;
@@ -292,14 +315,14 @@ impl JsRegExp {
                 byte_start = byte;
             }
             if index == end {
-                return Some((byte_start, byte));
+                return Ok(Some((byte_start, byte)));
             }
             byte += value.len_utf8();
         }
         if start == chars.len() {
             byte_start = byte;
         }
-        Some((byte_start, byte))
+        Ok(Some((byte_start, byte)))
     }
 
     /// Mirrors `String.prototype.replace(regexp, replacement)` with a string
@@ -315,7 +338,8 @@ impl JsRegExp {
         let mut out = String::new();
         let mut last = 0_usize;
         let mut from = 0_usize;
-        while let Some(caps) = self.find_from(&chars, from) {
+        let mut budget = vm::ExecutionBudget::for_search(&self.program, chars.len());
+        while let Some(caps) = self.find_from(&chars, from, &mut budget)? {
             let (start, end) = match_bounds(&caps);
             out.extend(&chars[last..start]);
             expand_replacement(&mut out, replacement, &chars, &caps, self.program_groups());
@@ -344,9 +368,10 @@ impl JsRegExp {
         }
         self.check_empty_match_iteration(input)?;
         let chars: Vec<char> = input.chars().collect();
+        let mut budget = vm::ExecutionBudget::for_search(&self.program, chars.len());
         let size = chars.len();
         if size == 0 {
-            return Ok(if self.exec_anchored(&chars, 0).is_some() {
+            return Ok(if self.exec_anchored(&chars, 0, &mut budget)?.is_some() {
                 Vec::new()
             } else {
                 vec![String::new()]
@@ -356,7 +381,7 @@ impl JsRegExp {
         let mut segment_start = 0_usize;
         let mut cursor = 0_usize;
         while cursor < size {
-            match self.exec_anchored(&chars, cursor) {
+            match self.exec_anchored(&chars, cursor, &mut budget)? {
                 None => cursor += 1,
                 Some(caps) => {
                     let end = match_bounds(&caps).1.min(size);
@@ -376,15 +401,16 @@ impl JsRegExp {
 
     /// Mirrors `String.prototype.search`: the UTF-16 code-unit index of the
     /// first match, or -1.
-    pub fn search(&self, input: &str) -> i32 {
+    pub fn search(&self, input: &str) -> JsResult<i32> {
         let chars: Vec<char> = input.chars().collect();
-        match self.find_from(&chars, 0) {
+        let mut budget = vm::ExecutionBudget::for_search(&self.program, chars.len());
+        Ok(match self.find_from(&chars, 0, &mut budget)? {
             Some(caps) => chars[..match_bounds(&caps).0]
                 .iter()
                 .map(|value| value.len_utf16())
                 .sum::<usize>() as i32,
             None => -1,
-        }
+        })
     }
 
     fn program_groups(&self) -> usize {
@@ -405,12 +431,35 @@ impl JsRegExp {
         Ok(())
     }
 
-    fn exec_anchored(&self, chars: &[char], at: usize) -> Option<Vec<Option<usize>>> {
-        vm::exec_at(&self.program, chars, at, self.ignore_case, self.multiline)
+    fn exec_anchored(
+        &self,
+        chars: &[char],
+        at: usize,
+        budget: &mut vm::ExecutionBudget,
+    ) -> JsResult<Option<Vec<Option<usize>>>> {
+        vm::exec_at(
+            &self.program,
+            chars,
+            at,
+            self.ignore_case,
+            self.multiline,
+            budget,
+        )
+        .map_err(|_| range_error("RegExp execution exceeded the configured step limit"))
     }
 
-    fn find_from(&self, chars: &[char], start: usize) -> Option<Vec<Option<usize>>> {
-        (start..=chars.len()).find_map(|at| self.exec_anchored(chars, at))
+    fn find_from(
+        &self,
+        chars: &[char],
+        start: usize,
+        budget: &mut vm::ExecutionBudget,
+    ) -> JsResult<Option<Vec<Option<usize>>>> {
+        for at in start..=chars.len() {
+            if let Some(captures) = self.exec_anchored(chars, at, budget)? {
+                return Ok(Some(captures));
+            }
+        }
+        Ok(None)
     }
 }
 

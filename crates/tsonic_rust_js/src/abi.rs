@@ -37,8 +37,9 @@ pub use crate::regexp::{JsRegExp, JsRegExpMatch};
 pub use crate::set::JsSet;
 pub use crate::string::{
     at as js_string_at, char_at as js_string_char_at, code_point_at as js_string_code_point_at,
-    pad_end as js_string_pad_end, pad_start as js_string_pad_start, repeat as js_string_repeat,
-    trim_end as js_string_trim_end, trim_start as js_string_trim_start,
+    pad_end as js_string_pad_end, pad_end_with as js_string_pad_end_with,
+    pad_start as js_string_pad_start, pad_start_with as js_string_pad_start_with,
+    repeat as js_string_repeat, trim_end as js_string_trim_end, trim_start as js_string_trim_start,
 };
 pub use crate::typed_array::{
     Float32Array, Float64Array, Int16Array, Int32Array, Int8Array, Uint16Array, Uint32Array,

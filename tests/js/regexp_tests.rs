@@ -4,42 +4,42 @@ use tsonic_rust_runtime::JsErrorKind;
 #[test]
 fn regexp_test_and_find_first() {
     let mut re = JsRegExp::new("b+c", "").unwrap();
-    assert!(re.test("abbcd"));
-    assert!(!re.test("abd"));
-    assert_eq!(re.find_first("abbcd"), Some((1, 4)));
-    assert_eq!(re.find_first("xyz"), None);
+    assert!(re.test("abbcd").unwrap());
+    assert!(!re.test("abd").unwrap());
+    assert_eq!(re.find_first("abbcd").unwrap(), Some((1, 4)));
+    assert_eq!(re.find_first("xyz").unwrap(), None);
     assert_eq!(re.source(), "b+c");
     assert_eq!(re.flags(), "");
 
     // Byte offsets over multi-byte input.
     let re = JsRegExp::new("é+", "").unwrap();
-    assert_eq!(re.find_first("aéé!"), Some((1, 5)));
+    assert_eq!(re.find_first("aéé!").unwrap(), Some((1, 5)));
 }
 
 #[test]
 fn regexp_classes_quantifiers_and_alternation() {
     let re = JsRegExp::new(r"[a-c]+", "").unwrap();
-    assert_eq!(re.find_first("zzabcaz"), Some((2, 6)));
+    assert_eq!(re.find_first("zzabcaz").unwrap(), Some((2, 6)));
 
     let re = JsRegExp::new(r"[a-z]{2,3}", "").unwrap();
-    assert_eq!(re.find_first("12abcd3"), Some((2, 5)));
+    assert_eq!(re.find_first("12abcd3").unwrap(), Some((2, 5)));
 
     let re = JsRegExp::new(r"\d{2}|\w+", "").unwrap();
-    assert_eq!(re.find_first("!!42go"), Some((2, 4)));
+    assert_eq!(re.find_first("!!42go").unwrap(), Some((2, 4)));
 
     let mut re = JsRegExp::new(r"a{2,}", "").unwrap();
-    assert!(re.test("caaab"));
-    assert!(!re.test("cab"));
+    assert!(re.test("caaab").unwrap());
+    assert!(!re.test("cab").unwrap());
 }
 
 #[test]
 fn regexp_anchors_and_flags() {
     let mut re = JsRegExp::new("^b$", "m").unwrap();
-    assert!(re.test("a\nb\nc"));
-    assert!(!JsRegExp::new("^b$", "").unwrap().test("a\nb\nc"));
+    assert!(re.test("a\nb\nc").unwrap());
+    assert!(!JsRegExp::new("^b$", "").unwrap().test("a\nb\nc").unwrap());
 
     let mut re = JsRegExp::new("abc", "i").unwrap();
-    assert!(re.test("xAbCy"));
+    assert!(re.test("xAbCy").unwrap());
     assert_eq!(re.flags(), "i");
 }
 
@@ -78,10 +78,10 @@ fn regexp_split_and_search() {
         JsErrorKind::Unsupported
     );
 
-    assert_eq!(JsRegExp::new("b", "").unwrap().search("ab"), 1);
-    assert_eq!(JsRegExp::new("z", "").unwrap().search("ab"), -1);
+    assert_eq!(JsRegExp::new("b", "").unwrap().search("ab").unwrap(), 1);
+    assert_eq!(JsRegExp::new("z", "").unwrap().search("ab").unwrap(), -1);
     // search reports UTF-16 code-unit indexes: 😀 is two code units.
-    assert_eq!(JsRegExp::new("b", "").unwrap().search("😀b"), 2);
+    assert_eq!(JsRegExp::new("b", "").unwrap().search("😀b").unwrap(), 2);
 }
 
 #[test]
@@ -173,13 +173,13 @@ fn regexp_rejects_code_unit_sensitive_constructs_at_construction() {
     assert!(JsRegExp::new(r"[\x00-퟿]", "").is_ok());
     assert!(JsRegExp::new(r"[a-z你￿]", "").is_ok());
     let mut boundary = JsRegExp::new(r"[\x61-퟿]+", "").unwrap();
-    assert!(!boundary.test("😀")); // Node: neither surrogate half is in range
-    assert!(boundary.test("aЖ你"));
+    assert!(!boundary.test("😀").unwrap()); // Node: neither surrogate half is in range
+    assert!(boundary.test("aЖ你").unwrap());
 
     // A grouped astral literal repeats the whole surrogate pair in Node too,
     // so it stays accepted and exact (unlike a directly quantified one).
     let mut grouped = JsRegExp::new(r"(?:💚)+", "").unwrap();
-    assert!(grouped.test("a💚💚b"));
+    assert!(grouped.test("a💚💚b").unwrap());
 }
 
 #[test]
@@ -189,8 +189,19 @@ fn regexp_empty_match_iteration_terminates() {
     assert_eq!(re.replace("", "x").unwrap(), "x");
 
     // Loops with possibly-empty bodies must not spin forever.
-    assert!(JsRegExp::new("(?:a|)*b", "").unwrap().test("b"));
-    assert!(JsRegExp::new("(?:a|){3}b", "").unwrap().test("ab"));
+    assert!(JsRegExp::new("(?:a|)*b", "").unwrap().test("b").unwrap());
+    assert!(JsRegExp::new("(?:a|){3}b", "").unwrap().test("ab").unwrap());
+}
+
+#[test]
+fn regexp_backtracking_exhaustion_fails_deterministically() {
+    let mut regexp = JsRegExp::new("^(a+)+b$", "").unwrap();
+    let error = regexp.test(&"a".repeat(64)).unwrap_err();
+    assert_eq!(error.kind(), JsErrorKind::RangeError);
+    assert_eq!(
+        error.message(),
+        "RegExp execution exceeded the configured step limit"
+    );
 }
 
 #[test]
@@ -212,60 +223,60 @@ fn regexp_flag_and_last_index_getters() {
 #[test]
 fn regexp_exec_advances_and_resets_last_index() {
     let mut re = JsRegExp::new(r"\d+", "g").unwrap();
-    let first = re.exec("a1b22c333").unwrap();
+    let first = re.exec("a1b22c333").unwrap().unwrap();
     assert_eq!(first.text(), "1");
     assert_eq!(first.index(), 1);
     assert_eq!(first.input(), "a1b22c333");
     assert_eq!(re.last_index(), 2);
 
-    let second = re.exec("a1b22c333").unwrap();
+    let second = re.exec("a1b22c333").unwrap().unwrap();
     assert_eq!((second.text(), second.index()), ("22".to_string(), 3));
     assert_eq!(re.last_index(), 5);
 
-    let third = re.exec("a1b22c333").unwrap();
+    let third = re.exec("a1b22c333").unwrap().unwrap();
     assert_eq!((third.text(), third.index()), ("333".to_string(), 6));
     assert_eq!(re.last_index(), 9);
 
     // Exhausted: null result resets lastIndex to 0, then matching restarts.
-    assert!(re.exec("a1b22c333").is_none());
+    assert!(re.exec("a1b22c333").unwrap().is_none());
     assert_eq!(re.last_index(), 0);
-    assert_eq!(re.exec("a1b22c333").unwrap().text(), "1");
+    assert_eq!(re.exec("a1b22c333").unwrap().unwrap().text(), "1");
 
     // lastIndex beyond the input: no match, reset to 0.
     re.set_last_index(99).unwrap();
-    assert!(re.exec("a1").is_none());
+    assert!(re.exec("a1").unwrap().is_none());
     assert_eq!(re.last_index(), 0);
 
     // Negative lastIndex behaves like 0 (ToLength clamp).
     re.set_last_index(-5).unwrap();
-    assert_eq!(re.exec("a1").unwrap().index(), 1);
+    assert_eq!(re.exec("a1").unwrap().unwrap().index(), 1);
 }
 
 #[test]
 fn regexp_exec_without_g_ignores_state() {
     let mut re = JsRegExp::new("o", "").unwrap();
     re.set_last_index(2).unwrap();
-    let m = re.exec("foo").unwrap();
+    let m = re.exec("foo").unwrap().unwrap();
     assert_eq!((m.text(), m.index()), ("o".to_string(), 1));
     // Non-global exec never touches lastIndex.
     assert_eq!(re.last_index(), 2);
-    assert_eq!(re.exec("foo").unwrap().index(), 1);
+    assert_eq!(re.exec("foo").unwrap().unwrap().index(), 1);
 }
 
 #[test]
 fn regexp_exec_reports_utf16_indexes_and_last_index() {
     let mut re = JsRegExp::new(r"\d", "g").unwrap();
-    let m = re.exec("你1好2").unwrap();
+    let m = re.exec("你1好2").unwrap().unwrap();
     assert_eq!((m.text(), m.index()), ("1".to_string(), 1));
     assert_eq!(re.last_index(), 2);
-    let m = re.exec("你1好2").unwrap();
+    let m = re.exec("你1好2").unwrap().unwrap();
     assert_eq!((m.text(), m.index()), ("2".to_string(), 3));
 }
 
 #[test]
 fn regexp_match_carrier_exposes_groups() {
     let re = JsRegExp::new(r"(\w+)@(\w+)|(!)", "").unwrap();
-    let m = re.match_first("mail: a@b").unwrap();
+    let m = re.match_first("mail: a@b").unwrap().unwrap();
     assert_eq!(m.text(), "a@b");
     assert_eq!(m.index(), 6);
     assert_eq!(m.input(), "mail: a@b");
@@ -277,7 +288,7 @@ fn regexp_match_carrier_exposes_groups() {
     assert_eq!(m.group(3), None);
     assert_eq!(m.group(4), None);
 
-    assert!(re.match_first("no matches here?").is_none());
+    assert!(re.match_first("no matches here?").unwrap().is_none());
 }
 
 #[test]
@@ -302,28 +313,28 @@ fn regexp_global_test_advances_and_resets_last_index() {
     // test delegates to exec: g starts at lastIndex, advances to the match
     // end (UTF-16 code units), and resets to 0 when nothing matches.
     let mut re = JsRegExp::new(r"\d+", "g").unwrap();
-    assert!(re.test("a1b22c333"));
+    assert!(re.test("a1b22c333").unwrap());
     assert_eq!(re.last_index(), 2);
-    assert!(re.test("a1b22c333"));
+    assert!(re.test("a1b22c333").unwrap());
     assert_eq!(re.last_index(), 5);
-    assert!(re.test("a1b22c333"));
+    assert!(re.test("a1b22c333").unwrap());
     assert_eq!(re.last_index(), 9);
-    assert!(!re.test("a1b22c333"));
+    assert!(!re.test("a1b22c333").unwrap());
     assert_eq!(re.last_index(), 0);
-    assert!(re.test("a1b22c333"));
+    assert!(re.test("a1b22c333").unwrap());
     assert_eq!(re.last_index(), 2);
 
     // lastIndex counts UTF-16 code units (你 is one, but 😀 would be two).
     let mut re = JsRegExp::new(r"\d", "g").unwrap();
-    assert!(re.test("你1好2"));
+    assert!(re.test("你1好2").unwrap());
     assert_eq!(re.last_index(), 2);
 
     // Non-global test is stateless and ignores lastIndex.
     let mut re = JsRegExp::new("o", "").unwrap();
     re.set_last_index(2).unwrap();
-    assert!(re.test("foo"));
+    assert!(re.test("foo").unwrap());
     assert_eq!(re.last_index(), 2);
-    assert!(re.test("foo"));
+    assert!(re.test("foo").unwrap());
 }
 
 #[test]
@@ -400,7 +411,7 @@ fn regexp_nullable_exec_over_astral_input_stays_exact() {
     // (the empty match leaves lastIndex at 0), never entering the pair.
     let mut re = JsRegExp::new("a*", "g").unwrap();
     for _ in 0..3 {
-        let m = re.exec("💚a").unwrap();
+        let m = re.exec("💚a").unwrap().unwrap();
         assert_eq!((m.text().as_str(), m.index()), ("", 0));
         assert_eq!(re.last_index(), 0);
     }

@@ -24,3 +24,4 @@ target
 .temp/
 .analysis/
 /target/
+node_modules/

@@ -2,6 +2,8 @@
 
 use tsonic_rust_runtime::{JsError, JsErrorKind};
 
+use crate::coercion::relative_index;
+
 /// JS-facing string value conversion contract used by dense array join and future array helpers.
 pub trait JsToString {
     fn to_js_string(&self) -> String;
@@ -24,46 +26,31 @@ fn from_units(units: &[u16]) -> String {
     String::from_utf16_lossy(units)
 }
 
-fn normalize_index(index: isize, length: usize) -> Option<usize> {
-    if length == 0 {
-        return None;
-    }
-    let normalized = if index < 0 {
-        index.saturating_add(length as isize)
-    } else {
-        index
-    };
-    if normalized < 0 || normalized >= length as isize {
-        return None;
-    }
-    Some(normalized as usize)
-}
-
 pub fn js_len(value: &str) -> usize {
     utf16_units(value).len()
 }
 
-pub fn char_at(value: &str, index: isize) -> String {
+pub fn char_at(value: &str, index: f64) -> String {
     let units = utf16_units(value);
-    match normalize_index(index, units.len()) {
+    match relative_index(index, units.len()) {
         Some(pos) => from_units(&[units[pos]]),
         None => String::new(),
     }
 }
 
-pub fn at(value: &str, index: isize) -> Option<String> {
+pub fn at(value: &str, index: f64) -> Option<String> {
     let units = utf16_units(value);
-    normalize_index(index, units.len()).map(|pos| from_units(&[units[pos]]))
+    relative_index(index, units.len()).map(|pos| from_units(&[units[pos]]))
 }
 
-pub fn char_code_at(value: &str, index: isize) -> Option<f64> {
+pub fn char_code_at(value: &str, index: f64) -> Option<f64> {
     let units = utf16_units(value);
-    normalize_index(index, units.len()).map(|pos| units[pos] as f64)
+    relative_index(index, units.len()).map(|pos| units[pos] as f64)
 }
 
-pub fn code_point_at(value: &str, index: isize) -> Option<u32> {
+pub fn code_point_at(value: &str, index: f64) -> Option<u32> {
     let units = utf16_units(value);
-    let pos = normalize_index(index, units.len())?;
+    let pos = relative_index(index, units.len())?;
     let first = units[pos];
     if (0xD800..=0xDBFF).contains(&first) && pos + 1 < units.len() {
         let second = units[pos + 1];
@@ -269,46 +256,87 @@ pub fn repeat(value: &str, count: isize) -> Result<String, JsError> {
     Ok(out)
 }
 
-pub fn pad_start(value: &str, target_length: usize, pad: &str) -> String {
-    if js_len(value) >= target_length {
-        return value.to_string();
-    }
-    if pad.is_empty() {
-        return value.to_string();
-    }
-    let units = utf16_units(value);
-    let need = target_length - units.len();
-    if need == 0 {
-        return value.to_string();
-    }
+pub const MAX_STRING_UTF16_UNITS: u64 = 16_777_216;
+const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 
-    let mut prefix = String::new();
-    while utf16_units(&prefix).len() < need {
-        prefix.push_str(pad);
-    }
-    let truncated = utf16_units(&prefix);
-    let start = truncated.len().saturating_sub(need);
-    let prefix = from_units(&truncated[start..]);
-
-    format!("{prefix}{value}")
+pub fn pad_start(value: &str, target_length: f64) -> Result<String, JsError> {
+    pad(value, target_length, None, true)
 }
 
-pub fn pad_end(value: &str, target_length: usize, pad: &str) -> String {
-    if js_len(value) >= target_length {
-        return value.to_string();
+pub fn pad_start_with(value: &str, target_length: f64, filler: &str) -> Result<String, JsError> {
+    pad(value, target_length, Some(filler), true)
+}
+
+pub fn pad_end(value: &str, target_length: f64) -> Result<String, JsError> {
+    pad(value, target_length, None, false)
+}
+
+pub fn pad_end_with(value: &str, target_length: f64, filler: &str) -> Result<String, JsError> {
+    pad(value, target_length, Some(filler), false)
+}
+
+fn pad(
+    value: &str,
+    target_length: f64,
+    filler: Option<&str>,
+    at_start: bool,
+) -> Result<String, JsError> {
+    let target_length = to_length(target_length);
+    let value_units = utf16_units(value);
+    if target_length <= value_units.len() as u64 {
+        return Ok(value.to_string());
     }
-    if pad.is_empty() {
-        return value.to_string();
+    let filler = filler.unwrap_or(" ");
+    if filler.is_empty() {
+        return Ok(value.to_string());
     }
-    let units = utf16_units(value);
-    let need = target_length - units.len();
-    let mut suffix = String::new();
-    while utf16_units(&suffix).len() < need {
-        suffix.push_str(pad);
+    if target_length > MAX_STRING_UTF16_UNITS {
+        return Err(JsError::new(
+            JsErrorKind::RangeError,
+            "invalid string length",
+        ));
     }
-    let truncated = utf16_units(&suffix);
-    let end = need;
-    format!("{}{}", value, from_units(&truncated[..end]))
+    let target_length = target_length as usize;
+    let needed = target_length - value_units.len();
+    let filler_units = utf16_units(filler);
+    let mut padding = Vec::new();
+    padding
+        .try_reserve_exact(needed)
+        .map_err(|_| JsError::new(JsErrorKind::RangeError, "invalid string length"))?;
+    let repetitions = needed / filler_units.len();
+    let remainder = needed % filler_units.len();
+    for _ in 0..repetitions {
+        padding.extend_from_slice(&filler_units);
+    }
+    padding.extend_from_slice(&filler_units[..remainder]);
+
+    let mut output = Vec::new();
+    output
+        .try_reserve_exact(target_length)
+        .map_err(|_| JsError::new(JsErrorKind::RangeError, "invalid string length"))?;
+    if at_start {
+        output.extend_from_slice(&padding);
+        output.extend_from_slice(&value_units);
+    } else {
+        output.extend_from_slice(&value_units);
+        output.extend_from_slice(&padding);
+    }
+    String::from_utf16(&output).map_err(|_| {
+        JsError::new(
+            JsErrorKind::Unsupported,
+            "padding that produces a lone UTF-16 surrogate requires a UTF-16 string carrier",
+        )
+    })
+}
+
+fn to_length(value: f64) -> u64 {
+    if value.is_nan() || value <= 0.0 {
+        return 0;
+    }
+    if value.is_infinite() || value >= MAX_SAFE_INTEGER as f64 {
+        return MAX_SAFE_INTEGER;
+    }
+    value.floor() as u64
 }
 
 pub fn trim(value: &str) -> String {

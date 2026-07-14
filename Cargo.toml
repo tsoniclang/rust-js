@@ -1,3 +1,6 @@
 [workspace]
 members = ["crates/tsonic_rust_js"]
 resolver = "2"
+
+[patch.crates-io]
+tsonic_rust_runtime = { path = "../rust-runtime/crates/tsonic_rust_runtime" }

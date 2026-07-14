@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-tsonic_rust_runtime = { path = "../../../rust-runtime/crates/tsonic_rust_runtime" }
+tsonic_rust_runtime = "=0.1.0"
 
 [[test]]
 name = "no_forbidden_shortcuts"

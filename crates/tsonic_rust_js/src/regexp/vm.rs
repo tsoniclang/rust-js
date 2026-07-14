@@ -45,6 +45,37 @@ pub(crate) struct Program {
     loop_count: usize,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ExecutionLimitExceeded;
+
+pub(crate) struct ExecutionBudget {
+    remaining: usize,
+}
+
+impl ExecutionBudget {
+    pub(crate) fn for_search(program: &Program, input_len: usize) -> Self {
+        const MIN_STEPS: usize = 100_000;
+        const MAX_STEPS: usize = 2_000_000;
+        const LINEAR_FACTOR: usize = 32;
+        let proportional = program
+            .insts
+            .len()
+            .saturating_mul(input_len.saturating_add(1))
+            .saturating_mul(LINEAR_FACTOR);
+        Self {
+            remaining: proportional.clamp(MIN_STEPS, MAX_STEPS),
+        }
+    }
+
+    fn consume(&mut self) -> Result<(), ExecutionLimitExceeded> {
+        if self.remaining == 0 {
+            return Err(ExecutionLimitExceeded);
+        }
+        self.remaining -= 1;
+        Ok(())
+    }
+}
+
 pub(crate) fn compile(parsed: &ParsedPattern) -> Program {
     let mut compiler = Compiler {
         insts: Vec::new(),
@@ -238,7 +269,8 @@ pub(crate) fn exec_at(
     start: usize,
     ignore_case: bool,
     multiline: bool,
-) -> Option<Vec<Option<usize>>> {
+    budget: &mut ExecutionBudget,
+) -> Result<Option<Vec<Option<usize>>>, ExecutionLimitExceeded> {
     let mut caps: Vec<Option<usize>> = vec![None; 2 * (program.group_count + 1)];
     let mut loops: Vec<usize> = vec![0; program.loop_count];
     let mut undo: Vec<Undo> = Vec::new();
@@ -247,6 +279,7 @@ pub(crate) fn exec_at(
     let mut pos = start;
 
     loop {
+        budget.consume()?;
         let mut failed = false;
         match &program.insts[pc] {
             Inst::Char(expected) => {
@@ -321,10 +354,12 @@ pub(crate) fn exec_at(
                     failed = true;
                 }
             }
-            Inst::Match => return Some(caps),
+            Inst::Match => return Ok(Some(caps)),
         }
         if failed {
-            let frame = stack.pop()?;
+            let Some(frame) = stack.pop() else {
+                return Ok(None);
+            };
             while undo.len() > frame.undo_len {
                 match undo.pop().expect("undo entry") {
                     Undo::Cap { slot, value } => caps[slot] = value,

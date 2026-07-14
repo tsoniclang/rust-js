@@ -75,6 +75,9 @@ fn date_parse_rejects_everything_else_with_nan() {
         " 2020-01-02",
         "2020-01-02 ",
         "2020/01/02",
+        "20💚-01-01",
+        "2020-01-01T0💚:00:00Z",
+        "2020-01-01T00:00:00+0💚0",
     ] {
         assert!(
             JsDate::parse(rejected).is_nan(),
