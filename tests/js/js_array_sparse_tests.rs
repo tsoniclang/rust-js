@@ -66,3 +66,13 @@ fn js_array_at_supports_negative_indices_and_holes() {
     assert_eq!(values.at(f64::INFINITY), None);
     assert_eq!(values.at(f64::NEG_INFINITY), None);
 }
+
+#[test]
+fn sparse_array_enumerable_keys_include_only_present_own_indices() {
+    let mut values = JsArray::with_length(5);
+    values.set(3, 4);
+    values.set(1, 2);
+    assert_eq!(values.enumerable_own_keys(), vec!["1", "3"]);
+    values.delete_at(1);
+    assert_eq!(values.enumerable_own_keys(), vec!["3"]);
+}

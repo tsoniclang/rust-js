@@ -183,6 +183,18 @@ impl<T> JsArray<T> {
         (0..self.length).collect()
     }
 
+    pub fn enumerable_own_keys(&self) -> Vec<String> {
+        self.slots
+            .iter()
+            .take(self.length)
+            .enumerate()
+            .filter_map(|(index, slot)| match slot {
+                JsSlot::Present(_) => Some(index.to_string()),
+                JsSlot::Hole => None,
+            })
+            .collect()
+    }
+
     pub fn values(&self) -> Vec<Option<&T>> {
         (0..self.length).map(|index| self.get(index)).collect()
     }
