@@ -9,6 +9,8 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
     assert!(js::abi::array_dense_includes(&dense, &2, 0));
     assert_eq!(js::abi::array_dense_index_of(&dense, &3, 0), 2);
     assert_eq!(js::abi::array_dense_join(&dense, ","), "1,2,3");
+    assert_eq!(js::abi::array_dense_slice(&dense, 1.0, None), vec![2, 3]);
+    assert_eq!(js::abi::array_dense_slice_to(&dense, 0.0, 2.0), vec![1, 2]);
 
     let mut out = Vec::new();
     js::abi::console_log_to(&mut out, &[js::abi::JsValue::String("ok".to_string())]).unwrap();
@@ -92,12 +94,15 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
         js::abi::js_string_pad_end_with("5", 3.0, "0").as_deref(),
         Ok("500")
     );
-    assert_eq!(js::abi::js_string_repeat("ab", 2).unwrap(), "abab");
+    assert_eq!(js::abi::js_string_repeat("ab", 2.0).unwrap(), "abab");
     assert_eq!(js::abi::js_string_trim_start(" a "), "a ");
     assert_eq!(js::abi::js_string_trim_end(" a "), " a");
     assert_eq!(js::abi::js_string_at("abc", -1.0).as_deref(), Some("c"));
     assert_eq!(js::abi::js_string_char_at("abc", 1.0), "b");
-    assert_eq!(js::abi::js_string_code_point_at("😀", 0.0), Some(0x1F600));
+    assert_eq!(
+        js::abi::js_string_code_point_at("😀", 0.0),
+        Some(0x1F600 as f64)
+    );
 
     let buffer = js::abi::ArrayBuffer::new(4);
     assert_eq!(buffer.byte_length(), 4);

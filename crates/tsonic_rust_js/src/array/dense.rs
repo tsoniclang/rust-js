@@ -117,13 +117,19 @@ where
 }
 
 /// Slices a dense array by index.
-pub fn slice<T: Clone>(array: &[T], start: isize, end: Option<isize>) -> Vec<T> {
-    let start = normalize_slice_index(array.len(), start);
-    let end = normalize_slice_end(array.len(), end.unwrap_or(array.len() as isize));
+pub fn slice<T: Clone>(array: &[T], start: f64, end: Option<f64>) -> Vec<T> {
+    let start = crate::coercion::normalize_slice_index(start, array.len());
+    let end = end
+        .map(|value| crate::coercion::normalize_slice_index(value, array.len()))
+        .unwrap_or(array.len());
     if start > end {
         return Vec::new();
     }
     array[start..end].to_vec()
+}
+
+pub fn slice_to<T: Clone>(array: &[T], start: f64, end: f64) -> Vec<T> {
+    slice(array, start, Some(end))
 }
 
 /// Joins a dense array with separator, delegating conversion through a minimal string contract.
@@ -423,16 +429,6 @@ fn normalize_slice_index(len: usize, index: isize) -> usize {
     } else {
         normalized as usize
     }
-}
-
-fn normalize_slice_end(len: usize, index: isize) -> usize {
-    if len == 0 {
-        return 0;
-    }
-    let max = len as isize;
-    let normalized = if index < 0 { max + index } else { index };
-    let clamped = normalized.max(0).min(max);
-    clamped as usize
 }
 
 fn normalize_fill_index(len: usize, index: isize) -> usize {

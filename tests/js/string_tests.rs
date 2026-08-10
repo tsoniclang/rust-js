@@ -18,16 +18,20 @@ fn utf16_length_and_indexes() {
 fn utf16_code_units_and_points() {
     assert_eq!(string::char_code_at("😀", 0.0), Some(0xD83D as f64));
     assert_eq!(string::char_code_at("😀", 1.0), Some(0xDE00 as f64));
-    assert_eq!(string::code_point_at("😀", 0.0), Some(0x1F600));
-    assert_eq!(string::code_point_at("😀", 1.0), Some(0xDE00));
+    assert_eq!(string::code_point_at("😀", 0.0), Some(0x1F600 as f64));
+    assert_eq!(string::code_point_at("😀", 1.0), Some(0xDE00 as f64));
+    assert_eq!(string::code_point_at("😀", -1.0), None);
+    assert_eq!(string::char_at("abc", -1.0), "");
+    assert_eq!(string::char_code_at("abc", -1.0), None);
 }
 
 #[test]
 fn slice_and_substring_behavior() {
-    assert_eq!(string::slice("javascript", 1, Some(3)), "av");
-    assert_eq!(string::slice("javascript", -3, None), "ipt");
+    assert_eq!(string::slice("javascript", 1.0, Some(3.0)), "av");
+    assert_eq!(string::slice("javascript", -3.0, None), "ipt");
     assert_eq!(string::substring("abc", 2, Some(0)), "ab");
-    assert_eq!(string::slice("abc", 2, Some(1)), "");
+    assert_eq!(string::slice("abc", 2.0, Some(1.0)), "");
+    assert_eq!(string::slice("abc", f64::NAN, Some(f64::INFINITY)), "abc");
     assert_eq!(string::substr("javascript", 4, Some(6)), "script");
     assert_eq!(string::substr("javascript", -6, Some(3)), "scr");
 }
@@ -48,9 +52,18 @@ fn split_and_repeat_and_trim() {
     assert_eq!(string::split("a,b,c", ",", None), vec!["a", "b", "c"]);
     assert_eq!(string::split("abc", "", Some(2)), vec!["a", "b"]);
     assert_eq!(string::split("a,,c", ",", None), vec!["a", "", "c"]);
-    assert_eq!(string::repeat("x", 3).as_deref(), Ok("xxx"));
+    assert_eq!(string::repeat("x", 3.9).as_deref(), Ok("xxx"));
+    assert_eq!(string::repeat("x", f64::NAN).as_deref(), Ok(""));
     assert_eq!(
-        string::repeat("x", -1).unwrap_err().kind(),
+        string::repeat("x", -1.0).unwrap_err().kind(),
+        JsErrorKind::RangeError
+    );
+    assert_eq!(
+        string::repeat("x", f64::INFINITY).unwrap_err().kind(),
+        JsErrorKind::RangeError
+    );
+    assert_eq!(
+        string::repeat("ab", 8_388_609.0).unwrap_err().kind(),
         JsErrorKind::RangeError
     );
     assert_eq!(string::trim("  hi  "), "hi");
@@ -117,6 +130,6 @@ fn conversion_helpers() {
     assert_eq!(string::to_upper_case("hello"), "HELLO");
     assert_eq!(string::char_at("😀", 5.0), "");
     assert_eq!(string::at("😀", 1.0).as_deref(), Some("\u{FFFD}"));
-    assert_eq!(string::code_point_at("😀", 0.0), Some(0x1f600));
-    assert_eq!(string::code_point_at("😀", 1.0), Some(0xDE00));
+    assert_eq!(string::code_point_at("😀", 0.0), Some(0x1f600 as f64));
+    assert_eq!(string::code_point_at("😀", 1.0), Some(0xDE00 as f64));
 }

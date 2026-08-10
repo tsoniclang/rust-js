@@ -2,17 +2,26 @@
 
 use tsonic_rust_runtime::{JsError, JsErrorKind};
 
-use crate::coercion::relative_index;
+use crate::coercion::{absolute_index, relative_index};
 
 /// JS-facing string value conversion contract used by dense array join and future array helpers.
 pub trait JsToString {
     fn to_js_string(&self) -> String;
 }
 
-impl<T> JsToString for T
-where
-    T: ToString,
-{
+macro_rules! impl_js_to_string {
+    ($($type:ty),+ $(,)?) => {
+        $(impl JsToString for $type {
+            fn to_js_string(&self) -> String {
+                self.to_string()
+            }
+        })+
+    };
+}
+
+impl_js_to_string!(bool, i8, u8, i16, u16, i32, u32, i64, u64, String);
+
+impl JsToString for str {
     fn to_js_string(&self) -> String {
         self.to_string()
     }
@@ -32,7 +41,7 @@ pub fn js_len(value: &str) -> usize {
 
 pub fn char_at(value: &str, index: f64) -> String {
     let units = utf16_units(value);
-    match relative_index(index, units.len()) {
+    match absolute_index(index, units.len()) {
         Some(pos) => from_units(&[units[pos]]),
         None => String::new(),
     }
@@ -45,44 +54,38 @@ pub fn at(value: &str, index: f64) -> Option<String> {
 
 pub fn char_code_at(value: &str, index: f64) -> Option<f64> {
     let units = utf16_units(value);
-    relative_index(index, units.len()).map(|pos| units[pos] as f64)
+    absolute_index(index, units.len()).map(|pos| units[pos] as f64)
 }
 
-pub fn code_point_at(value: &str, index: f64) -> Option<u32> {
+pub fn code_point_at(value: &str, index: f64) -> Option<f64> {
     let units = utf16_units(value);
-    let pos = relative_index(index, units.len())?;
+    let pos = absolute_index(index, units.len())?;
     let first = units[pos];
     if (0xD800..=0xDBFF).contains(&first) && pos + 1 < units.len() {
         let second = units[pos + 1];
         if (0xDC00..=0xDFFF).contains(&second) {
             let pair = (u32::from(first - 0xD800) << 10) + u32::from(second - 0xDC00) + 0x10000;
-            return Some(pair);
+            return Some(f64::from(pair));
         }
     }
-    Some(u32::from(first))
+    Some(f64::from(first))
 }
 
-pub fn slice(value: &str, start: isize, end: Option<isize>) -> String {
+pub fn slice(value: &str, start: f64, end: Option<f64>) -> String {
     let units = utf16_units(value);
-    if units.is_empty() {
-        return String::new();
-    }
-
-    let to_isize = |v: isize, len: usize| -> isize {
-        if v < 0 {
-            (len as isize + v).clamp(0, len as isize)
-        } else {
-            v.min(len as isize)
-        }
-    };
-
-    let from = to_isize(start, units.len());
-    let to = to_isize(end.unwrap_or(units.len() as isize), units.len());
+    let from = crate::coercion::normalize_slice_index(start, units.len());
+    let to = end
+        .map(|value| crate::coercion::normalize_slice_index(value, units.len()))
+        .unwrap_or(units.len());
     // JS slice does not swap start and end. If normalized start > end, result is empty.
     if from > to {
         return String::new();
     }
-    from_units(&units[from as usize..to as usize])
+    from_units(&units[from..to])
+}
+
+pub fn slice_to(value: &str, start: f64, end: f64) -> String {
+    slice(value, start, Some(end))
 }
 
 pub fn substring(value: &str, start: isize, end: Option<isize>) -> String {
@@ -238,22 +241,32 @@ pub fn split(value: &str, separator: &str, limit: Option<usize>) -> Vec<String> 
     parts
 }
 
-pub fn repeat(value: &str, count: isize) -> Result<String, JsError> {
-    if count < 0 {
+pub fn repeat(value: &str, count: f64) -> Result<String, JsError> {
+    let count = crate::coercion::to_integer_or_infinity(count);
+    if count < 0.0 || count == f64::INFINITY {
         return Err(JsError::new(
             JsErrorKind::RangeError,
             "repeat count must be non-negative",
         ));
     }
-    if count == 0 {
+    if count == 0.0 {
         return Ok(String::new());
     }
-    let count = count as usize;
-    let mut out = String::new();
-    for _ in 0..count {
-        out.push_str(value);
+    if value.is_empty() {
+        return Ok(String::new());
     }
-    Ok(out)
+    let value_units = js_len(value) as u64;
+    let count = count as u64;
+    if value_units
+        .checked_mul(count)
+        .is_none_or(|length| length > MAX_STRING_UTF16_UNITS)
+    {
+        return Err(JsError::new(
+            JsErrorKind::RangeError,
+            "repeat result exceeds the supported string length",
+        ));
+    }
+    Ok(value.repeat(count as usize))
 }
 
 pub const MAX_STRING_UTF16_UNITS: u64 = 16_777_216;

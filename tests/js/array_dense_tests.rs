@@ -31,9 +31,10 @@ fn access_and_search() {
 #[test]
 fn slicing_and_joining() {
     let xs = vec![1, 2, 3, 4];
-    assert_eq!(dense::slice(&xs, -3, Some(3)), vec![2, 3]);
-    assert_eq!(dense::slice(&xs, 1, None), vec![2, 3, 4]);
-    assert_eq!(dense::slice(&xs, 3, Some(1)), Vec::<i32>::new());
+    assert_eq!(dense::slice(&xs, -3.0, Some(3.0)), vec![2, 3]);
+    assert_eq!(dense::slice(&xs, 1.9, None), vec![2, 3, 4]);
+    assert_eq!(dense::slice(&xs, 3.0, Some(1.0)), Vec::<i32>::new());
+    assert_eq!(dense::slice(&xs, f64::NAN, Some(f64::INFINITY)), xs);
     assert_eq!(dense::join(&xs, "-"), "1-2-3-4");
 }
 
