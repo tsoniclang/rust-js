@@ -11,6 +11,10 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
     assert_eq!(js::abi::array_dense_join(&dense, ","), "1,2,3");
     assert_eq!(js::abi::array_dense_slice(&dense, 1.0, None), vec![2, 3]);
     assert_eq!(js::abi::array_dense_slice_to(&dense, 0.0, 2.0), vec![1, 2]);
+    assert!(js::abi::number_is_finite(1.0));
+    assert!(js::abi::number_is_integer(1.0));
+    assert!(!js::abi::number_is_nan(1.0));
+    assert!(js::abi::number_is_safe_integer(1.0));
 
     let mut out = Vec::new();
     js::abi::console_log_to(&mut out, &[js::abi::JsValue::String("ok".to_string())]).unwrap();

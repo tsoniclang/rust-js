@@ -32,6 +32,10 @@ pub use crate::json::{
     stringify_with_indent as json_stringify_with_indent,
 };
 pub use crate::map::JsMap;
+pub use crate::number::{
+    is_finite as number_is_finite, is_integer as number_is_integer, is_nan as number_is_nan,
+    is_safe_integer as number_is_safe_integer,
+};
 pub use crate::object::JsObject;
 pub use crate::regexp::{JsRegExp, JsRegExpMatch};
 pub use crate::set::JsSet;
