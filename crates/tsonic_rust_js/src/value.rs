@@ -213,6 +213,38 @@ impl From<Vec<JsValue>> for JsValue {
     }
 }
 
+impl From<bool> for JsValue {
+    fn from(value: bool) -> Self {
+        Self::Bool(value)
+    }
+}
+
+impl From<f64> for JsValue {
+    fn from(value: f64) -> Self {
+        Self::Number(value)
+    }
+}
+
+impl From<i32> for JsValue {
+    fn from(value: i32) -> Self {
+        Self::Number(f64::from(value))
+    }
+}
+
+impl From<String> for JsValue {
+    fn from(value: String) -> Self {
+        Self::String(value)
+    }
+}
+
+pub fn from_string(value: &str) -> JsValue {
+    JsValue::String(value.to_owned())
+}
+
+pub fn clone_value(value: &JsValue) -> JsValue {
+    value.clone()
+}
+
 impl fmt::Display for JsValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.inspect())

@@ -3,11 +3,11 @@ use tsonic_rust_js::{console, JsValue};
 #[test]
 fn console_formats_to_injectable_writer() {
     let args = [JsValue::String("x".to_string()), JsValue::Number(1.0)];
-    assert_eq!(console::format_args(&args), "\"x\" 1");
+    assert_eq!(console::format_args(&args), "x 1");
 
     let mut out = Vec::new();
     console::log_to(&mut out, &args).unwrap();
-    assert_eq!(String::from_utf8(out).unwrap(), "\"x\" 1\n");
+    assert_eq!(String::from_utf8(out).unwrap(), "x 1\n");
 
     let mut err = Vec::new();
     console::error_to(&mut err, &[JsValue::Bool(false)]).unwrap();
@@ -15,15 +15,15 @@ fn console_formats_to_injectable_writer() {
 
     let mut warn = Vec::new();
     console::warn_to(&mut warn, &[JsValue::String("careful".to_string())]).unwrap();
-    assert_eq!(String::from_utf8(warn).unwrap(), "\"careful\"\n");
+    assert_eq!(String::from_utf8(warn).unwrap(), "careful\n");
 
     let mut info = Vec::new();
     console::info_to(&mut info, &[JsValue::String("info".to_string())]).unwrap();
-    assert_eq!(String::from_utf8(info).unwrap(), "\"info\"\n");
+    assert_eq!(String::from_utf8(info).unwrap(), "info\n");
 
     let mut debug = Vec::new();
     console::debug_to(&mut debug, &[JsValue::String("debug".to_string())]).unwrap();
-    assert_eq!(String::from_utf8(debug).unwrap(), "\"debug\"\n");
+    assert_eq!(String::from_utf8(debug).unwrap(), "debug\n");
 
     let mut dir = Vec::new();
     console::dir_to(&mut dir, &JsValue::Bool(true)).unwrap();
@@ -31,7 +31,7 @@ fn console_formats_to_injectable_writer() {
 
     let mut trace = Vec::new();
     console::trace_to(&mut trace, &[JsValue::String("here".to_string())]).unwrap();
-    assert_eq!(String::from_utf8(trace).unwrap(), "Trace: \"here\"\n");
+    assert_eq!(String::from_utf8(trace).unwrap(), "Trace: here\n");
 
     let mut table = Vec::new();
     console::table_to(&mut table, &[JsValue::Number(1.0), JsValue::Bool(true)]).unwrap();
@@ -41,7 +41,7 @@ fn console_formats_to_injectable_writer() {
 
     let mut dirxml = Vec::new();
     console::dirxml_to(&mut dirxml, &[JsValue::String("node".to_string())]).unwrap();
-    assert_eq!(String::from_utf8(dirxml).unwrap(), "\"node\"\n");
+    assert_eq!(String::from_utf8(dirxml).unwrap(), "node\n");
 }
 
 #[test]
@@ -66,7 +66,7 @@ fn console_instance_tracks_counts_timers_and_groups() {
         .log_to(&mut grouped, &[JsValue::Number(1.0)])
         .unwrap();
     console.group_end();
-    assert_eq!(String::from_utf8(grouped).unwrap(), "\"group\"\n  1\n");
+    assert_eq!(String::from_utf8(grouped).unwrap(), "group\n  1\n");
 
     console.time(Some("load"));
     let mut timing = Vec::new();
@@ -106,10 +106,7 @@ fn console_options_profiles_timestamps_and_dirxml_are_closed() {
         .dirxml_to(&mut grouped, &[JsValue::String("child".to_string())])
         .unwrap();
     console.group_end();
-    assert_eq!(
-        String::from_utf8(grouped).unwrap(),
-        "\"root\"\n    \"child\"\n"
-    );
+    assert_eq!(String::from_utf8(grouped).unwrap(), "root\n    child\n");
 
     let mut timestamp = Vec::new();
     console
@@ -139,7 +136,7 @@ fn console_options_profiles_timestamps_and_dirxml_are_closed() {
         .unwrap();
     assert_eq!(
         String::from_utf8(assertion).unwrap(),
-        "Assertion failed: \"broken\"\n"
+        "Assertion failed: broken\n"
     );
 
     let mut cleared = Vec::new();

@@ -18,7 +18,12 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
 
     let mut out = Vec::new();
     js::abi::console_log_to(&mut out, &[js::abi::JsValue::String("ok".to_string())]).unwrap();
-    assert_eq!(String::from_utf8(out).unwrap(), "\"ok\"\n");
+    assert_eq!(String::from_utf8(out).unwrap(), "ok\n");
+    let text = String::from("kept");
+    let converted = js::abi::js_value_from_string(&text);
+    let cloned = js::abi::clone_js_value(&converted);
+    assert_eq!(text, "kept");
+    assert_eq!(converted, cloned);
 
     let parsed = js::abi::json_parse(r#"{"ok":true}"#).unwrap();
     let text = js::abi::json_stringify(&parsed).unwrap().unwrap();
