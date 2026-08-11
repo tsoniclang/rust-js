@@ -134,18 +134,15 @@ impl<'a> Serializer<'a> {
                 Ok(true)
             }
             JsValue::Array(values) => {
-                let id = ContainerId::Array(Rc::as_ptr(values) as usize);
+                let id = ContainerId::Array(values.identity());
                 self.with_container(id, |serializer| {
-                    let values = values.try_borrow().map_err(|_| {
-                        type_error("JSON.stringify cannot read a mutably borrowed array")
-                    })?;
                     serializer.push_char('[')?;
                     let mut first = true;
                     for value in values.values() {
                         serializer.count_member()?;
                         serializer.member_prefix(depth, &mut first)?;
                         match value {
-                            Some(value) if serializer.serialize_value(value, depth + 1)? => {}
+                            Some(value) if serializer.serialize_value(&value, depth + 1)? => {}
                             _ => serializer.push_str("null")?,
                         }
                     }

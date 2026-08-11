@@ -45,6 +45,10 @@
 mod parser;
 mod vm;
 
+use std::cell::Cell;
+use std::rc::Rc;
+
+use crate::equality::{JsSameValueZero, JsStrictEqual};
 use crate::errors::{range_error, type_error, unsupported, JsResult};
 
 /// Match carrier mirroring the JS `RegExpMatchArray` shape: the whole match
@@ -90,16 +94,41 @@ impl JsRegExpMatch {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct JsRegExp {
+#[derive(Debug)]
+struct JsRegExpState {
     source: String,
     flags: String,
     global: bool,
     ignore_case: bool,
     multiline: bool,
-    last_index: i32,
+    last_index: Cell<i32>,
     nullable: bool,
     program: vm::Program,
+}
+
+#[derive(Debug, Clone)]
+pub struct JsRegExp {
+    state: Rc<JsRegExpState>,
+}
+
+impl PartialEq for JsRegExp {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.state, &other.state)
+    }
+}
+
+impl Eq for JsRegExp {}
+
+impl JsSameValueZero for JsRegExp {
+    fn same_value_zero(&self, other: &Self) -> bool {
+        self == other
+    }
+}
+
+impl JsStrictEqual for JsRegExp {
+    fn strict_equal(&self, other: &Self) -> bool {
+        self == other
+    }
 }
 
 impl JsRegExp {
@@ -111,44 +140,46 @@ impl JsRegExp {
         let nullable = parser::is_nullable(&parsed.ast);
         let program = vm::compile(&parsed);
         Ok(Self {
-            source: pattern.to_string(),
-            flags: flags.to_string(),
-            global: parsed_flags.global,
-            ignore_case: parsed_flags.ignore_case,
-            multiline: parsed_flags.multiline,
-            last_index: 0,
-            nullable,
-            program,
+            state: Rc::new(JsRegExpState {
+                source: pattern.to_string(),
+                flags: flags.to_string(),
+                global: parsed_flags.global,
+                ignore_case: parsed_flags.ignore_case,
+                multiline: parsed_flags.multiline,
+                last_index: Cell::new(0),
+                nullable,
+                program,
+            }),
         })
     }
 
     pub fn source(&self) -> &str {
-        &self.source
+        &self.state.source
     }
 
     pub fn flags(&self) -> &str {
-        &self.flags
+        &self.state.flags
     }
 
     /// Whether the `g` flag is set (JS `regexp.global`).
     pub fn global(&self) -> bool {
-        self.global
+        self.state.global
     }
 
     /// Whether the `i` flag is set (JS `regexp.ignoreCase`).
     pub fn ignore_case(&self) -> bool {
-        self.ignore_case
+        self.state.ignore_case
     }
 
     /// Whether the `m` flag is set (JS `regexp.multiline`).
     pub fn multiline(&self) -> bool {
-        self.multiline
+        self.state.multiline
     }
 
     /// Current `lastIndex` in UTF-16 code units (only consulted by `exec`
     /// when the `g` flag is set, per JS semantics).
     pub fn last_index(&self) -> i32 {
-        self.last_index
+        self.state.last_index.get()
     }
 
     /// Sets `lastIndex` (JS `regexp.lastIndex = value`), in UTF-16 code
@@ -172,14 +203,14 @@ impl JsRegExp {
     /// boundaries (matches end at whole-scalar boundaries and an empty
     /// match leaves `lastIndex` at its own boundary start), so only a
     /// manual write can introduce a mid-pair position.
-    pub fn set_last_index(&mut self, value: i32) -> JsResult<()> {
-        if self.nullable {
+    pub fn set_last_index(&self, value: i32) -> JsResult<()> {
+        if self.state.nullable {
             return Err(unsupported(
                 "manual lastIndex on nullable patterns is outside the oracle-proven subset \
                  (empty matches at surrogate positions diverge from UTF-16 semantics)",
             ));
         }
-        self.last_index = value;
+        self.state.last_index.set(value);
         Ok(())
     }
 
@@ -187,25 +218,27 @@ impl JsRegExp {
     /// at `lastIndex` (UTF-16 code units) and `lastIndex` advances to the
     /// match end, or resets to 0 when no match is found; without `g` the
     /// search always starts at 0 and `lastIndex` is untouched.
-    pub fn exec(&mut self, input: &str) -> JsResult<Option<JsRegExpMatch>> {
+    pub fn exec(&self, input: &str) -> JsResult<Option<JsRegExpMatch>> {
         let chars: Vec<char> = input.chars().collect();
-        let start = if self.global {
-            let last = self.last_index.max(0) as usize;
+        let start = if self.state.global {
+            let last = self.state.last_index.get().max(0) as usize;
             match char_index_for_utf16(&chars, last) {
                 Some(index) => index,
                 None => {
-                    self.last_index = 0;
+                    self.state.last_index.set(0);
                     return Ok(None);
                 }
             }
         } else {
             0
         };
-        let mut budget = vm::ExecutionBudget::for_search(&self.program, chars.len());
+        let mut budget = vm::ExecutionBudget::for_search(&self.state.program, chars.len());
         match self.find_from(&chars, start, &mut budget)? {
             Some(caps) => {
-                if self.global {
-                    self.last_index = utf16_index(&chars, match_bounds(&caps).1) as i32;
+                if self.state.global {
+                    self.state
+                        .last_index
+                        .set(utf16_index(&chars, match_bounds(&caps).1) as i32);
                 }
                 Ok(Some(build_match(
                     &chars,
@@ -215,8 +248,8 @@ impl JsRegExp {
                 )))
             }
             None => {
-                if self.global {
-                    self.last_index = 0;
+                if self.state.global {
+                    self.state.last_index.set(0);
                 }
                 Ok(None)
             }
@@ -227,7 +260,7 @@ impl JsRegExp {
     /// ignoring `lastIndex`).
     pub fn match_first(&self, input: &str) -> JsResult<Option<JsRegExpMatch>> {
         let chars: Vec<char> = input.chars().collect();
-        let mut budget = vm::ExecutionBudget::for_search(&self.program, chars.len());
+        let mut budget = vm::ExecutionBudget::for_search(&self.state.program, chars.len());
         let Some(caps) = self.find_from(&chars, 0, &mut budget)? else {
             return Ok(None);
         };
@@ -242,7 +275,7 @@ impl JsRegExp {
     /// Mirrors `String.prototype.match` with the `g` flag: the texts of all
     /// matches, or `None` when there is no match (JS `null`). Stateless.
     /// Rejects nullable patterns over astral input (see the module docs).
-    pub fn match_strings(&self, input: &str) -> JsResult<Option<Vec<String>>> {
+    pub fn match_strings(&self, input: &str) -> JsResult<Option<crate::array::JsArray<String>>> {
         self.check_empty_match_iteration(input)?;
         let chars: Vec<char> = input.chars().collect();
         let texts: Vec<String> = self
@@ -253,13 +286,17 @@ impl JsRegExp {
                 chars[start..end].iter().collect()
             })
             .collect();
-        Ok(if texts.is_empty() { None } else { Some(texts) })
+        Ok(if texts.is_empty() {
+            None
+        } else {
+            Some(crate::array::JsArray::from_dense(texts))
+        })
     }
 
     /// Mirrors `String.prototype.matchAll`: `TypeError` when the regexp lacks
     /// the `g` flag, otherwise all matches (stateless; JS clones the regexp).
     pub fn match_all(&self, input: &str) -> JsResult<Vec<JsRegExpMatch>> {
-        if !self.global {
+        if !self.state.global {
             return Err(type_error(
                 "String.prototype.matchAll called with a non-global RegExp argument",
             ));
@@ -280,7 +317,7 @@ impl JsRegExp {
     fn collect_matches(&self, chars: &[char]) -> JsResult<Vec<Vec<Option<usize>>>> {
         let mut out = Vec::new();
         let mut from = 0_usize;
-        let mut budget = vm::ExecutionBudget::for_search(&self.program, chars.len());
+        let mut budget = vm::ExecutionBudget::for_search(&self.state.program, chars.len());
         while let Some(caps) = self.find_from(chars, from, &mut budget)? {
             let (start, end) = match_bounds(&caps);
             from = if end == start { end + 1 } else { end };
@@ -296,14 +333,14 @@ impl JsRegExp {
     /// `g` flag the search starts at `lastIndex`, which advances to the match
     /// end (UTF-16 code units) on success and resets to 0 on failure; without
     /// `g` the call is stateless and ignores `lastIndex`.
-    pub fn test(&mut self, input: &str) -> JsResult<bool> {
+    pub fn test(&self, input: &str) -> JsResult<bool> {
         Ok(self.exec(input)?.is_some())
     }
 
     /// Byte offsets `(start, end)` of the first match in `input`.
     pub fn find_first(&self, input: &str) -> JsResult<Option<(usize, usize)>> {
         let chars: Vec<char> = input.chars().collect();
-        let mut budget = vm::ExecutionBudget::for_search(&self.program, chars.len());
+        let mut budget = vm::ExecutionBudget::for_search(&self.state.program, chars.len());
         let Some(caps) = self.find_from(&chars, 0, &mut budget)? else {
             return Ok(None);
         };
@@ -331,20 +368,20 @@ impl JsRegExp {
     /// rejects nullable patterns over astral input (see the module docs); a
     /// non-`g` replace never iterates empty matches and is always `Ok`.
     pub fn replace(&self, input: &str, replacement: &str) -> JsResult<String> {
-        if self.global {
+        if self.state.global {
             self.check_empty_match_iteration(input)?;
         }
         let chars: Vec<char> = input.chars().collect();
         let mut out = String::new();
         let mut last = 0_usize;
         let mut from = 0_usize;
-        let mut budget = vm::ExecutionBudget::for_search(&self.program, chars.len());
+        let mut budget = vm::ExecutionBudget::for_search(&self.state.program, chars.len());
         while let Some(caps) = self.find_from(&chars, from, &mut budget)? {
             let (start, end) = match_bounds(&caps);
             out.extend(&chars[last..start]);
             expand_replacement(&mut out, replacement, &chars, &caps, self.program_groups());
             last = end;
-            if !self.global {
+            if !self.state.global {
                 break;
             }
             from = if end == start { end + 1 } else { end };
@@ -360,7 +397,7 @@ impl JsRegExp {
     /// including the spec's empty-match handling. Patterns with capturing
     /// groups are rejected because JS splices capture values into the result;
     /// use a non-capturing group `(?:...)` instead.
-    pub fn split(&self, input: &str) -> JsResult<Vec<String>> {
+    pub fn split(&self, input: &str) -> JsResult<crate::array::JsArray<String>> {
         if self.program_groups() > 0 {
             return Err(unsupported(
                 "split with capturing groups is not supported; use a non-capturing group `(?:...)`",
@@ -368,14 +405,16 @@ impl JsRegExp {
         }
         self.check_empty_match_iteration(input)?;
         let chars: Vec<char> = input.chars().collect();
-        let mut budget = vm::ExecutionBudget::for_search(&self.program, chars.len());
+        let mut budget = vm::ExecutionBudget::for_search(&self.state.program, chars.len());
         let size = chars.len();
         if size == 0 {
-            return Ok(if self.exec_anchored(&chars, 0, &mut budget)?.is_some() {
-                Vec::new()
-            } else {
-                vec![String::new()]
-            });
+            return Ok(crate::array::JsArray::from_dense(
+                if self.exec_anchored(&chars, 0, &mut budget)?.is_some() {
+                    Vec::new()
+                } else {
+                    vec![String::new()]
+                },
+            ));
         }
         let mut out = Vec::new();
         let mut segment_start = 0_usize;
@@ -396,14 +435,14 @@ impl JsRegExp {
             }
         }
         out.push(chars[segment_start..size].iter().collect());
-        Ok(out)
+        Ok(crate::array::JsArray::from_dense(out))
     }
 
     /// Mirrors `String.prototype.search`: the UTF-16 code-unit index of the
     /// first match, or -1.
     pub fn search(&self, input: &str) -> JsResult<i32> {
         let chars: Vec<char> = input.chars().collect();
-        let mut budget = vm::ExecutionBudget::for_search(&self.program, chars.len());
+        let mut budget = vm::ExecutionBudget::for_search(&self.state.program, chars.len());
         Ok(match self.find_from(&chars, 0, &mut budget)? {
             Some(caps) => chars[..match_bounds(&caps).0]
                 .iter()
@@ -414,7 +453,7 @@ impl JsRegExp {
     }
 
     fn program_groups(&self) -> usize {
-        self.program.group_count
+        self.state.program.group_count
     }
 
     /// Fail-closed guard for the iterating operations: a nullable pattern
@@ -423,7 +462,7 @@ impl JsRegExp {
     /// position no Rust `String` can express — so it is rejected up front
     /// instead of diverging from JS.
     fn check_empty_match_iteration(&self, input: &str) -> JsResult<()> {
-        if self.nullable && input.chars().any(|value| value > '\u{ffff}') {
+        if self.state.nullable && input.chars().any(|value| value > '\u{ffff}') {
             return Err(unsupported(
                 "empty-match iteration over astral input diverges from UTF-16 semantics",
             ));
@@ -438,11 +477,11 @@ impl JsRegExp {
         budget: &mut vm::ExecutionBudget,
     ) -> JsResult<Option<Vec<Option<usize>>>> {
         vm::exec_at(
-            &self.program,
+            &self.state.program,
             chars,
             at,
-            self.ignore_case,
-            self.multiline,
+            self.state.ignore_case,
+            self.state.multiline,
             budget,
         )
         .map_err(|_| range_error("RegExp execution exceeded the configured step limit"))

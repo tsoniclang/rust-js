@@ -169,16 +169,12 @@ fn json_rejects_cycles_and_borrow_conflicts_but_allows_shared_aliases() {
     cycle.as_object().unwrap().borrow_mut().delete("self");
 
     let array_cycle = JsValue::from(Vec::<JsValue>::new());
-    array_cycle
-        .as_array()
-        .unwrap()
-        .borrow_mut()
-        .set(0, array_cycle.clone());
+    array_cycle.as_array().unwrap().set(0, array_cycle.clone());
     assert_eq!(
         json::stringify(&array_cycle).unwrap_err().kind(),
         JsErrorKind::TypeError
     );
-    array_cycle.as_array().unwrap().borrow_mut().delete_at(0);
+    array_cycle.as_array().unwrap().delete_at(0);
 
     let child = JsValue::object(JsObject::from_pairs([("x", JsValue::Number(1.0))]));
     let shared = JsValue::object(JsObject::from_pairs([("a", child.clone()), ("b", child)]));

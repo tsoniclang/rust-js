@@ -1,12 +1,36 @@
 //! Minimal UTC-only Date carrier.
 
+use std::cell::Cell;
+use std::rc::Rc;
+
+use crate::equality::{JsSameValueZero, JsStrictEqual};
 use crate::errors::{range_error, JsResult};
 
 const MS_PER_DAY: i64 = 86_400_000;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct JsDate {
-    millis: f64,
+    millis: Rc<Cell<f64>>,
+}
+
+impl PartialEq for JsDate {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.millis, &other.millis)
+    }
+}
+
+impl Eq for JsDate {}
+
+impl JsSameValueZero for JsDate {
+    fn same_value_zero(&self, other: &Self) -> bool {
+        self == other
+    }
+}
+
+impl JsStrictEqual for JsDate {
+    fn strict_equal(&self, other: &Self) -> bool {
+        self == other
+    }
 }
 
 impl JsDate {
@@ -19,7 +43,9 @@ impl JsDate {
     }
 
     pub fn from_millis(millis: f64) -> Self {
-        Self { millis }
+        Self {
+            millis: Rc::new(Cell::new(millis)),
+        }
     }
 
     /// Mirrors `Date.parse` over the ISO 8601 subset Node accepts
@@ -84,18 +110,19 @@ impl JsDate {
     }
 
     pub fn get_time(&self) -> f64 {
-        self.millis
+        self.millis.get()
     }
 
     pub fn value_of(&self) -> f64 {
-        self.millis
+        self.millis.get()
     }
 
     pub fn to_iso_string(&self) -> JsResult<String> {
-        if !self.millis.is_finite() {
+        let millis = self.millis.get();
+        if !millis.is_finite() {
             return Err(range_error("Invalid Date"));
         }
-        let millis = self.millis.trunc() as i64;
+        let millis = millis.trunc() as i64;
         let days = millis.div_euclid(MS_PER_DAY);
         let ms_in_day = millis.rem_euclid(MS_PER_DAY);
         let (year, month, day) = civil_from_days(days);
@@ -151,10 +178,11 @@ impl JsDate {
     }
 
     fn utc_parts(&self) -> JsResult<(i32, u32, u32, i64, i64, i64, i64)> {
-        if !self.millis.is_finite() {
+        let millis = self.millis.get();
+        if !millis.is_finite() {
             return Err(range_error("Invalid Date"));
         }
-        let millis = self.millis.trunc() as i64;
+        let millis = millis.trunc() as i64;
         let days = millis.div_euclid(MS_PER_DAY);
         let ms_in_day = millis.rem_euclid(MS_PER_DAY);
         let (year, month, day) = civil_from_days(days);

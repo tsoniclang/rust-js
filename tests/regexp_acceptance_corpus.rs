@@ -266,11 +266,11 @@ fn engine_acceptance_matches_committed_corpus() {
 
     let text = fs::read_to_string(corpus_path()).expect("read acceptance corpus");
     let parsed = json::parse(&text).expect("parse acceptance corpus");
-    let array = parsed.as_array().expect("corpus array").borrow().clone();
+    let array = parsed.as_array().expect("corpus array");
     let entries: Vec<JsValue> = array
         .values()
         .into_iter()
-        .map(|value| value.expect("dense corpus entry").clone())
+        .map(|value| value.expect("dense corpus entry"))
         .collect();
 
     assert_eq!(

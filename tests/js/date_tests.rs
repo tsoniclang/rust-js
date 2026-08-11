@@ -1,6 +1,17 @@
 use tsonic_rust_js::date::JsDate;
 
 #[test]
+fn date_clones_preserve_object_identity() {
+    let date = JsDate::from_millis(0.0);
+    let alias = date.clone();
+    let distinct = JsDate::from_millis(0.0);
+
+    assert_eq!(date, alias);
+    assert_ne!(date, distinct);
+    assert_eq!(date.get_time(), distinct.get_time());
+}
+
+#[test]
 fn date_epoch_and_iso_roundtrip() {
     let date = JsDate::from_millis(0.0);
     assert_eq!(date.get_time(), 0.0);

@@ -13,6 +13,10 @@ use tsonic_rust_js::regexp::{JsRegExp, JsRegExpMatch};
 use tsonic_rust_js::value::JsValue;
 use tsonic_rust_js::JsErrorKind;
 
+fn dense_values<T: Clone>(array: &tsonic_rust_js::JsArray<T>) -> Vec<T> {
+    array.values().into_iter().flatten().collect()
+}
+
 fn load_vectors() -> Vec<JsValue> {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../tests/oracle/regexp-vectors.json")
@@ -20,11 +24,11 @@ fn load_vectors() -> Vec<JsValue> {
         .expect("oracle vector path");
     let text = fs::read_to_string(&path).expect("read oracle vectors");
     let parsed = json::parse(&text).expect("parse oracle vectors");
-    let array = parsed.as_array().expect("vector array").borrow().clone();
+    let array = parsed.as_array().expect("vector array");
     array
         .values()
         .into_iter()
-        .map(|value| value.expect("dense vector entry").clone())
+        .map(|value| value.expect("dense vector entry"))
         .collect()
 }
 
@@ -54,10 +58,9 @@ fn array_items(value: &JsValue) -> Vec<JsValue> {
     value
         .as_array()
         .expect("expected array value")
-        .borrow()
         .values()
         .into_iter()
-        .map(|item| item.expect("dense array item").clone())
+        .map(|item| item.expect("dense array item"))
         .collect()
 }
 
@@ -113,7 +116,7 @@ fn check_match_record(
 fn check_test_steps(
     label: &str,
     steps: &[JsValue],
-    regexp: &mut JsRegExp,
+    regexp: &JsRegExp,
     input: &str,
 ) -> Result<(), String> {
     for (call, step) in steps.iter().enumerate() {
@@ -144,7 +147,7 @@ fn check_test_steps(
 fn check_exec_steps(
     label: &str,
     steps: &[JsValue],
-    regexp: &mut JsRegExp,
+    regexp: &JsRegExp,
     input: &str,
 ) -> Result<(), String> {
     for (call, step) in steps.iter().enumerate() {
@@ -197,7 +200,7 @@ fn regexp_engine_matches_node_oracle_vectors() {
         let expected = object_field(entry, "expected");
         let label = format!("/{pattern}/{flags} `{op}` on {input:?}");
 
-        let mut regexp = match JsRegExp::new(&pattern, &flags) {
+        let regexp = match JsRegExp::new(&pattern, &flags) {
             Ok(regexp) => regexp,
             Err(error) => {
                 failures.push(format!("{label}: engine rejected pattern: {error:?}"));
@@ -224,9 +227,7 @@ fn regexp_engine_matches_node_oracle_vectors() {
                 },
                 other => Err(format!("{label}: bad expected value {other}")),
             },
-            "test-sequence" => {
-                check_test_steps(&label, &array_items(&expected), &mut regexp, &input)
-            }
+            "test-sequence" => check_test_steps(&label, &array_items(&expected), &regexp, &input),
             "replace" => {
                 let replacement = get_string(entry, "replacement");
                 match (expected, regexp.replace(&input, &replacement)) {
@@ -242,24 +243,23 @@ fn regexp_engine_matches_node_oracle_vectors() {
             "split" => {
                 let expected = match expected.as_array() {
                     Some(values) => values
-                        .borrow()
                         .values()
                         .into_iter()
                         .map(|value| match value {
-                            Some(JsValue::String(part)) => part.clone(),
+                            Some(JsValue::String(part)) => part,
                             other => panic!("{label}: bad split part {other:?}"),
                         })
                         .collect::<Vec<_>>(),
                     None => panic!("{label}: expected array"),
                 };
                 match regexp.split(&input) {
-                    Ok(actual) => (actual == expected)
+                    Ok(actual) => (dense_values(&actual) == expected)
                         .then_some(())
                         .ok_or(format!("{label}: expected {expected:?}, got {actual:?}")),
                     Err(error) => Err(format!("{label}: split rejected: {error:?}")),
                 }
             }
-            "exec" => check_exec_steps(&label, &array_items(&expected), &mut regexp, &input),
+            "exec" => check_exec_steps(&label, &array_items(&expected), &regexp, &input),
             // Writes `setLastIndex` (a UTF-16 offset that may land inside a
             // surrogate pair) via `set_last_index`, runs one `exec`, and
             // asserts the match text and resulting `lastIndex` recorded from
@@ -310,7 +310,7 @@ fn regexp_engine_matches_node_oracle_vectors() {
                         ),
                     };
                     match regexp.match_strings(&input) {
-                        Ok(actual) => (actual == expected)
+                        Ok(actual) => (actual.as_ref().map(dense_values) == expected)
                             .then_some(())
                             .ok_or(format!("{label}: expected {expected:?}, got {actual:?}")),
                         Err(error) => Err(format!("{label}: match rejected: {error:?}")),

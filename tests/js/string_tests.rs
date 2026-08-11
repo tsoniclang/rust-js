@@ -5,52 +5,103 @@ use tsonic_rust_runtime::JsErrorKind;
 fn utf16_length_and_indexes() {
     assert_eq!(string::js_len("abc"), 3);
     assert_eq!(string::js_len("😀"), 2);
-    assert_eq!(string::char_at("abc", 5.0), "");
-    assert_eq!(string::at("abc", 1.0).as_deref(), Some("b"));
-    assert_eq!(string::at("abc", -1.0).as_deref(), Some("c"));
-    assert_eq!(string::at("abc", 9.0), None);
-    assert_eq!(string::at("abc", 1.9).as_deref(), Some("b"));
-    assert_eq!(string::at("abc", f64::NAN).as_deref(), Some("a"));
-    assert_eq!(string::at("abc", f64::INFINITY), None);
+    assert_eq!(string::char_at("abc", 5.0).as_deref(), Ok(""));
+    assert_eq!(string::at("abc", 1.0).unwrap().as_deref(), Some("b"));
+    assert_eq!(string::at("abc", -1.0).unwrap().as_deref(), Some("c"));
+    assert_eq!(string::at("abc", 9.0), Ok(None));
+    assert_eq!(string::at("abc", 1.9).unwrap().as_deref(), Some("b"));
+    assert_eq!(string::at("abc", f64::NAN).unwrap().as_deref(), Some("a"));
+    assert_eq!(string::at("abc", f64::INFINITY), Ok(None));
 }
 
 #[test]
 fn utf16_code_units_and_points() {
-    assert_eq!(string::char_code_at("😀", 0.0), Some(0xD83D as f64));
-    assert_eq!(string::char_code_at("😀", 1.0), Some(0xDE00 as f64));
-    assert_eq!(string::code_point_at("😀", 0.0), Some(0x1F600));
-    assert_eq!(string::code_point_at("😀", 1.0), Some(0xDE00));
+    assert_eq!(string::char_code_at("😀", 0.0), 0xD83D as f64);
+    assert_eq!(string::char_code_at("😀", 1.0), 0xDE00 as f64);
+    assert_eq!(string::code_point_at("😀", 0.0), Some(0x1F600 as f64));
+    assert_eq!(string::code_point_at("😀", 1.0), Some(0xDE00 as f64));
+    assert_eq!(string::code_point_at("😀", -1.0), None);
+    assert_eq!(string::char_at("abc", -1.0).as_deref(), Ok(""));
+    assert!(string::char_code_at("abc", -1.0).is_nan());
+    assert_eq!(
+        string::char_at("😀", 0.0).unwrap_err().kind(),
+        JsErrorKind::Unsupported
+    );
 }
 
 #[test]
 fn slice_and_substring_behavior() {
-    assert_eq!(string::slice("javascript", 1, Some(3)), "av");
-    assert_eq!(string::slice("javascript", -3, None), "ipt");
-    assert_eq!(string::substring("abc", 2, Some(0)), "ab");
-    assert_eq!(string::slice("abc", 2, Some(1)), "");
-    assert_eq!(string::substr("javascript", 4, Some(6)), "script");
-    assert_eq!(string::substr("javascript", -6, Some(3)), "scr");
+    assert_eq!(
+        string::slice("javascript", 1.0, Some(3.0)).as_deref(),
+        Ok("av")
+    );
+    assert_eq!(
+        string::slice("javascript", -3.0, None).as_deref(),
+        Ok("ipt")
+    );
+    assert_eq!(string::substring("abc", 2.9, 0.0).as_deref(), Ok("ab"));
+    assert_eq!(string::slice("abc", 2.0, Some(1.0)).as_deref(), Ok(""));
+    assert_eq!(
+        string::slice("abc", f64::NAN, Some(f64::INFINITY)).as_deref(),
+        Ok("abc")
+    );
+    assert_eq!(
+        string::substr("javascript", 4.9, 6.9).as_deref(),
+        Ok("script")
+    );
+    assert_eq!(
+        string::substr("javascript", -6.9, 3.9).as_deref(),
+        Ok("scr")
+    );
 }
 
 #[test]
 fn search_and_replace() {
-    assert!(string::includes("array", "ra", 0));
-    assert!(!string::includes("array", "RA", 0));
-    assert!(string::starts_with("array", "ar", 0));
-    assert!(string::starts_with("array", "ar", -5));
-    assert!(string::starts_with("array", "", 3));
-    assert!(string::ends_with("array", "ay", None));
-    assert_eq!(string::replace("hello", "ll", "yy"), "heyyo");
+    assert!(string::includes("array", "ra", 0.0));
+    assert!(!string::includes("array", "RA", 0.0));
+    assert!(string::starts_with("array", "ar", 0.0));
+    assert!(string::starts_with_from_start("array", "ar"));
+    assert!(string::starts_with("array", "ar", -5.0));
+    assert!(string::starts_with("array", "", 30.0));
+    assert!(string::ends_with_at_end("array", "ay"));
+    assert_eq!(
+        string::replace("hello", "ll", "[$&][$`][$']"),
+        "he[ll][he][o]o"
+    );
+    assert_eq!(
+        string::replace_all("banana", "a", "$&$&").as_deref(),
+        Ok("baanaanaa")
+    );
+    assert_eq!(string::replace_all("ab", "", "-").as_deref(), Ok("-a-b-"));
 }
 
 #[test]
 fn split_and_repeat_and_trim() {
-    assert_eq!(string::split("a,b,c", ",", None), vec!["a", "b", "c"]);
-    assert_eq!(string::split("abc", "", Some(2)), vec!["a", "b"]);
-    assert_eq!(string::split("a,,c", ",", None), vec!["a", "", "c"]);
-    assert_eq!(string::repeat("x", 3).as_deref(), Ok("xxx"));
     assert_eq!(
-        string::repeat("x", -1).unwrap_err().kind(),
+        dense(string::split_all("a,b,c", ",").unwrap()),
+        vec!["a", "b", "c"]
+    );
+    assert_eq!(
+        dense(string::split("abc", "", 2.9).unwrap()),
+        vec!["a", "b"]
+    );
+    assert_eq!(
+        dense(string::split_all("a,,c", ",").unwrap()),
+        vec!["a", "", "c"]
+    );
+    assert!(dense(string::split("a,b", ",", f64::NAN).unwrap()).is_empty());
+    assert_eq!(string::repeat("x", 3.9).as_deref(), Ok("xxx"));
+    assert_eq!(string::repeat("x", f64::NAN).as_deref(), Ok(""));
+    assert_eq!(
+        string::repeat("x", -1.0).unwrap_err().kind(),
+        JsErrorKind::RangeError
+    );
+    assert_eq!(
+        string::repeat("x", f64::INFINITY).unwrap_err().kind(),
+        JsErrorKind::RangeError
+    );
+    assert_eq!(
+        string::repeat("ab", 8_388_609.0).unwrap_err().kind(),
         JsErrorKind::RangeError
     );
     assert_eq!(string::trim("  hi  "), "hi");
@@ -93,30 +144,49 @@ fn pad_helpers_and_case() {
 
 #[test]
 fn constructors() {
-    assert_eq!(string::from_char_code(&[0x41, 0x42]), "AB");
-    assert_eq!(string::from_code_point(&[0x1f600]).as_deref(), Ok("😀"));
+    assert_eq!(string::from_char_code(&[65.9, 66.0]).as_deref(), Ok("AB"));
     assert_eq!(
-        string::from_code_point(&[0xD800]).unwrap_err().kind(),
+        string::from_code_point(&[0x1f600 as f64]).as_deref(),
+        Ok("😀")
+    );
+    assert_eq!(
+        string::from_code_point(&[0xD800 as f64])
+            .unwrap_err()
+            .kind(),
         JsErrorKind::RangeError
+    );
+    assert_eq!(
+        string::from_char_code(&[0xD800 as f64]).unwrap_err().kind(),
+        JsErrorKind::Unsupported
     );
 }
 
 #[test]
 fn search_edge_cases() {
-    assert_eq!(string::index_of("abc", "", 10), 3);
-    assert_eq!(string::index_of("abc", "z", -10), -1);
-    assert_eq!(string::last_index_of("banana", "ana", Some(-1)), -1);
-    assert_eq!(string::last_index_of("banana", "ana", Some(-10)), -1);
-    assert!(string::includes("", "", 0));
-    assert!(!string::includes("a", "a", 1));
+    assert_eq!(string::index_of("abc", "", 10.0), 3);
+    assert_eq!(string::index_of("abc", "z", -10.0), -1);
+    assert_eq!(string::last_index_of("banana", "ana", -1.0), -1);
+    assert_eq!(string::last_index_of("banana", "ana", -10.0), -1);
+    assert_eq!(string::last_index_of("abc", "", 1.9), 1);
+    assert!(string::includes("", "", 0.0));
+    assert!(!string::includes("a", "a", 1.0));
 }
 
 #[test]
 fn conversion_helpers() {
     assert_eq!(string::to_lower_case("HELLO"), "hello");
     assert_eq!(string::to_upper_case("hello"), "HELLO");
-    assert_eq!(string::char_at("😀", 5.0), "");
-    assert_eq!(string::at("😀", 1.0).as_deref(), Some("\u{FFFD}"));
-    assert_eq!(string::code_point_at("😀", 0.0), Some(0x1f600));
-    assert_eq!(string::code_point_at("😀", 1.0), Some(0xDE00));
+    assert_eq!(string::char_at("😀", 5.0).as_deref(), Ok(""));
+    assert_eq!(
+        string::at("😀", 1.0).unwrap_err().kind(),
+        JsErrorKind::Unsupported
+    );
+    assert_eq!(string::code_point_at("😀", 0.0), Some(0x1f600 as f64));
+    assert_eq!(string::code_point_at("😀", 1.0), Some(0xDE00 as f64));
+    assert_eq!(string::identity("hello"), "hello");
+    assert_eq!(string::concat("a", &["b", "c"]), "abc");
+}
+
+fn dense(array: tsonic_rust_js::JsArray<String>) -> Vec<String> {
+    array.iter_values().collect()
 }

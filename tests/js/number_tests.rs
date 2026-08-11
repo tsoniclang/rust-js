@@ -3,12 +3,19 @@ use tsonic_rust_js::number;
 
 #[test]
 fn parse_int_radix_examples() {
-    assert_eq!(number::parse_int("ff", Some(16)), 255.0);
-    assert!(number::parse_int("08", Some(10)).is_finite());
+    assert_eq!(number::parse_int("ff", Some(16.0)), 255.0);
+    assert!(number::parse_int("08", Some(10.0)).is_finite());
     assert!(number::parse_int("08", None).is_finite());
     assert_eq!(number::parse_int("08", None), 8.0);
     assert!(number::parse_int("xyz", None).is_nan());
-    assert!(number::parse_int("2", Some(1)).is_nan());
+    assert!(number::parse_int("2", Some(1.0)).is_nan());
+    assert_eq!(number::parse_int("0x10", Some(10.0)), 0.0);
+    assert_eq!(number::parse_int("0x10", None), 16.0);
+    assert_eq!(number::parse_int("10", Some(4_294_967_298.0)), 2.0);
+    assert!(number::parse_int("-0", None).is_sign_negative());
+    assert_eq!(number::parse_int("\u{feff}42", None), 42.0,);
+    assert!(number::parse_int("\u{85}42", None).is_nan());
+    assert!(number::parse_int(&"1".repeat(309), Some(10.0)).is_finite());
 }
 
 #[test]
@@ -50,12 +57,16 @@ fn number_predicates() {
 
 #[test]
 fn number_constants_are_exposed() {
+    let max = std::hint::black_box(number::MAX_VALUE);
+    let min = std::hint::black_box(number::MIN_VALUE);
     let max_safe = std::hint::black_box(number::MAX_SAFE_INTEGER);
     let min_safe = std::hint::black_box(number::MIN_SAFE_INTEGER);
     let positive_infinity = std::hint::black_box(number::POSITIVE_INFINITY);
     let negative_infinity = std::hint::black_box(number::NEGATIVE_INFINITY);
     let nan = std::hint::black_box(number::NAN);
     let epsilon = std::hint::black_box(number::EPSILON);
+    assert_eq!(max, f64::MAX);
+    assert_eq!(min.to_bits(), 1);
     assert_eq!(max_safe, 9_007_199_254_740_991.0);
     assert_eq!(min_safe, -9_007_199_254_740_991.0);
     assert_eq!(positive_infinity, f64::INFINITY);
@@ -66,29 +77,30 @@ fn number_constants_are_exposed() {
 
 #[test]
 fn number_formatting_rules() {
-    assert_eq!(number::to_fixed(1.2345, 2).as_deref(), Ok("1.23"));
+    assert_eq!(number::to_fixed(1.2345, Some(2.0)).as_deref(), Ok("1.23"));
+    assert_eq!(number::to_fixed(2.55, Some(1.0)).as_deref(), Ok("2.5"));
+    assert_eq!(number::to_fixed(1e21, Some(2.0)).as_deref(), Ok("1e+21"));
     assert_eq!(
-        number::to_fixed(1.234, 101).unwrap_err().kind(),
+        number::to_fixed(1.234, Some(101.0)).unwrap_err().kind(),
+        tsonic_rust_runtime::JsErrorKind::RangeError
+    );
+    assert_eq!(number::to_string_radix(255_i32, 16.0).as_deref(), Ok("ff"));
+    assert_eq!(
+        number::to_string_radix(255_i32, 37.0).unwrap_err().kind(),
         tsonic_rust_runtime::JsErrorKind::RangeError
     );
     assert_eq!(
-        number::to_string_radix(255.0, Some(16)).as_deref(),
-        Ok("ff")
+        number::to_exponential(12.5, Some(1.0)).as_deref(),
+        Ok("1.3e+1")
+    );
+    assert_eq!(number::to_exponential(12.5, None).as_deref(), Ok("1.25e+1"));
+    assert_eq!(number::to_precision(12.345, Some(2.0)).as_deref(), Ok("12"));
+    assert_eq!(
+        number::to_precision(2.55, Some(4.0)).as_deref(),
+        Ok("2.550")
     );
     assert_eq!(
-        number::to_string_radix(255.0, Some(37)).unwrap_err().kind(),
-        tsonic_rust_runtime::JsErrorKind::RangeError
-    );
-    assert_eq!(
-        number::to_exponential(12.5, Some(1)).as_deref(),
-        Ok("1.2e1")
-    );
-    assert_eq!(
-        number::to_precision(12.345, Some(2)).as_deref(),
-        Ok("12.35")
-    );
-    assert_eq!(
-        number::to_precision(12.345, Some(0)).unwrap_err().kind(),
+        number::to_precision(12.345, Some(0.0)).unwrap_err().kind(),
         tsonic_rust_runtime::JsErrorKind::RangeError
     );
 }
@@ -112,13 +124,35 @@ fn parse_float_invalid_leading_sign_combinations() {
 
 #[test]
 fn number_to_string_radix_rules() {
-    assert_eq!(number::to_string_radix(0.0, Some(16)).as_deref(), Ok("0"));
+    assert_eq!(number::to_string_radix(0_i32, 16.0).as_deref(), Ok("0"));
     assert_eq!(
-        number::to_string_radix(-255.0, Some(16)).as_deref(),
+        number::to_string_radix(-255_i32, 16.0).as_deref(),
         Ok("-ff")
     );
     assert_eq!(
-        number::to_string_radix(255.0, Some(1)).unwrap_err().kind(),
+        number::to_string_radix(255_i32, 1.0).unwrap_err().kind(),
         tsonic_rust_runtime::JsErrorKind::RangeError
     );
+}
+
+#[test]
+fn number_formatting_matches_ecmascript_edge_shapes() {
+    assert_eq!(number::to_string(-0.0), "0");
+    assert_eq!(number::to_string(1e-7), "1e-7");
+    assert_eq!(number::to_string(1e20), "100000000000000000000");
+    assert_eq!(number::to_exponential_default(0.0), "0e+0");
+    assert_eq!(number::to_exponential_default(-0.0), "0e+0");
+    assert_eq!(
+        number::to_exponential_digits(1e-7, 2.0).as_deref(),
+        Ok("1.00e-7")
+    );
+    assert_eq!(
+        number::to_precision_digits(0.0012, 4.0).as_deref(),
+        Ok("0.001200")
+    );
+    assert_eq!(
+        number::to_precision_digits(9.999999999999998, 2.0).as_deref(),
+        Ok("10")
+    );
+    assert_eq!(number::value_of(42_i32), 42);
 }

@@ -23,35 +23,42 @@ Date, and RegExp surfaces of `crates/tsonic_rust_js` measured against
 | `trimEnd` | implemented — `string::trim_end`, ABI `js_string_trim_end` |
 | `at` | implemented — `string::at`, ABI `js_string_at` |
 | `charAt` | implemented — `string::char_at`, ABI `js_string_char_at` |
+| `charCodeAt` | implemented — `string::char_code_at`, ABI `js_string_char_code_at`; returns `NaN` outside the string |
 | `codePointAt` | implemented — `string::code_point_at`, ABI `js_string_code_point_at` |
+| `substring` / `substr` | implemented — omitted and supplied trailing arguments use separate closed entrypoints; numeric arguments use ECMAScript integer coercion |
+| `lastIndexOf` | implemented — omitted and supplied positions use separate closed entrypoints and UTF-16 indexes |
+| `replaceAll` | implemented — `string::replace_all`, including string-search replacement substitutions |
+| `concat`, `valueOf`, `trimLeft`, `trimRight` | implemented — exact aliases and one borrowed string-slice concat ABI |
+| `String.fromCharCode` / `String.fromCodePoint` | implemented — fallible UTF-16/code-point constructors over one numeric slice ABI |
 | `match` / `matchAll` | implemented — `regexp::JsRegExpMatch` carrier via `JsRegExp::match_first` (non-`g` `match`), `JsRegExp::match_strings` (`g` `match`), and `JsRegExp::match_all` (`matchAll`, `TypeError` without `g`) |
 | `localeCompare`, `toLocale*`, `normalize` | requires-icu-contract — locale/normalization tables are not part of the closed runtime |
 | `isWellFormed` / `toWellFormed` | rejected-by-architecture — Rust `str` is always well-formed UTF-8; lone surrogates cannot be carried |
 
-All other members on the C# `String` surface (`slice`, `substring`, `substr`,
-`indexOf`, `lastIndexOf`, `startsWith`, `endsWith`, `includes`, `replace`
-(string form), `split` (string form), `trim`, `toLowerCase`, `toUpperCase`,
-`fromCharCode`, `fromCodePoint`, `raw`, `length` as `js_len`) are implemented
-in `string.rs`.
+All other members on the C# `String` surface (`slice`, `indexOf`,
+`startsWith`, `endsWith`, `includes`, `replace` (string form), `split`
+(string form), `trim`, `toLowerCase`, `toUpperCase`, `raw`, and `length` as
+`js_len`) are implemented in `string.rs`. Operations that would produce an
+unpaired UTF-16 surrogate return a deterministic unsupported error because a
+Rust `String` cannot represent that result.
 
-## Array (dense)
+## Array
 
 | Member | Disposition |
 | --- | --- |
-| `find` | implemented — `array::dense::find` (cloned value, `None` for JS `undefined`), ABI `array_dense_find` |
-| `findIndex` | implemented — `array::dense::find_index`, ABI `array_dense_find_index` |
-| `findLast` | implemented — `array::dense::find_last`, ABI `array_dense_find_last` |
-| `findLastIndex` | implemented — `array::dense::find_last_index`, ABI `array_dense_find_last_index` |
-| `indexOf` | implemented — `array::dense::index_of`, ABI `array_dense_index_of` |
-| `lastIndexOf` | implemented — `array::dense::last_index_of`, ABI `array_dense_last_index_of` |
-| `join` | implemented — `array::dense::join`, ABI `array_dense_join` |
-| `concat` | implemented — `array::dense::concat`, ABI `array_dense_concat` |
-| `slice` | implemented — `array::dense::slice`, ABI `array_dense_slice` |
-| `flat` | implemented (depth 1) — `array::dense::flat_one`, ABI `array_dense_flat_one`; arbitrary-depth `flat` is rejected-by-architecture (element types are static; nesting depth is a type, not a value) |
-| `flatMap` | implemented (depth 1) — `array::dense::flat_map_one`, ABI `array_dense_flat_map_one` |
+| `find` / `findIndex` | implemented on `array::JsArray`; callbacks skip holes |
+| `findLast` / `findLastIndex` | implemented on `array::JsArray`; callbacks skip holes |
+| `includes` / `indexOf` | implemented on `array::JsArray` with hole-aware search semantics |
+| `join` | implemented on `array::JsArray`; holes stringify as empty fields |
+| `slice` | implemented on `array::JsArray` and preserves holes |
+| `concat` | implemented on `array::JsArray` with exact `JsArrayConcatItem<T>` value/array alternatives; preserves holes and shallow-copies source arrays |
+| `map` / `filter` / `reduce` / `some` / `every` | implemented on `array::JsArray` with initial-length callback bounds and live element reads |
+| `Array.of` | implemented as `array::of`, ABI `array_of`; owns each exact element in one fixed Rust array before constructing the identity-preserving carrier |
+| `Array.from(string)` | implemented as `array::from_string`, ABI `array_from_string`; iterates Unicode code points exactly |
+| `Array.isArray` | implemented as `array::is_array_value`, ABI `array_is_array_value`, over the closed `JsValue` carrier |
 
-Sparse-array semantics live separately in `array::JsArray` (hole-preserving
-carrier), mirroring the C# `JSArray` split.
+Dense and sparse arrays use the same identity-preserving `array::JsArray`
+carrier. Assignment and parameter passing clone only the reference handle;
+mutations remain visible through every alias.
 
 ## Math / Number
 

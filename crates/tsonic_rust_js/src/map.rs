@@ -1,123 +1,250 @@
-//! Closed Map carrier with insertion-order semantics and configurable equality hooks.
+use std::cell::RefCell;
+use std::rc::Rc;
 
-use crate::equality::JsSameValueZero;
+use crate::equality::{JsSameValueZero, JsStrictEqual};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug)]
+struct MapEntry<K, V> {
+    key: K,
+    value: V,
+    present: bool,
+}
+
+#[derive(Debug)]
+struct JsMapState<K, V> {
+    entries: Vec<MapEntry<K, V>>,
+    size: usize,
+}
+
+#[derive(Debug)]
 pub struct JsMap<K, V> {
-    entries: Vec<(K, V)>,
+    state: Rc<RefCell<JsMapState<K, V>>>,
+}
+
+impl<K, V> Clone for JsMap<K, V> {
+    fn clone(&self) -> Self {
+        Self {
+            state: Rc::clone(&self.state),
+        }
+    }
+}
+
+impl<K, V> PartialEq for JsMap<K, V> {
+    fn eq(&self, other: &Self) -> bool {
+        self.ptr_eq(other)
+    }
+}
+
+impl<K, V> Eq for JsMap<K, V> {}
+
+impl<K, V> JsSameValueZero for JsMap<K, V> {
+    fn same_value_zero(&self, other: &Self) -> bool {
+        self.ptr_eq(other)
+    }
+}
+
+impl<K, V> JsStrictEqual for JsMap<K, V> {
+    fn strict_equal(&self, other: &Self) -> bool {
+        self.ptr_eq(other)
+    }
 }
 
 impl<K, V> JsMap<K, V> {
     pub fn new() -> Self {
         Self {
-            entries: Vec::new(),
+            state: Rc::new(RefCell::new(JsMapState {
+                entries: Vec::new(),
+                size: 0,
+            })),
         }
     }
 
     pub fn from_entries(entries: impl IntoIterator<Item = (K, V)>) -> Self
     where
-        K: JsSameValueZero + Clone,
-        V: Clone,
+        K: JsSameValueZero,
     {
-        let mut map = Self::new();
+        let map = Self::new();
         for (key, value) in entries {
             map.set(key, value);
         }
         map
     }
 
+    pub fn ptr_eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.state, &other.state)
+    }
+
     pub fn len(&self) -> usize {
-        self.entries.len()
+        self.state.borrow().size
     }
 
     pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
+        self.len() == 0
     }
 
-    pub fn clear(&mut self) {
-        self.entries.clear();
+    pub fn clear(&self) {
+        let mut state = self.state.borrow_mut();
+        for entry in &mut state.entries {
+            entry.present = false;
+        }
+        state.size = 0;
     }
 
-    pub fn get(&self, key: &K) -> Option<&V>
+    pub fn get<Q: ?Sized>(&self, key: &Q) -> Option<V>
     where
-        K: JsSameValueZero,
-    {
-        self.entries.iter().find_map(|(existing_key, value)| {
-            if existing_key.same_value_zero(key) {
-                Some(value)
-            } else {
-                None
-            }
-        })
-    }
-
-    pub fn set(&mut self, key: K, value: V)
-    where
-        K: JsSameValueZero + Clone,
+        K: JsSameValueZero<Q>,
         V: Clone,
     {
-        let mut index = None;
-        for (i, (existing_key, _)) in self.entries.iter().enumerate() {
-            if existing_key.same_value_zero(&key) {
-                index = Some(i);
-                break;
-            }
-        }
-        if let Some(i) = index {
-            self.entries[i] = (key, value);
-        } else {
-            self.entries.push((key, value));
-        }
-    }
-
-    pub fn has(&self, key: &K) -> bool
-    where
-        K: JsSameValueZero,
-    {
-        self.get(key).is_some()
-    }
-
-    pub fn delete(&mut self, key: &K) -> bool
-    where
-        K: JsSameValueZero,
-    {
-        if let Some(index) = self
+        self.state
+            .borrow()
             .entries
             .iter()
-            .position(|(existing_key, _)| existing_key.same_value_zero(key))
+            .find(|entry| entry.present && entry.key.same_value_zero(key))
+            .map(|entry| entry.value.clone())
+    }
+
+    pub fn set(&self, key: K, value: V) -> Self
+    where
+        K: JsSameValueZero,
+    {
+        let mut state = self.state.borrow_mut();
+        if let Some(entry) = state
+            .entries
+            .iter_mut()
+            .find(|entry| entry.present && entry.key.same_value_zero(&key))
         {
-            self.entries.remove(index);
+            entry.value = value;
+        } else {
+            state.entries.push(MapEntry {
+                key,
+                value,
+                present: true,
+            });
+            state.size += 1;
+        }
+        drop(state);
+        self.clone()
+    }
+
+    pub fn has<Q: ?Sized>(&self, key: &Q) -> bool
+    where
+        K: JsSameValueZero<Q>,
+    {
+        self.state
+            .borrow()
+            .entries
+            .iter()
+            .any(|entry| entry.present && entry.key.same_value_zero(key))
+    }
+
+    pub fn delete<Q: ?Sized>(&self, key: &Q) -> bool
+    where
+        K: JsSameValueZero<Q>,
+    {
+        let mut state = self.state.borrow_mut();
+        if let Some(entry) = state
+            .entries
+            .iter_mut()
+            .find(|entry| entry.present && entry.key.same_value_zero(key))
+        {
+            entry.present = false;
+            state.size -= 1;
             return true;
         }
         false
     }
 
-    pub fn keys(&self) -> Vec<&K> {
-        self.entries.iter().map(|(key, _)| key).collect()
-    }
-
-    pub fn values(&self) -> Vec<&V> {
-        self.entries.iter().map(|(_, value)| value).collect()
-    }
-
-    pub fn entries(&self) -> Vec<(&K, &V)> {
-        self.entries
+    pub fn keys(&self) -> Vec<K>
+    where
+        K: Clone,
+    {
+        self.state
+            .borrow()
+            .entries
             .iter()
-            .map(|(key, value)| (key, value))
+            .filter(|entry| entry.present)
+            .map(|entry| entry.key.clone())
             .collect()
+    }
+
+    pub fn values(&self) -> Vec<V>
+    where
+        V: Clone,
+    {
+        self.state
+            .borrow()
+            .entries
+            .iter()
+            .filter(|entry| entry.present)
+            .map(|entry| entry.value.clone())
+            .collect()
+    }
+
+    pub fn entries(&self) -> Vec<(K, V)>
+    where
+        K: Clone,
+        V: Clone,
+    {
+        self.state
+            .borrow()
+            .entries
+            .iter()
+            .filter(|entry| entry.present)
+            .map(|entry| (entry.key.clone(), entry.value.clone()))
+            .collect()
+    }
+
+    pub fn for_each_zero<F>(&self, mut callback: F)
+    where
+        K: Clone,
+        V: Clone,
+        F: FnMut(),
+    {
+        self.for_each(|_, _, _| callback());
+    }
+
+    pub fn for_each_value<F>(&self, mut callback: F)
+    where
+        K: Clone,
+        V: Clone,
+        F: FnMut(V),
+    {
+        self.for_each(|value, _, _| callback(value));
+    }
+
+    pub fn for_each_value_key<F>(&self, mut callback: F)
+    where
+        K: Clone,
+        V: Clone,
+        F: FnMut(V, K),
+    {
+        self.for_each(|value, key, _| callback(value, key));
     }
 
     pub fn for_each<F>(&self, mut callback: F)
     where
-        F: FnMut(&V, &K, &Self),
+        K: Clone,
+        V: Clone,
+        F: FnMut(V, K, Self),
     {
-        for (key, value) in &self.entries {
-            callback(value, key, self);
+        let mut index = 0;
+        loop {
+            let next = {
+                let state = self.state.borrow();
+                while index < state.entries.len() && !state.entries[index].present {
+                    index += 1;
+                }
+                state
+                    .entries
+                    .get(index)
+                    .map(|entry| (entry.key.clone(), entry.value.clone()))
+            };
+            let Some((key, value)) = next else {
+                break;
+            };
+            index += 1;
+            callback(value, key, self.clone());
         }
-    }
-
-    pub fn into_entries(self) -> Vec<(K, V)> {
-        self.entries
     }
 }
 

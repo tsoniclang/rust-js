@@ -3,9 +3,31 @@
 use std::cell::{Ref, RefCell, RefMut};
 use std::rc::Rc;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+use crate::equality::{JsSameValueZero, JsStrictEqual};
+
+#[derive(Debug, Clone)]
 pub struct ArrayBuffer {
     bytes: Rc<RefCell<Vec<u8>>>,
+}
+
+impl PartialEq for ArrayBuffer {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.bytes, &other.bytes)
+    }
+}
+
+impl Eq for ArrayBuffer {}
+
+impl JsSameValueZero for ArrayBuffer {
+    fn same_value_zero(&self, other: &Self) -> bool {
+        self == other
+    }
+}
+
+impl JsStrictEqual for ArrayBuffer {
+    fn strict_equal(&self, other: &Self) -> bool {
+        self == other
+    }
 }
 
 impl ArrayBuffer {

@@ -1,5 +1,6 @@
 use tsonic_rust_js::equality::{JsSameValueZero, JsStrictEqual};
 use tsonic_rust_js::{JsMap, JsObject, JsSet, JsValue};
+use tsonic_rust_runtime::{BigInt, Undefined};
 
 fn sample_object() -> JsValue {
     JsValue::object(JsObject::from_pairs([("x", JsValue::Number(1.0))]))
@@ -58,9 +59,8 @@ fn aliased_array_handles_are_identical() {
     original
         .as_array()
         .expect("array handle")
-        .borrow_mut()
         .push(JsValue::Bool(true));
-    assert_eq!(alias.as_array().expect("array handle").borrow().len(), 3);
+    assert_eq!(alias.as_array().expect("array handle").len(), 3);
 }
 
 #[test]
@@ -79,24 +79,24 @@ fn nan_and_signed_zero_semantics() {
 fn map_keys_use_object_identity() {
     let first = sample_object();
     let second = sample_object();
-    let mut map = JsMap::<JsValue, i32>::new();
+    let map = JsMap::<JsValue, i32>::new();
     map.set(first.clone(), 1);
     map.set(second.clone(), 2);
     assert_eq!(map.len(), 2);
-    assert_eq!(map.get(&first), Some(&1));
-    assert_eq!(map.get(&second), Some(&2));
+    assert_eq!(map.get(&first), Some(1));
+    assert_eq!(map.get(&second), Some(2));
 
     // The same handle is the same key.
     map.set(first.clone(), 3);
     assert_eq!(map.len(), 2);
-    assert_eq!(map.get(&first.clone()), Some(&3));
+    assert_eq!(map.get(&first.clone()), Some(3));
 }
 
 #[test]
 fn set_values_use_object_identity() {
     let first = sample_object();
     let second = sample_object();
-    let mut set = JsSet::<JsValue>::new();
+    let set = JsSet::<JsValue>::new();
     set.add(first.clone());
     set.add(second);
     assert_eq!(set.len(), 2);
@@ -115,4 +115,18 @@ fn strings_compare_by_value() {
     assert!(left.same_value_zero(&right));
     assert_eq!(left, right);
     assert_ne!(left, JsValue::String("other".to_string()));
+}
+
+#[test]
+fn float32_bigint_and_undefined_follow_primitive_equality() {
+    assert!(f32::NAN.same_value_zero(&f32::NAN));
+    assert!(!f32::NAN.strict_equal(&f32::NAN));
+    assert!(0.0_f32.strict_equal(&-0.0_f32));
+
+    let left = BigInt::from_decimal_literal("9007199254740993");
+    let right = BigInt::from_decimal_literal("9007199254740993");
+    assert!(left.same_value_zero(&right));
+    assert!(left.strict_equal(&right));
+    assert!(Undefined.same_value_zero(&Undefined));
+    assert!(Undefined.strict_equal(&Undefined));
 }

@@ -37,6 +37,18 @@ fn typed_array_subarray_is_shared_view() {
 }
 
 #[test]
+fn typed_array_clone_preserves_view_identity_while_subarray_creates_a_new_view() {
+    let values = Uint8Array::from_vec(vec![1, 2, 3]);
+    let alias = values.clone();
+    let mut subarray = values.subarray(0, None);
+
+    assert_eq!(values, alias);
+    assert_ne!(values, subarray);
+    subarray.set_index(1, 9);
+    assert_eq!(values.get(1), Some(9));
+}
+
+#[test]
 fn typed_array_set_source_and_map_helpers() {
     let mut values = Uint8Array::from_vec(vec![1, 2, 3, 4]);
     values.set_from_slice(&[9, 8], 1).unwrap();

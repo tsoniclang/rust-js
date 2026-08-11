@@ -3,9 +3,14 @@
 use std::collections::HashMap;
 use std::fmt;
 
+use crate::equality::JsSameValue;
 use crate::value::JsValue;
 
 pub type JsPropertyValue = JsValue;
+
+pub fn is(values: [JsValue; 2]) -> bool {
+    values[0].same_value(&values[1])
+}
 
 #[derive(Debug, Clone, PartialEq)]
 struct ObjectEntry {
