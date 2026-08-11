@@ -188,6 +188,59 @@ fn canonical_array_receiver_entrypoints_preserve_js_results() {
 }
 
 #[test]
+fn array_callbacks_receive_exact_declared_argument_shapes() {
+    let values = JsArray::from_dense(vec![2, 4, 6]);
+    let alias = values.clone();
+
+    let mapped = values.map_with_array(|value, index, array| {
+        assert!(array.ptr_eq(&alias));
+        value + index as i32
+    });
+    assert_eq!(mapped.values(), vec![Some(2), Some(5), Some(8)]);
+
+    let filtered = values.filter_with_index(|value, index| value as f64 > index + 1.0);
+    assert_eq!(filtered.values(), vec![Some(2), Some(4), Some(6)]);
+
+    let mut visits = Vec::new();
+    values.for_each(|value, index, array| {
+        assert!(array.ptr_eq(&alias));
+        visits.push((value, index));
+    });
+    assert_eq!(visits, vec![(2, 0.0), (4, 1.0), (6, 2.0)]);
+
+    assert_eq!(
+        values.reduce_with_array(0, |sum, value, index, array| {
+            assert!(array.ptr_eq(&alias));
+            sum + value + index as i32
+        }),
+        15
+    );
+    assert_eq!(
+        values
+            .reduce_from_first_with_index(|sum, value, index| sum + value + index as i32)
+            .expect("non-empty array reduces"),
+        15
+    );
+}
+
+#[test]
+fn array_reduce_without_initial_uses_first_present_slot_and_rejects_empty_input() {
+    let sparse = JsArray::from_sparse(5, vec![(2, 4), (4, 6)]);
+    assert_eq!(
+        sparse
+            .reduce_from_first(|sum, value| sum + value)
+            .expect("present values reduce"),
+        10
+    );
+
+    let empty = JsArray::<i32>::with_length(3);
+    let error = empty
+        .reduce_from_first(|sum, value| sum + value)
+        .expect_err("an array containing only holes has no initial accumulator");
+    assert_eq!(error.kind, tsonic_rust_runtime::JsErrorKind::TypeError);
+}
+
+#[test]
 fn array_search_indexes_follow_ecmascript_number_rules() {
     let values = JsArray::from_dense(vec![1, 2, 1, 2]);
 
