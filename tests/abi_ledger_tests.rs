@@ -44,7 +44,7 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
         js::abi::JsDate::from_millis(0.0).to_iso_string().unwrap(),
         "1970-01-01T00:00:00.000Z"
     );
-    let mut re = js::abi::JsRegExp::new("a(b+)c", "g").unwrap();
+    let re = js::abi::JsRegExp::new("a(b+)c", "g").unwrap();
     assert!(re.test("xabbc").unwrap());
     assert_eq!(re.find_first("xabbc").unwrap(), Some((1, 5)));
     assert_eq!(re.replace("abc abbc", "[$1]").unwrap(), "[b] [bb]");
@@ -84,7 +84,7 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
         "1970-01-01T00:00:00.000Z"
     );
 
-    let mut exec_re = js::abi::JsRegExp::new("(b+)", "g").unwrap();
+    let exec_re = js::abi::JsRegExp::new("(b+)", "g").unwrap();
     let matched: js::abi::JsRegExpMatch = exec_re.exec("abbc").unwrap().unwrap();
     assert_eq!(matched.text(), "bb");
     assert_eq!(matched.index(), 1);

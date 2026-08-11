@@ -1,26 +1,55 @@
 use crate::array_buffer::ArrayBuffer;
+use crate::equality::{JsSameValueZero, JsStrictEqual};
 use crate::errors::{range_error, JsResult};
 use std::cell::RefCell;
 use std::rc::Rc;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DataView {
+#[derive(Debug)]
+struct DataViewState {
     bytes: Rc<RefCell<Vec<u8>>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DataView {
+    state: Rc<DataViewState>,
+}
+
+impl PartialEq for DataView {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.state, &other.state)
+    }
+}
+
+impl Eq for DataView {}
+
+impl JsSameValueZero for DataView {
+    fn same_value_zero(&self, other: &Self) -> bool {
+        self == other
+    }
+}
+
+impl JsStrictEqual for DataView {
+    fn strict_equal(&self, other: &Self) -> bool {
+        self == other
+    }
 }
 
 impl DataView {
     pub fn new(buffer: ArrayBuffer) -> Self {
         Self {
-            bytes: buffer.shared_bytes(),
+            state: Rc::new(DataViewState {
+                bytes: buffer.shared_bytes(),
+            }),
         }
     }
 
     pub fn byte_length(&self) -> usize {
-        self.bytes.borrow().len()
+        self.state.bytes.borrow().len()
     }
 
     pub fn get_uint8(&self, offset: usize) -> JsResult<u8> {
-        self.bytes
+        self.state
+            .bytes
             .borrow()
             .get(offset)
             .copied()
@@ -28,7 +57,7 @@ impl DataView {
     }
 
     pub fn set_uint8(&mut self, offset: usize, value: u8) -> JsResult<()> {
-        let mut bytes = self.bytes.borrow_mut();
+        let mut bytes = self.state.bytes.borrow_mut();
         let slot = bytes
             .get_mut(offset)
             .ok_or_else(|| range_error("DataView offset out of bounds"))?;
@@ -76,7 +105,7 @@ impl DataView {
         let end = offset
             .checked_add(LENGTH)
             .ok_or_else(|| range_error("DataView offset out of bounds"))?;
-        let bytes = self.bytes.borrow();
+        let bytes = self.state.bytes.borrow();
         let slice = bytes
             .get(offset..end)
             .ok_or_else(|| range_error("DataView offset out of bounds"))?;
@@ -89,7 +118,7 @@ impl DataView {
         let end = offset
             .checked_add(bytes.len())
             .ok_or_else(|| range_error("DataView offset out of bounds"))?;
-        let mut storage = self.bytes.borrow_mut();
+        let mut storage = self.state.bytes.borrow_mut();
         let target = storage
             .get_mut(offset..end)
             .ok_or_else(|| range_error("DataView offset out of bounds"))?;

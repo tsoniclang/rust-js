@@ -80,6 +80,19 @@ fn dataview_reads_and_writes_endian_values() {
 }
 
 #[test]
+fn dataview_clone_preserves_identity_while_new_views_only_share_storage() {
+    let buffer = ArrayBuffer::new(2);
+    let mut first = DataView::new(buffer.clone());
+    let alias = first.clone();
+    let second = DataView::new(buffer);
+
+    assert_eq!(first, alias);
+    assert_ne!(first, second);
+    first.set_uint8(0, 7).unwrap();
+    assert_eq!(second.get_uint8(0).unwrap(), 7);
+}
+
+#[test]
 fn array_buffer_mutable_bytes_are_visible_to_views() {
     let buffer = ArrayBuffer::new(3);
     buffer.as_mut_bytes().copy_from_slice(&[1, 2, 3]);

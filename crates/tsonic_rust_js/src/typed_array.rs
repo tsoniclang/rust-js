@@ -5,6 +5,7 @@ use std::fmt;
 use std::rc::Rc;
 
 use crate::array_buffer::ArrayBuffer;
+use crate::equality::{JsSameValueZero, JsStrictEqual};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TypedArrayKind {
@@ -72,7 +73,7 @@ int_element!(u32, TypedArrayKind::Uint32);
 int_element!(f32, TypedArrayKind::Float32);
 int_element!(f64, TypedArrayKind::Float64);
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct SharedBytes {
     bytes: Rc<RefCell<Vec<u8>>>,
     byte_offset: usize,
@@ -81,8 +82,28 @@ struct SharedBytes {
 
 #[derive(Debug, Clone)]
 pub struct TypedArray<T: TypedElement> {
-    shared: SharedBytes,
+    shared: Rc<SharedBytes>,
     _element: std::marker::PhantomData<T>,
+}
+
+impl<T: TypedElement> PartialEq for TypedArray<T> {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.shared, &other.shared)
+    }
+}
+
+impl<T: TypedElement> Eq for TypedArray<T> {}
+
+impl<T: TypedElement> JsSameValueZero for TypedArray<T> {
+    fn same_value_zero(&self, other: &Self) -> bool {
+        self == other
+    }
+}
+
+impl<T: TypedElement> JsStrictEqual for TypedArray<T> {
+    fn strict_equal(&self, other: &Self) -> bool {
+        self == other
+    }
 }
 
 pub type Int8Array = TypedArray<i8>;
@@ -120,40 +141,40 @@ impl TypedElement for ClampedU8 {
 impl<T: TypedElement> TypedArray<T> {
     pub fn new(length: usize) -> Self {
         Self {
-            shared: SharedBytes {
+            shared: Rc::new(SharedBytes {
                 bytes: Rc::new(RefCell::new(vec![0; length * T::BYTES_PER_ELEMENT])),
                 byte_offset: 0,
                 len: length,
-            },
+            }),
             _element: std::marker::PhantomData,
         }
     }
 
     pub fn from_vec(values: Vec<T>) -> Self {
-        let mut bytes = vec![0; values.len() * T::BYTES_PER_ELEMENT];
+        let len = values.len();
+        let mut bytes = vec![0; len * T::BYTES_PER_ELEMENT];
         for (index, value) in values.into_iter().enumerate() {
             let start = index * T::BYTES_PER_ELEMENT;
             value.write_bytes(&mut bytes[start..start + T::BYTES_PER_ELEMENT]);
         }
         Self {
-            shared: SharedBytes {
+            shared: Rc::new(SharedBytes {
                 bytes: Rc::new(RefCell::new(bytes)),
                 byte_offset: 0,
-                len: 0,
-            },
+                len,
+            }),
             _element: std::marker::PhantomData,
         }
-        .with_len_from_bytes()
     }
 
     pub fn from_buffer(buffer: ArrayBuffer) -> Self {
         let len = buffer.byte_length() / T::BYTES_PER_ELEMENT;
         Self {
-            shared: SharedBytes {
+            shared: Rc::new(SharedBytes {
                 bytes: buffer.shared_bytes(),
                 byte_offset: 0,
                 len,
-            },
+            }),
             _element: std::marker::PhantomData,
         }
     }
@@ -232,11 +253,11 @@ impl<T: TypedElement> TypedArray<T> {
     pub fn subarray(&self, start: isize, end: Option<isize>) -> Self {
         let (start, end) = normalize_range(self.len(), start, end);
         Self {
-            shared: SharedBytes {
+            shared: Rc::new(SharedBytes {
                 bytes: Rc::clone(&self.shared.bytes),
                 byte_offset: self.shared.byte_offset + start * T::BYTES_PER_ELEMENT,
                 len: end.saturating_sub(start),
-            },
+            }),
             _element: std::marker::PhantomData,
         }
     }
@@ -247,11 +268,6 @@ impl<T: TypedElement> TypedArray<T> {
         }
         let start = self.shared.byte_offset + index * T::BYTES_PER_ELEMENT;
         Some((start, start + T::BYTES_PER_ELEMENT))
-    }
-
-    fn with_len_from_bytes(mut self) -> Self {
-        self.shared.len = self.shared.bytes.borrow().len() / T::BYTES_PER_ELEMENT;
-        self
     }
 }
 
