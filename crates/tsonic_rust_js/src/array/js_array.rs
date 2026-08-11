@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use super::slot::JsSlot;
-use crate::coercion::relative_index;
+use crate::coercion::{normalize_slice_index, relative_index, to_integer_or_infinity};
 use crate::equality::{JsSameValueZero, JsStrictEqual};
 
 #[derive(Debug)]
@@ -151,6 +151,12 @@ impl<T> JsArray<T> {
         state.slots.len()
     }
 
+    pub fn push_many<const N: usize>(&self, items: [T; N]) -> usize {
+        let mut state = self.state.borrow_mut();
+        state.slots.extend(items.into_iter().map(JsSlot::Present));
+        state.slots.len()
+    }
+
     pub fn pop(&self) -> Option<T> {
         match self.state.borrow_mut().slots.pop() {
             Some(JsSlot::Present(value)) => Some(value),
@@ -175,40 +181,115 @@ impl<T> JsArray<T> {
         state.slots.len()
     }
 
-    pub fn fill(&self, value: T, start: isize, end: Option<isize>)
+    pub fn unshift_many<const N: usize>(&self, items: [T; N]) -> usize {
+        let mut state = self.state.borrow_mut();
+        state
+            .slots
+            .splice(0..0, items.into_iter().map(JsSlot::Present));
+        state.slots.len()
+    }
+
+    pub fn fill_all(&self, value: T) -> Self
     where
         T: Clone,
     {
-        let (start, end) = normalize_range(self.len(), start, end);
-        let mut state = self.state.borrow_mut();
-        for slot in &mut state.slots[start..end] {
-            *slot = JsSlot::Present(value.clone());
-        }
+        self.fill(value, 0.0, None)
     }
 
-    pub fn copy_within(&self, target: isize, start: isize, end: Option<isize>)
+    pub fn fill_from(&self, value: T, start: f64) -> Self
+    where
+        T: Clone,
+    {
+        self.fill(value, start, None)
+    }
+
+    pub fn fill_to(&self, value: T, start: f64, end: f64) -> Self
+    where
+        T: Clone,
+    {
+        self.fill(value, start, Some(end))
+    }
+
+    fn fill(&self, value: T, start: f64, end: Option<f64>) -> Self
+    where
+        T: Clone,
+    {
+        let length = self.len();
+        let start = normalize_slice_index(start, length);
+        let end = end
+            .map(|value| normalize_slice_index(value, length))
+            .unwrap_or(length);
+        let mut state = self.state.borrow_mut();
+        if start < end {
+            for slot in &mut state.slots[start..end] {
+                *slot = JsSlot::Present(value.clone());
+            }
+        }
+        self.clone()
+    }
+
+    pub fn copy_within_from(&self, target: f64, start: f64) -> Self
+    where
+        T: Clone,
+    {
+        self.copy_within(target, start, None)
+    }
+
+    pub fn copy_within_to(&self, target: f64, start: f64, end: f64) -> Self
+    where
+        T: Clone,
+    {
+        self.copy_within(target, start, Some(end))
+    }
+
+    fn copy_within(&self, target: f64, start: f64, end: Option<f64>) -> Self
     where
         T: Clone,
     {
         let len = self.len();
-        let to = normalize_index(len, target);
-        let (from, end) = normalize_range(len, start, end);
+        let to = normalize_slice_index(target, len);
+        let from = normalize_slice_index(start, len);
+        let end = end
+            .map(|value| normalize_slice_index(value, len))
+            .unwrap_or(len);
         let count = end.saturating_sub(from).min(len.saturating_sub(to));
         let copied = self.state.borrow().slots[from..from + count].to_vec();
         let mut state = self.state.borrow_mut();
         for (offset, slot) in copied.into_iter().enumerate() {
             state.slots[to + offset] = slot;
         }
+        self.clone()
     }
 
-    pub fn reverse(&self) {
+    pub fn reverse(&self) -> Self {
         self.state.borrow_mut().slots.reverse();
+        self.clone()
     }
 
-    pub fn splice(&self, start: isize, delete_count: usize, items: Vec<T>) -> JsArray<T> {
+    pub fn splice_from(&self, start: f64) -> Self {
+        self.splice(start, f64::INFINITY, std::iter::empty())
+    }
+
+    pub fn splice_many<const N: usize>(
+        &self,
+        start: f64,
+        delete_count: f64,
+        items: [T; N],
+    ) -> Self {
+        self.splice(start, delete_count, items)
+    }
+
+    fn splice(&self, start: f64, delete_count: f64, items: impl IntoIterator<Item = T>) -> Self {
         let len = self.len();
-        let start = normalize_index(len, start);
-        let delete_count = delete_count.min(len.saturating_sub(start));
+        let start = normalize_slice_index(start, len);
+        let delete_count = to_integer_or_infinity(delete_count);
+        let delete_count = if delete_count <= 0.0 {
+            0
+        } else if delete_count == f64::INFINITY {
+            len.saturating_sub(start)
+        } else {
+            (delete_count as usize).min(len.saturating_sub(start))
+        };
         let removed = self
             .state
             .borrow_mut()
@@ -264,15 +345,14 @@ impl<T> JsArray<T> {
         }
     }
 
-    pub fn includes(&self, value: &T, from_index: isize) -> bool
+    pub fn includes(&self, value: &T, from_index: f64) -> bool
     where
         T: JsSameValueZero,
     {
         let state = self.state.borrow();
-        if from_index >= state.slots.len() as isize {
+        let Some(start) = normalize_search_start(state.slots.len(), from_index) else {
             return false;
-        }
-        let start = normalize_from_index(state.slots.len(), from_index);
+        };
         state.slots[start..].iter().any(|slot| {
             slot.as_ref()
                 .is_some_and(|item| item.same_value_zero(value))
@@ -283,15 +363,17 @@ impl<T> JsArray<T> {
     where
         T: JsSameValueZero,
     {
-        self.includes(value, 0)
+        self.includes(value, 0.0)
     }
 
-    pub fn index_of(&self, value: &T, from_index: isize) -> isize
+    pub fn index_of(&self, value: &T, from_index: f64) -> isize
     where
         T: JsStrictEqual,
     {
         let state = self.state.borrow();
-        let start = normalize_from_index(state.slots.len(), from_index);
+        let Some(start) = normalize_search_start(state.slots.len(), from_index) else {
+            return -1;
+        };
         state.slots[start..]
             .iter()
             .position(|slot| slot.as_ref().is_some_and(|item| item.strict_equal(value)))
@@ -302,7 +384,28 @@ impl<T> JsArray<T> {
     where
         T: JsStrictEqual,
     {
-        self.index_of(value, 0)
+        self.index_of(value, 0.0)
+    }
+
+    pub fn last_index_of(&self, value: &T, from_index: f64) -> isize
+    where
+        T: JsStrictEqual,
+    {
+        let state = self.state.borrow();
+        let Some(start) = normalize_last_search_start(state.slots.len(), from_index) else {
+            return -1;
+        };
+        state.slots[..=start]
+            .iter()
+            .rposition(|slot| slot.as_ref().is_some_and(|item| item.strict_equal(value)))
+            .map_or(-1, |index| index as isize)
+    }
+
+    pub fn last_index_of_from_end(&self, value: &T) -> isize
+    where
+        T: JsStrictEqual,
+    {
+        self.last_index_of(value, f64::INFINITY)
     }
 
     pub fn join(&self, separator: &str) -> String
@@ -487,7 +590,7 @@ impl<T> JsArray<T> {
         (0..length).all(|index| self.get(index).is_none_or(|value| predicate(&value)))
     }
 
-    pub fn sort_by_js_string(&self)
+    pub fn sort_by_js_string(&self) -> Self
     where
         T: Clone + crate::string::JsToString,
     {
@@ -497,13 +600,14 @@ impl<T> JsArray<T> {
             .iter()
             .filter_map(|slot| slot.as_ref().cloned())
             .collect::<Vec<_>>();
-        present.sort_by_key(|item| item.to_js_string());
+        present.sort_by_key(|item| item.to_js_string().encode_utf16().collect::<Vec<_>>());
         let present_len = present.len();
         let length = state.slots.len();
         state.slots = present.into_iter().map(JsSlot::Present).collect();
         state
             .slots
             .resize_with(length.max(present_len), || JsSlot::Hole);
+        self.clone()
     }
 
     pub fn to_reversed(&self) -> Self
@@ -542,25 +646,31 @@ where
     }
 }
 
-fn normalize_range(len: usize, start: isize, end: Option<isize>) -> (usize, usize) {
-    let start = normalize_index(len, start);
-    let end = normalize_index(len, end.unwrap_or(len as isize));
-    if end < start {
-        (start, start)
-    } else {
-        (start, end)
+fn normalize_search_start(len: usize, from_index: f64) -> Option<usize> {
+    let from_index = to_integer_or_infinity(from_index);
+    if from_index == f64::INFINITY || from_index >= len as f64 {
+        return None;
     }
+    if from_index == f64::NEG_INFINITY {
+        return Some(0);
+    }
+    if from_index >= 0.0 {
+        return Some(from_index as usize);
+    }
+    Some((len as f64 + from_index).max(0.0) as usize)
 }
 
-fn normalize_index(len: usize, index: isize) -> usize {
-    let len = len as isize;
-    let normalized = if index < 0 { len + index } else { index };
-    normalized.clamp(0, len) as usize
-}
-
-fn normalize_from_index(len: usize, from_index: isize) -> usize {
-    if from_index >= 0 {
-        return (from_index as usize).min(len);
+fn normalize_last_search_start(len: usize, from_index: f64) -> Option<usize> {
+    if len == 0 {
+        return None;
     }
-    len.saturating_sub(from_index.unsigned_abs())
+    let from_index = to_integer_or_infinity(from_index);
+    if from_index == f64::NEG_INFINITY {
+        return None;
+    }
+    if from_index >= 0.0 {
+        return Some((from_index as usize).min(len - 1));
+    }
+    let index = len as f64 + from_index;
+    (index >= 0.0).then_some(index as usize)
 }

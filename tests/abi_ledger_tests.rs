@@ -9,8 +9,8 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
         dense.map(|&x| x * 2).values(),
         vec![Some(2), Some(4), Some(6)]
     );
-    assert!(dense.includes(&2, 0));
-    assert_eq!(dense.index_of(&3, 0), 2);
+    assert!(dense.includes(&2, 0.0));
+    assert_eq!(dense.index_of(&3, 0.0), 2);
     assert_eq!(dense.join(","), "1,2,3");
     assert_eq!(dense.slice(1.0, None).values(), vec![Some(2), Some(3)]);
     assert_eq!(dense.slice_to(0.0, 2.0).values(), vec![Some(1), Some(2)]);
