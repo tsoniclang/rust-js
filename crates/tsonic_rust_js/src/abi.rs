@@ -23,7 +23,17 @@ pub use crate::math::{
 };
 pub use crate::number::{
     is_finite as number_is_finite, is_integer as number_is_integer, is_nan as number_is_nan,
-    is_safe_integer as number_is_safe_integer,
+    is_safe_integer as number_is_safe_integer, parse_float as number_parse_float,
+    parse_int_default as number_parse_int, parse_int_radix as number_parse_int_radix,
+    to_exponential_default as number_to_exponential,
+    to_exponential_digits as number_to_exponential_digits, to_fixed_default as number_to_fixed,
+    to_fixed_digits as number_to_fixed_digits, to_precision_default as number_to_precision,
+    to_precision_digits as number_to_precision_digits, to_string as number_to_string,
+    to_string_radix as number_to_string_radix, value_of as number_value_of,
+    EPSILON as NUMBER_EPSILON, MAX_SAFE_INTEGER as NUMBER_MAX_SAFE_INTEGER,
+    MAX_VALUE as NUMBER_MAX_VALUE, MIN_SAFE_INTEGER as NUMBER_MIN_SAFE_INTEGER,
+    MIN_VALUE as NUMBER_MIN_VALUE, NAN as NUMBER_NAN,
+    NEGATIVE_INFINITY as NUMBER_NEGATIVE_INFINITY, POSITIVE_INFINITY as NUMBER_POSITIVE_INFINITY,
 };
 pub use crate::object::JsObject;
 pub use crate::regexp::{JsRegExp, JsRegExpMatch};
