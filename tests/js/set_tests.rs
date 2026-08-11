@@ -23,12 +23,29 @@ fn set_uses_same_value_zero_for_nan() {
 }
 
 #[test]
+fn string_values_accept_borrowed_string_lookups() {
+    let set = JsSet::from_values(["name".to_string()]);
+    assert!(set.has("name"));
+    assert!(set.delete("name"));
+}
+
+#[test]
 fn set_iterable_constructor_and_for_each_are_closed() {
     let set = tsonic_rust_js::JsSet::from_values([1, 1, 2]);
     assert_eq!(set.len(), 2);
     let mut seen = Vec::new();
-    set.for_each(|value, _, _| seen.push(*value));
+    set.for_each(|value, _, _| seen.push(value));
     assert_eq!(seen, vec![1, 2]);
+
+    let mut callback_count = 0;
+    set.for_each_zero(|| callback_count += 1);
+    assert_eq!(callback_count, 2);
+    let mut values = Vec::new();
+    set.for_each_value(|value| values.push(value));
+    assert_eq!(values, vec![1, 2]);
+    let mut pairs = Vec::new();
+    set.for_each_value_key(|value, key| pairs.push((key, value)));
+    assert_eq!(pairs, vec![(1, 1), (2, 2)]);
 }
 
 #[test]
@@ -65,8 +82,8 @@ fn set_aliases_share_state_and_iteration_observes_live_mutation() {
 
     let mut seen = Vec::new();
     set.for_each(|value, _, current| {
-        seen.push(*value);
-        if *value == 1 {
+        seen.push(value);
+        if value == 1 {
             current.add(3);
             current.delete(&2);
         }

@@ -1,5 +1,6 @@
 use tsonic_rust_js::equality::{JsSameValueZero, JsStrictEqual};
 use tsonic_rust_js::{JsMap, JsObject, JsSet, JsValue};
+use tsonic_rust_runtime::{BigInt, Undefined};
 
 fn sample_object() -> JsValue {
     JsValue::object(JsObject::from_pairs([("x", JsValue::Number(1.0))]))
@@ -114,4 +115,18 @@ fn strings_compare_by_value() {
     assert!(left.same_value_zero(&right));
     assert_eq!(left, right);
     assert_ne!(left, JsValue::String("other".to_string()));
+}
+
+#[test]
+fn float32_bigint_and_undefined_follow_primitive_equality() {
+    assert!(f32::NAN.same_value_zero(&f32::NAN));
+    assert!(!f32::NAN.strict_equal(&f32::NAN));
+    assert!(0.0_f32.strict_equal(&-0.0_f32));
+
+    let left = BigInt::from_decimal_literal("9007199254740993");
+    let right = BigInt::from_decimal_literal("9007199254740993");
+    assert!(left.same_value_zero(&right));
+    assert!(left.strict_equal(&right));
+    assert!(Undefined.same_value_zero(&Undefined));
+    assert!(Undefined.strict_equal(&Undefined));
 }

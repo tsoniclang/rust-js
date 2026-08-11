@@ -24,14 +24,32 @@ fn map_uses_same_value_zero_for_nan() {
 }
 
 #[test]
+fn string_keys_accept_borrowed_string_lookups() {
+    let map = JsMap::from_entries([("name".to_string(), 1)]);
+    assert_eq!(map.get("name"), Some(1));
+    assert!(map.has("name"));
+    assert!(map.delete("name"));
+}
+
+#[test]
 fn map_iterable_constructor_and_for_each_are_closed() {
     let map = tsonic_rust_js::JsMap::from_entries([(1, "a"), (1, "b"), (2, "c")]);
     assert_eq!(map.len(), 2);
     assert_eq!(map.get(&1), Some("b"));
     let mut seen = Vec::new();
-    map.for_each(|value, key, _| seen.push((*key, *value)));
+    map.for_each(|value, key, _| seen.push((key, value)));
     assert_eq!(seen, vec![(1, "b"), (2, "c")]);
     assert_eq!(map.entries(), vec![(1, "b"), (2, "c")]);
+
+    let mut callback_count = 0;
+    map.for_each_zero(|| callback_count += 1);
+    assert_eq!(callback_count, 2);
+    let mut values = Vec::new();
+    map.for_each_value(|value| values.push(value));
+    assert_eq!(values, vec!["b", "c"]);
+    let mut pairs = Vec::new();
+    map.for_each_value_key(|value, key| pairs.push((key, value)));
+    assert_eq!(pairs, vec![(1, "b"), (2, "c")]);
 }
 
 #[test]
@@ -44,8 +62,8 @@ fn map_aliases_share_state_and_iteration_observes_live_mutation() {
 
     let mut seen = Vec::new();
     map.for_each(|value, key, current| {
-        seen.push((*key, *value));
-        if *key == 1 {
+        seen.push((key, value));
+        if key == 1 {
             current.set(3, "c");
             current.delete(&2);
         }

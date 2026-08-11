@@ -89,9 +89,9 @@ impl<T> JsSet<T> {
         state.size = 0;
     }
 
-    pub fn has(&self, value: &T) -> bool
+    pub fn has<Q: ?Sized>(&self, value: &Q) -> bool
     where
-        T: JsSameValueZero,
+        T: JsSameValueZero<Q>,
     {
         self.state
             .borrow()
@@ -115,9 +115,9 @@ impl<T> JsSet<T> {
         self.clone()
     }
 
-    pub fn delete(&self, value: &T) -> bool
+    pub fn delete<Q: ?Sized>(&self, value: &Q) -> bool
     where
-        T: JsSameValueZero,
+        T: JsSameValueZero<Q>,
     {
         let mut state = self.state.borrow_mut();
         if let Some(entry) = state
@@ -162,10 +162,34 @@ impl<T> JsSet<T> {
             .collect()
     }
 
+    pub fn for_each_zero<F>(&self, mut callback: F)
+    where
+        T: Clone,
+        F: FnMut(),
+    {
+        self.for_each(|_, _, _| callback());
+    }
+
+    pub fn for_each_value<F>(&self, mut callback: F)
+    where
+        T: Clone,
+        F: FnMut(T),
+    {
+        self.for_each(|value, _, _| callback(value));
+    }
+
+    pub fn for_each_value_key<F>(&self, mut callback: F)
+    where
+        T: Clone,
+        F: FnMut(T, T),
+    {
+        self.for_each(|value, key, _| callback(value, key));
+    }
+
     pub fn for_each<F>(&self, mut callback: F)
     where
         T: Clone,
-        F: FnMut(&T, &T, &Self),
+        F: FnMut(T, T, Self),
     {
         let mut index = 0;
         loop {
@@ -180,7 +204,7 @@ impl<T> JsSet<T> {
                 break;
             };
             index += 1;
-            callback(&value, &value, self);
+            callback(value.clone(), value, self.clone());
         }
     }
 

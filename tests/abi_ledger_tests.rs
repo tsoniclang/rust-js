@@ -6,7 +6,7 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
     assert_eq!(dense.push(3), 3);
     assert_eq!(dense.at(-1.0), Some(3));
     assert_eq!(
-        dense.map(|&x| x * 2).values(),
+        dense.map(|x| x * 2).values(),
         vec![Some(2), Some(4), Some(6)]
     );
     assert!(dense.includes(&2, 0.0));
@@ -58,10 +58,10 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
         vec![Some("a".to_string()), Some("b".to_string())]
     );
 
-    assert_eq!(dense.find_index(|&x| x == 2), 1);
-    assert_eq!(dense.find(|&x| x == 2), Some(2));
-    assert_eq!(dense.find_last(|&x| x < 3), Some(2));
-    assert_eq!(dense.find_last_index(|&x| x < 3), 1);
+    assert_eq!(dense.find_index(|x| x == 2), 1);
+    assert_eq!(dense.find(|x| x == 2), Some(2));
+    assert_eq!(dense.find_last(|x| x < 3), Some(2));
+    assert_eq!(dense.find_last_index(|x| x < 3), 1);
 
     assert_eq!(
         js::abi::json_stringify_with_indent(&parsed, "  ")

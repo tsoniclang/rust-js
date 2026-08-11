@@ -90,9 +90,9 @@ impl<K, V> JsMap<K, V> {
         state.size = 0;
     }
 
-    pub fn get(&self, key: &K) -> Option<V>
+    pub fn get<Q: ?Sized>(&self, key: &Q) -> Option<V>
     where
-        K: JsSameValueZero,
+        K: JsSameValueZero<Q>,
         V: Clone,
     {
         self.state
@@ -126,9 +126,9 @@ impl<K, V> JsMap<K, V> {
         self.clone()
     }
 
-    pub fn has(&self, key: &K) -> bool
+    pub fn has<Q: ?Sized>(&self, key: &Q) -> bool
     where
-        K: JsSameValueZero,
+        K: JsSameValueZero<Q>,
     {
         self.state
             .borrow()
@@ -137,9 +137,9 @@ impl<K, V> JsMap<K, V> {
             .any(|entry| entry.present && entry.key.same_value_zero(key))
     }
 
-    pub fn delete(&self, key: &K) -> bool
+    pub fn delete<Q: ?Sized>(&self, key: &Q) -> bool
     where
-        K: JsSameValueZero,
+        K: JsSameValueZero<Q>,
     {
         let mut state = self.state.borrow_mut();
         if let Some(entry) = state
@@ -194,11 +194,38 @@ impl<K, V> JsMap<K, V> {
             .collect()
     }
 
+    pub fn for_each_zero<F>(&self, mut callback: F)
+    where
+        K: Clone,
+        V: Clone,
+        F: FnMut(),
+    {
+        self.for_each(|_, _, _| callback());
+    }
+
+    pub fn for_each_value<F>(&self, mut callback: F)
+    where
+        K: Clone,
+        V: Clone,
+        F: FnMut(V),
+    {
+        self.for_each(|value, _, _| callback(value));
+    }
+
+    pub fn for_each_value_key<F>(&self, mut callback: F)
+    where
+        K: Clone,
+        V: Clone,
+        F: FnMut(V, K),
+    {
+        self.for_each(|value, key, _| callback(value, key));
+    }
+
     pub fn for_each<F>(&self, mut callback: F)
     where
         K: Clone,
         V: Clone,
-        F: FnMut(&V, &K, &Self),
+        F: FnMut(V, K, Self),
     {
         let mut index = 0;
         loop {
@@ -216,7 +243,7 @@ impl<K, V> JsMap<K, V> {
                 break;
             };
             index += 1;
-            callback(&value, &key, self);
+            callback(value, key, self.clone());
         }
     }
 }

@@ -470,13 +470,13 @@ impl<T> JsArray<T> {
     pub fn map<U, F>(&self, mut mapper: F) -> JsArray<U>
     where
         T: Clone,
-        F: FnMut(&T) -> U,
+        F: FnMut(T) -> U,
     {
         let length = self.len();
         let output = JsArray::with_length(length);
         for index in 0..length {
             if let Some(value) = self.get(index) {
-                output.set(index, mapper(&value));
+                output.set(index, mapper(value));
             }
         }
         output
@@ -485,13 +485,13 @@ impl<T> JsArray<T> {
     pub fn filter<F>(&self, mut predicate: F) -> Self
     where
         T: Clone,
-        F: FnMut(&T) -> bool,
+        F: FnMut(T) -> bool,
     {
         let length = self.len();
         let output = Self::new();
         for index in 0..length {
             if let Some(value) = self.get(index) {
-                if predicate(&value) {
+                if predicate(value.clone()) {
                     output.push(value);
                 }
             }
@@ -502,13 +502,13 @@ impl<T> JsArray<T> {
     pub fn reduce<U, F>(&self, initial: U, mut reducer: F) -> U
     where
         T: Clone,
-        F: FnMut(U, &T) -> U,
+        F: FnMut(U, T) -> U,
     {
         let length = self.len();
         let mut accumulator = initial;
         for index in 0..length {
             if let Some(value) = self.get(index) {
-                accumulator = reducer(accumulator, &value);
+                accumulator = reducer(accumulator, value);
             }
         }
         accumulator
@@ -517,12 +517,12 @@ impl<T> JsArray<T> {
     pub fn find<F>(&self, mut predicate: F) -> Option<T>
     where
         T: Clone,
-        F: FnMut(&T) -> bool,
+        F: FnMut(T) -> bool,
     {
         let length = self.len();
         for index in 0..length {
             if let Some(value) = self.get(index) {
-                if predicate(&value) {
+                if predicate(value.clone()) {
                     return Some(value);
                 }
             }
@@ -533,11 +533,11 @@ impl<T> JsArray<T> {
     pub fn find_index<F>(&self, mut predicate: F) -> isize
     where
         T: Clone,
-        F: FnMut(&T) -> bool,
+        F: FnMut(T) -> bool,
     {
         let length = self.len();
         for index in 0..length {
-            if self.get(index).is_some_and(|value| predicate(&value)) {
+            if self.get(index).is_some_and(&mut predicate) {
                 return index as isize;
             }
         }
@@ -547,11 +547,11 @@ impl<T> JsArray<T> {
     pub fn find_last<F>(&self, mut predicate: F) -> Option<T>
     where
         T: Clone,
-        F: FnMut(&T) -> bool,
+        F: FnMut(T) -> bool,
     {
         for index in (0..self.len()).rev() {
             if let Some(value) = self.get(index) {
-                if predicate(&value) {
+                if predicate(value.clone()) {
                     return Some(value);
                 }
             }
@@ -562,10 +562,10 @@ impl<T> JsArray<T> {
     pub fn find_last_index<F>(&self, mut predicate: F) -> isize
     where
         T: Clone,
-        F: FnMut(&T) -> bool,
+        F: FnMut(T) -> bool,
     {
         for index in (0..self.len()).rev() {
-            if self.get(index).is_some_and(|value| predicate(&value)) {
+            if self.get(index).is_some_and(&mut predicate) {
                 return index as isize;
             }
         }
@@ -575,19 +575,19 @@ impl<T> JsArray<T> {
     pub fn some<F>(&self, mut predicate: F) -> bool
     where
         T: Clone,
-        F: FnMut(&T) -> bool,
+        F: FnMut(T) -> bool,
     {
         let length = self.len();
-        (0..length).any(|index| self.get(index).is_some_and(|value| predicate(&value)))
+        (0..length).any(|index| self.get(index).is_some_and(&mut predicate))
     }
 
     pub fn every<F>(&self, mut predicate: F) -> bool
     where
         T: Clone,
-        F: FnMut(&T) -> bool,
+        F: FnMut(T) -> bool,
     {
         let length = self.len();
-        (0..length).all(|index| self.get(index).is_none_or(|value| predicate(&value)))
+        (0..length).all(|index| self.get(index).is_none_or(&mut predicate))
     }
 
     pub fn sort_by_js_string(&self) -> Self
