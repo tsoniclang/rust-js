@@ -224,6 +224,111 @@ fn array_callbacks_receive_exact_declared_argument_shapes() {
 }
 
 #[test]
+fn every_array_callback_arity_has_executable_runtime_coverage() {
+    let values = JsArray::from_dense(vec![2, 4, 6]);
+    let alias = values.clone();
+
+    let mut map_calls = 0;
+    assert_eq!(
+        values
+            .map_zero(|| {
+                map_calls += 1;
+                map_calls
+            })
+            .values(),
+        vec![Some(1), Some(2), Some(3)]
+    );
+    assert_eq!(
+        values
+            .map_with_index(|value, index| value + index as i32)
+            .values(),
+        vec![Some(2), Some(5), Some(8)]
+    );
+    assert_eq!(values.filter_zero(|| true).values(), values.values());
+    assert_eq!(
+        values
+            .filter_with_array(|value, _, array| array.ptr_eq(&alias) && value > 2)
+            .values(),
+        vec![Some(4), Some(6)]
+    );
+
+    assert_eq!(values.reduce_zero(0, || 7), 7);
+    assert_eq!(
+        values.reduce_accumulator(1, |accumulator| accumulator + 1),
+        4
+    );
+    assert_eq!(
+        values.reduce_with_index(0, |sum, value, index| sum + value + index as i32),
+        15
+    );
+    assert_eq!(values.reduce_from_first_zero(|| 9).unwrap(), 9);
+    assert_eq!(
+        values
+            .reduce_from_first_accumulator(|accumulator| accumulator + 1)
+            .unwrap(),
+        4
+    );
+    assert_eq!(
+        values
+            .reduce_from_first_with_array(|sum, value, index, array| {
+                assert!(array.ptr_eq(&alias));
+                sum + value + index as i32
+            })
+            .unwrap(),
+        15
+    );
+
+    let mut visits = Vec::new();
+    values.for_each_value_index(|value, index| visits.push((value, index)));
+    assert_eq!(visits, vec![(2, 0.0), (4, 1.0), (6, 2.0)]);
+
+    assert_eq!(values.find_zero(|| true), Some(2));
+    assert_eq!(
+        values.find_with_index(|value, index| value == 4 && index == 1.0),
+        Some(4)
+    );
+    assert_eq!(
+        values.find_with_array(|value, _, array| array.ptr_eq(&alias) && value == 6),
+        Some(6)
+    );
+    assert_eq!(values.find_index_zero(|| true), 0);
+    assert_eq!(
+        values.find_index_with_index(|value, index| value == 4 && index == 1.0),
+        1
+    );
+    assert_eq!(
+        values.find_index_with_array(|value, _, array| array.ptr_eq(&alias) && value == 6),
+        2
+    );
+
+    assert_eq!(values.find_last_zero(|| true), Some(6));
+    assert_eq!(
+        values.find_last_with_index(|value, index| value == 4 && index == 1.0),
+        Some(4)
+    );
+    assert_eq!(
+        values.find_last_with_array(|value, _, array| array.ptr_eq(&alias) && value == 6),
+        Some(6)
+    );
+    assert_eq!(values.find_last_index_zero(|| true), 2);
+    assert_eq!(
+        values.find_last_index_with_index(|value, index| value == 4 && index == 1.0),
+        1
+    );
+    assert_eq!(
+        values.find_last_index_with_array(|value, _, array| { array.ptr_eq(&alias) && value == 6 }),
+        2
+    );
+
+    assert!(values.some_zero(|| true));
+    assert!(values.some_with_index(|value, index| value == 6 && index == 2.0));
+    assert!(values.some_with_array(|_, _, array| array.ptr_eq(&alias)));
+    assert!(values.every_zero(|| true));
+    assert!(values.every_with_index(|value, index| value as f64 >= index));
+    assert!(values.every_with_array(|_, _, array| array.ptr_eq(&alias)));
+}
+
+#[test]
 fn array_reduce_without_initial_uses_first_present_slot_and_rejects_empty_input() {
     let sparse = JsArray::from_sparse(5, vec![(2, 4), (4, 6)]);
     assert_eq!(

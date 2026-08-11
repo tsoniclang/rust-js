@@ -102,11 +102,32 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
     assert_eq!(js::abi::js_string_repeat("ab", 2.0).unwrap(), "abab");
     assert_eq!(js::abi::js_string_trim_start(" a "), "a ");
     assert_eq!(js::abi::js_string_trim_end(" a "), " a");
-    assert_eq!(js::abi::js_string_at("abc", -1.0).as_deref(), Some("c"));
-    assert_eq!(js::abi::js_string_char_at("abc", 1.0), "b");
+    assert_eq!(
+        js::abi::js_string_at("abc", -1.0).unwrap().as_deref(),
+        Some("c")
+    );
+    assert_eq!(js::abi::js_string_char_at("abc", 1.0).as_deref(), Ok("b"));
+    assert_eq!(js::abi::js_string_char_code_at("abc", 1.0), 98.0);
     assert_eq!(
         js::abi::js_string_code_point_at("😀", 0.0),
         Some(0x1F600 as f64)
+    );
+    assert_eq!(js::abi::js_string_last_index_of("abc", "b", 2.0), 1);
+    assert_eq!(
+        js::abi::js_string_substring("abc", 2.0, 0.0).as_deref(),
+        Ok("ab")
+    );
+    assert_eq!(
+        js::abi::js_string_substr("abc", 1.0, 1.0).as_deref(),
+        Ok("b")
+    );
+    assert_eq!(
+        js::abi::js_string_replace_all("aba", "a", "x").as_deref(),
+        Ok("xbx")
+    );
+    assert_eq!(
+        js::abi::js_string_from_char_code(&[65.0, 66.0]).as_deref(),
+        Ok("AB")
     );
 
     let buffer = js::abi::ArrayBuffer::new(4);

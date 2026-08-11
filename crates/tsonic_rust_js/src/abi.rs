@@ -42,10 +42,17 @@ pub use crate::object::JsObject;
 pub use crate::regexp::{JsRegExp, JsRegExpMatch};
 pub use crate::set::JsSet;
 pub use crate::string::{
-    at as js_string_at, char_at as js_string_char_at, code_point_at as js_string_code_point_at,
-    pad_end as js_string_pad_end, pad_end_with as js_string_pad_end_with,
-    pad_start as js_string_pad_start, pad_start_with as js_string_pad_start_with,
-    repeat as js_string_repeat, trim_end as js_string_trim_end, trim_start as js_string_trim_start,
+    at as js_string_at, char_at as js_string_char_at, char_code_at as js_string_char_code_at,
+    code_point_at as js_string_code_point_at, from_char_code as js_string_from_char_code,
+    from_code_point as js_string_from_code_point, last_index_of as js_string_last_index_of,
+    last_index_of_from_end as js_string_last_index_of_from_end, pad_end as js_string_pad_end,
+    pad_end_with as js_string_pad_end_with, pad_start as js_string_pad_start,
+    pad_start_with as js_string_pad_start_with, repeat as js_string_repeat,
+    replace as js_string_replace, replace_all as js_string_replace_all, split as js_string_split,
+    split_all as js_string_split_all, substr as js_string_substr,
+    substr_from as js_string_substr_from, substring as js_string_substring,
+    substring_from as js_string_substring_from, trim_end as js_string_trim_end,
+    trim_start as js_string_trim_start,
 };
 pub use crate::typed_array::{
     Float32Array, Float64Array, Int16Array, Int32Array, Int8Array, Uint16Array, Uint32Array,
