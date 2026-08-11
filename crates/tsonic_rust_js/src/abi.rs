@@ -18,6 +18,9 @@ pub use crate::json::{
     stringify_with_indent as json_stringify_with_indent,
 };
 pub use crate::map::JsMap;
+pub use crate::math::{
+    max as math_max, min as math_min, random as math_random, round as math_round,
+};
 pub use crate::number::{
     is_finite as number_is_finite, is_integer as number_is_integer, is_nan as number_is_nan,
     is_safe_integer as number_is_safe_integer,
