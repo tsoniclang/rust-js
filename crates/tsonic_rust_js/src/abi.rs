@@ -1,6 +1,9 @@
 //! Backend-legal ABI re-exports for generated Rust.
 
-pub use crate::array::{JsArray, JsSlot};
+pub use crate::array::{
+    from_string as array_from_string, is_array_value as array_is_array_value, of as array_of,
+    JsArray, JsSlot,
+};
 pub use crate::array_buffer::ArrayBuffer;
 pub use crate::console::{
     debug as console_debug, debug_to as console_debug_to, dir_to as console_dir_to,

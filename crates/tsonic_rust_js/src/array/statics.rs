@@ -8,6 +8,10 @@ pub fn from_string(value: &str) -> super::JsArray<String> {
     super::JsArray::from_dense(value.chars().map(|ch| ch.to_string()).collect())
 }
 
+pub fn of<T, const N: usize>(items: [T; N]) -> super::JsArray<T> {
+    super::JsArray::from_dense(Vec::from(items))
+}
+
 /// Compile-time array identity helper for statically typed carriers.
 pub fn is_array<T>(value: &T) -> bool
 where

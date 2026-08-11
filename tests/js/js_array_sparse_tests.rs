@@ -188,6 +188,24 @@ fn canonical_array_receiver_entrypoints_preserve_js_results() {
 }
 
 #[test]
+fn array_static_factories_preserve_values_and_array_brand() {
+    let values = statics::of([1, 2, 3]);
+    assert_eq!(values.values(), vec![Some(1), Some(2), Some(3)]);
+
+    let text = statics::from_string("a😀");
+    assert_eq!(
+        text.values(),
+        vec![Some("a".to_string()), Some("😀".to_string())]
+    );
+
+    assert!(statics::is_array(&values));
+    assert!(statics::is_array_value(&tsonic_rust_js::JsValue::from(
+        vec![tsonic_rust_js::JsValue::Number(1.0)]
+    )));
+    assert!(!statics::is_array_value(&tsonic_rust_js::JsValue::Null));
+}
+
+#[test]
 fn array_callbacks_receive_exact_declared_argument_shapes() {
     let values = JsArray::from_dense(vec![2, 4, 6]);
     let alias = values.clone();

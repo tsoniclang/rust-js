@@ -51,6 +51,9 @@ Rust `String` cannot represent that result.
 | `join` | implemented on `array::JsArray`; holes stringify as empty fields |
 | `slice` | implemented on `array::JsArray` and preserves holes |
 | `map` / `filter` / `reduce` / `some` / `every` | implemented on `array::JsArray` with initial-length callback bounds and live element reads |
+| `Array.of` | implemented as `array::of`, ABI `array_of`; owns each exact element in one fixed Rust array before constructing the identity-preserving carrier |
+| `Array.from(string)` | implemented as `array::from_string`, ABI `array_from_string`; iterates Unicode code points exactly |
+| `Array.isArray` | implemented as `array::is_array_value`, ABI `array_is_array_value`, over the closed `JsValue` carrier |
 
 Dense and sparse arrays use the same identity-preserving `array::JsArray`
 carrier. Assignment and parameter passing clone only the reference handle;
