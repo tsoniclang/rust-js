@@ -58,9 +58,8 @@ fn aliased_array_handles_are_identical() {
     original
         .as_array()
         .expect("array handle")
-        .borrow_mut()
         .push(JsValue::Bool(true));
-    assert_eq!(alias.as_array().expect("array handle").borrow().len(), 3);
+    assert_eq!(alias.as_array().expect("array handle").len(), 3);
 }
 
 #[test]
@@ -79,24 +78,24 @@ fn nan_and_signed_zero_semantics() {
 fn map_keys_use_object_identity() {
     let first = sample_object();
     let second = sample_object();
-    let mut map = JsMap::<JsValue, i32>::new();
+    let map = JsMap::<JsValue, i32>::new();
     map.set(first.clone(), 1);
     map.set(second.clone(), 2);
     assert_eq!(map.len(), 2);
-    assert_eq!(map.get(&first), Some(&1));
-    assert_eq!(map.get(&second), Some(&2));
+    assert_eq!(map.get(&first), Some(1));
+    assert_eq!(map.get(&second), Some(2));
 
     // The same handle is the same key.
     map.set(first.clone(), 3);
     assert_eq!(map.len(), 2);
-    assert_eq!(map.get(&first.clone()), Some(&3));
+    assert_eq!(map.get(&first.clone()), Some(3));
 }
 
 #[test]
 fn set_values_use_object_identity() {
     let first = sample_object();
     let second = sample_object();
-    let mut set = JsSet::<JsValue>::new();
+    let set = JsSet::<JsValue>::new();
     set.add(first.clone());
     set.add(second);
     assert_eq!(set.len(), 2);

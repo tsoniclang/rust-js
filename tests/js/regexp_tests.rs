@@ -1,6 +1,10 @@
 use tsonic_rust_js::regexp::JsRegExp;
 use tsonic_rust_runtime::JsErrorKind;
 
+fn dense_values<T: Clone>(array: &tsonic_rust_js::JsArray<T>) -> Vec<T> {
+    array.values().into_iter().flatten().collect()
+}
+
 #[test]
 fn regexp_test_and_find_first() {
     let mut re = JsRegExp::new("b+c", "").unwrap();
@@ -63,10 +67,16 @@ fn regexp_replace_with_group_substitution() {
 #[test]
 fn regexp_split_and_search() {
     let re = JsRegExp::new(r"\s*,\s*", "").unwrap();
-    assert_eq!(re.split("a , b,c").unwrap(), vec!["a", "b", "c"]);
-    assert_eq!(JsRegExp::new("x", "").unwrap().split("").unwrap(), vec![""]);
     assert_eq!(
-        JsRegExp::new("", "").unwrap().split("ab").unwrap(),
+        dense_values(&re.split("a , b,c").unwrap()),
+        vec!["a", "b", "c"]
+    );
+    assert_eq!(
+        dense_values(&JsRegExp::new("x", "").unwrap().split("").unwrap()),
+        vec![""]
+    );
+    assert_eq!(
+        dense_values(&JsRegExp::new("", "").unwrap().split("ab").unwrap()),
         vec!["a", "b"]
     );
     assert_eq!(
@@ -295,7 +305,7 @@ fn regexp_match_carrier_exposes_groups() {
 fn regexp_match_strings_collects_all_texts_or_none() {
     let re = JsRegExp::new(r"\d+", "g").unwrap();
     assert_eq!(
-        re.match_strings("a1b22c333").unwrap().unwrap(),
+        dense_values(&re.match_strings("a1b22c333").unwrap().unwrap()),
         vec!["1", "22", "333"]
     );
     assert!(re.match_strings("abc").unwrap().is_none());
@@ -303,7 +313,7 @@ fn regexp_match_strings_collects_all_texts_or_none() {
     // Empty matches advance without spinning (JS: "baab".match(/a*/g)).
     let re = JsRegExp::new("a*", "g").unwrap();
     assert_eq!(
-        re.match_strings("baab").unwrap().unwrap(),
+        dense_values(&re.match_strings("baab").unwrap().unwrap()),
         vec!["", "aa", "", ""]
     );
 }
@@ -425,17 +435,19 @@ fn regexp_non_nullable_patterns_over_astral_input_stay_exact() {
 
     // Node: "a💚b".split(/💚/) → ["a", "b"]
     assert_eq!(
-        JsRegExp::new("💚", "").unwrap().split("a💚b").unwrap(),
+        dense_values(&JsRegExp::new("💚", "").unwrap().split("a💚b").unwrap()),
         vec!["a", "b"]
     );
 
     // Node: "💚1💚22".match(/\d+/g) → ["1", "22"]
     assert_eq!(
-        JsRegExp::new(r"\d+", "g")
-            .unwrap()
-            .match_strings("💚1💚22")
-            .unwrap()
-            .unwrap(),
+        dense_values(
+            &JsRegExp::new(r"\d+", "g")
+                .unwrap()
+                .match_strings("💚1💚22")
+                .unwrap()
+                .unwrap(),
+        ),
         vec!["1", "22"]
     );
 

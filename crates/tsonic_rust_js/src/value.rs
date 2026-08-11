@@ -17,7 +17,7 @@ pub enum JsValue {
     Number(f64),
     String(String),
     Object(Rc<RefCell<JsObject>>),
-    Array(Rc<RefCell<JsArray<JsValue>>>),
+    Array(JsArray<JsValue>),
 }
 
 impl JsValue {
@@ -34,9 +34,9 @@ impl JsValue {
         Self::Object(Rc::new(RefCell::new(object)))
     }
 
-    /// Wraps an array payload in a fresh reference-identity handle.
+    /// Wraps an array reference-identity handle.
     pub fn array(values: JsArray<JsValue>) -> Self {
-        Self::Array(Rc::new(RefCell::new(values)))
+        Self::Array(values)
     }
 
     /// Returns the object handle when the value is an object.
@@ -48,7 +48,7 @@ impl JsValue {
     }
 
     /// Returns the array handle when the value is an array.
-    pub fn as_array(&self) -> Option<&Rc<RefCell<JsArray<JsValue>>>> {
+    pub fn as_array(&self) -> Option<&JsArray<JsValue>> {
         match self {
             Self::Array(values) => Some(values),
             _ => None,
@@ -130,25 +130,15 @@ impl InspectState {
         format!("{{{}}}", rendered.join(", "))
     }
 
-    fn render_array(&mut self, values: &Rc<RefCell<JsArray<JsValue>>>, depth: usize) -> String {
+    fn render_array(&mut self, values: &JsArray<JsValue>, depth: usize) -> String {
         if depth > self.max_depth {
             return "[Array]".to_string();
         }
-        let id = ContainerId::Array(Rc::as_ptr(values) as usize);
+        let id = ContainerId::Array(values.identity());
         if !self.active.insert(id) {
             return "[Circular]".to_string();
         }
-        let values = match values.try_borrow() {
-            Ok(values) => values
-                .values()
-                .into_iter()
-                .map(|value| value.cloned())
-                .collect::<Vec<_>>(),
-            Err(_) => {
-                self.active.remove(&id);
-                return "[Uninspectable]".to_string();
-            }
-        };
+        let values = values.values();
         let total = values.len();
         let mut rendered = values
             .into_iter()
@@ -187,7 +177,7 @@ impl JsSameValueZero for JsValue {
             (Self::Number(left), Self::Number(right)) => same_value_zero_f64(*left, *right),
             (Self::String(left), Self::String(right)) => left == right,
             (Self::Object(left), Self::Object(right)) => Rc::ptr_eq(left, right),
-            (Self::Array(left), Self::Array(right)) => Rc::ptr_eq(left, right),
+            (Self::Array(left), Self::Array(right)) => left.ptr_eq(right),
             _ => false,
         }
     }
@@ -201,7 +191,7 @@ impl JsStrictEqual for JsValue {
             (Self::Number(left), Self::Number(right)) => strict_equal_f64(*left, *right),
             (Self::String(left), Self::String(right)) => left == right,
             (Self::Object(left), Self::Object(right)) => Rc::ptr_eq(left, right),
-            (Self::Array(left), Self::Array(right)) => Rc::ptr_eq(left, right),
+            (Self::Array(left), Self::Array(right)) => left.ptr_eq(right),
             _ => false,
         }
     }

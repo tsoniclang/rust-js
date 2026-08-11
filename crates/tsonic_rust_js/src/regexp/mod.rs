@@ -242,7 +242,7 @@ impl JsRegExp {
     /// Mirrors `String.prototype.match` with the `g` flag: the texts of all
     /// matches, or `None` when there is no match (JS `null`). Stateless.
     /// Rejects nullable patterns over astral input (see the module docs).
-    pub fn match_strings(&self, input: &str) -> JsResult<Option<Vec<String>>> {
+    pub fn match_strings(&self, input: &str) -> JsResult<Option<crate::array::JsArray<String>>> {
         self.check_empty_match_iteration(input)?;
         let chars: Vec<char> = input.chars().collect();
         let texts: Vec<String> = self
@@ -253,7 +253,11 @@ impl JsRegExp {
                 chars[start..end].iter().collect()
             })
             .collect();
-        Ok(if texts.is_empty() { None } else { Some(texts) })
+        Ok(if texts.is_empty() {
+            None
+        } else {
+            Some(crate::array::JsArray::from_dense(texts))
+        })
     }
 
     /// Mirrors `String.prototype.matchAll`: `TypeError` when the regexp lacks
@@ -360,7 +364,7 @@ impl JsRegExp {
     /// including the spec's empty-match handling. Patterns with capturing
     /// groups are rejected because JS splices capture values into the result;
     /// use a non-capturing group `(?:...)` instead.
-    pub fn split(&self, input: &str) -> JsResult<Vec<String>> {
+    pub fn split(&self, input: &str) -> JsResult<crate::array::JsArray<String>> {
         if self.program_groups() > 0 {
             return Err(unsupported(
                 "split with capturing groups is not supported; use a non-capturing group `(?:...)`",
@@ -371,11 +375,13 @@ impl JsRegExp {
         let mut budget = vm::ExecutionBudget::for_search(&self.program, chars.len());
         let size = chars.len();
         if size == 0 {
-            return Ok(if self.exec_anchored(&chars, 0, &mut budget)?.is_some() {
-                Vec::new()
-            } else {
-                vec![String::new()]
-            });
+            return Ok(crate::array::JsArray::from_dense(
+                if self.exec_anchored(&chars, 0, &mut budget)?.is_some() {
+                    Vec::new()
+                } else {
+                    vec![String::new()]
+                },
+            ));
         }
         let mut out = Vec::new();
         let mut segment_start = 0_usize;
@@ -396,7 +402,7 @@ impl JsRegExp {
             }
         }
         out.push(chars[segment_start..size].iter().collect());
-        Ok(out)
+        Ok(crate::array::JsArray::from_dense(out))
     }
 
     /// Mirrors `String.prototype.search`: the UTF-16 code-unit index of the

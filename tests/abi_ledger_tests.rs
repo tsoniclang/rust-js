@@ -2,15 +2,18 @@ use tsonic_rust_js as js;
 
 #[test]
 fn js_backend_legal_abi_paths_are_emit_ready() {
-    let mut dense = vec![1_i32, 2_i32];
-    assert_eq!(js::abi::array_dense_push(&mut dense, 3), 3);
-    assert_eq!(js::abi::array_dense_at(&dense, -1), Some(&3));
-    assert_eq!(js::abi::array_dense_map(&dense, |&x| x * 2), vec![2, 4, 6]);
-    assert!(js::abi::array_dense_includes(&dense, &2, 0));
-    assert_eq!(js::abi::array_dense_index_of(&dense, &3, 0), 2);
-    assert_eq!(js::abi::array_dense_join(&dense, ","), "1,2,3");
-    assert_eq!(js::abi::array_dense_slice(&dense, 1.0, None), vec![2, 3]);
-    assert_eq!(js::abi::array_dense_slice_to(&dense, 0.0, 2.0), vec![1, 2]);
+    let dense = js::abi::JsArray::from_dense(vec![1_i32, 2_i32]);
+    assert_eq!(dense.push(3), 3);
+    assert_eq!(dense.at(-1.0), Some(3));
+    assert_eq!(
+        dense.map(|&x| x * 2).values(),
+        vec![Some(2), Some(4), Some(6)]
+    );
+    assert!(dense.includes(&2, 0));
+    assert_eq!(dense.index_of(&3, 0), 2);
+    assert_eq!(dense.join(","), "1,2,3");
+    assert_eq!(dense.slice(1.0, None).values(), vec![Some(2), Some(3)]);
+    assert_eq!(dense.slice_to(0.0, 2.0).values(), vec![Some(1), Some(2)]);
     assert!(js::abi::number_is_finite(1.0));
     assert!(js::abi::number_is_integer(1.0));
     assert!(!js::abi::number_is_nan(1.0));
@@ -29,11 +32,11 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
     let text = js::abi::json_stringify(&parsed).unwrap().unwrap();
     assert_eq!(text, r#"{"ok":true}"#);
 
-    let mut map = js::abi::JsMap::<f64, &str>::new();
+    let map = js::abi::JsMap::<f64, &str>::new();
     map.set(f64::NAN, "nan");
-    assert_eq!(map.get(&f64::NAN), Some(&"nan"));
+    assert_eq!(map.get(&f64::NAN), Some("nan"));
 
-    let mut set = js::abi::JsSet::<f64>::new();
+    let set = js::abi::JsSet::<f64>::new();
     set.add(f64::NAN);
     assert!(set.has(&f64::NAN));
 
@@ -50,22 +53,15 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
         js::abi::JsRegExp::new(",", "")
             .unwrap()
             .split("a,b")
-            .unwrap(),
-        vec!["a", "b"]
+            .unwrap()
+            .values(),
+        vec![Some("a".to_string()), Some("b".to_string())]
     );
 
-    assert_eq!(js::abi::array_dense_find_index(&dense, |&x| x == 2), 1);
-    assert_eq!(js::abi::array_dense_find(&dense, |&x| x == 2), Some(2));
-    assert_eq!(js::abi::array_dense_find_last(&dense, |&x| x < 3), Some(2));
-    assert_eq!(js::abi::array_dense_find_last_index(&dense, |&x| x < 3), 1);
-    assert_eq!(
-        js::abi::array_dense_flat_one(&[vec![1, 2], vec![3]]),
-        vec![1, 2, 3]
-    );
-    assert_eq!(
-        js::abi::array_dense_flat_map_one(&[1, 2], |&x| vec![x, x]),
-        vec![1, 1, 2, 2]
-    );
+    assert_eq!(dense.find_index(|&x| x == 2), 1);
+    assert_eq!(dense.find(|&x| x == 2), Some(2));
+    assert_eq!(dense.find_last(|&x| x < 3), Some(2));
+    assert_eq!(dense.find_last_index(|&x| x < 3), 1);
 
     assert_eq!(
         js::abi::json_stringify_with_indent(&parsed, "  ")

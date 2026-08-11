@@ -1,14 +1,14 @@
-//! Dense-array static constructors and brand checks.
+//! Array static constructors and brand checks.
 
-/// Dense helper to represent `Array.from` over strings.
+/// Closed `Array.from` conversion for strings.
 ///
 /// This keeps a closed behavior with no iterator callbacks.
 /// Code-point semantics are used (`.chars()`), not UTF-16 unit splitting.
-pub fn from_string(value: &str) -> Vec<String> {
-    value.chars().map(|ch| ch.to_string()).collect()
+pub fn from_string(value: &str) -> super::JsArray<String> {
+    super::JsArray::from_dense(value.chars().map(|ch| ch.to_string()).collect())
 }
 
-/// Compile-time array identity helper for typed dense carriers.
+/// Compile-time array identity helper for statically typed carriers.
 pub fn is_array<T>(value: &T) -> bool
 where
     T: ArrayBrand + ?Sized,

@@ -2,20 +2,20 @@ use tsonic_rust_js::JsSet;
 
 #[test]
 fn set_preserves_order_and_uniqueness() {
-    let mut set = JsSet::new();
+    let set = JsSet::new();
     set.add("a".to_string());
     set.add("b".to_string());
     set.add("a".to_string());
 
     assert_eq!(set.len(), 2);
-    assert_eq!(set.values(), vec![&"a".to_string(), &"b".to_string()]);
+    assert_eq!(set.values(), vec!["a".to_string(), "b".to_string()]);
     assert!(set.delete(&"a".to_string()));
     assert!(!set.has(&"a".to_string()));
 }
 
 #[test]
 fn set_uses_same_value_zero_for_nan() {
-    let mut set = JsSet::new();
+    let set = JsSet::new();
     set.add(f64::NAN);
     set.add(f64::NAN);
     assert_eq!(set.len(), 1);
@@ -39,20 +39,39 @@ fn set_algebra_preserves_insertion_order() {
     // union: receiver order first, then the other's unseen values.
     assert_eq!(
         left.union(&right).values(),
-        vec![&1, &2, &3, &4, &5],
+        vec![1, 2, 3, 4, 5],
         "union order"
     );
-    assert_eq!(right.union(&left).values(), vec![&3, &5, &1, &2, &4]);
+    assert_eq!(right.union(&left).values(), vec![3, 5, 1, 2, 4]);
 
     // intersection/difference follow the receiver's order.
-    assert_eq!(left.intersection(&right).values(), vec![&1, &3]);
-    assert_eq!(right.intersection(&left).values(), vec![&3, &1]);
-    assert_eq!(left.difference(&right).values(), vec![&2, &4]);
-    assert_eq!(right.difference(&left).values(), vec![&5]);
+    assert_eq!(left.intersection(&right).values(), vec![1, 3]);
+    assert_eq!(right.intersection(&left).values(), vec![3, 1]);
+    assert_eq!(left.difference(&right).values(), vec![2, 4]);
+    assert_eq!(right.difference(&left).values(), vec![5]);
 
     // symmetricDifference: receiver-only values, then the other's.
-    assert_eq!(left.symmetric_difference(&right).values(), vec![&2, &4, &5]);
-    assert_eq!(right.symmetric_difference(&left).values(), vec![&5, &2, &4]);
+    assert_eq!(left.symmetric_difference(&right).values(), vec![2, 4, 5]);
+    assert_eq!(right.symmetric_difference(&left).values(), vec![5, 2, 4]);
+}
+
+#[test]
+fn set_aliases_share_state_and_iteration_observes_live_mutation() {
+    let set = JsSet::from_values([1]);
+    let alias = set.clone();
+    alias.add(2);
+    assert!(set.ptr_eq(&alias));
+    assert!(set.has(&2));
+
+    let mut seen = Vec::new();
+    set.for_each(|value, _, current| {
+        seen.push(*value);
+        if *value == 1 {
+            current.add(3);
+            current.delete(&2);
+        }
+    });
+    assert_eq!(seen, vec![1, 3]);
 }
 
 #[test]

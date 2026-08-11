@@ -34,24 +34,20 @@ All other members on the C# `String` surface (`slice`, `substring`, `substr`,
 `fromCharCode`, `fromCodePoint`, `raw`, `length` as `js_len`) are implemented
 in `string.rs`.
 
-## Array (dense)
+## Array
 
 | Member | Disposition |
 | --- | --- |
-| `find` | implemented — `array::dense::find` (cloned value, `None` for JS `undefined`), ABI `array_dense_find` |
-| `findIndex` | implemented — `array::dense::find_index`, ABI `array_dense_find_index` |
-| `findLast` | implemented — `array::dense::find_last`, ABI `array_dense_find_last` |
-| `findLastIndex` | implemented — `array::dense::find_last_index`, ABI `array_dense_find_last_index` |
-| `indexOf` | implemented — `array::dense::index_of`, ABI `array_dense_index_of` |
-| `lastIndexOf` | implemented — `array::dense::last_index_of`, ABI `array_dense_last_index_of` |
-| `join` | implemented — `array::dense::join`, ABI `array_dense_join` |
-| `concat` | implemented — `array::dense::concat`, ABI `array_dense_concat` |
-| `slice` | implemented — `array::dense::slice`, ABI `array_dense_slice` |
-| `flat` | implemented (depth 1) — `array::dense::flat_one`, ABI `array_dense_flat_one`; arbitrary-depth `flat` is rejected-by-architecture (element types are static; nesting depth is a type, not a value) |
-| `flatMap` | implemented (depth 1) — `array::dense::flat_map_one`, ABI `array_dense_flat_map_one` |
+| `find` / `findIndex` | implemented on `array::JsArray`; callbacks skip holes |
+| `findLast` / `findLastIndex` | implemented on `array::JsArray`; callbacks skip holes |
+| `includes` / `indexOf` | implemented on `array::JsArray` with hole-aware search semantics |
+| `join` | implemented on `array::JsArray`; holes stringify as empty fields |
+| `slice` | implemented on `array::JsArray` and preserves holes |
+| `map` / `filter` / `reduce` / `some` / `every` | implemented on `array::JsArray` with initial-length callback bounds and live element reads |
 
-Sparse-array semantics live separately in `array::JsArray` (hole-preserving
-carrier), mirroring the C# `JSArray` split.
+Dense and sparse arrays use the same identity-preserving `array::JsArray`
+carrier. Assignment and parameter passing clone only the reference handle;
+mutations remain visible through every alias.
 
 ## Math / Number
 

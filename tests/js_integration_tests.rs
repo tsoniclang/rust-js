@@ -1,7 +1,5 @@
 #[path = "js/array_buffer_tests.rs"]
 mod array_buffer_tests;
-#[path = "js/array_dense_tests.rs"]
-mod array_dense_tests;
 #[path = "js/console_tests.rs"]
 mod console_tests;
 #[path = "js/date_tests.rs"]
