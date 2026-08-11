@@ -1,5 +1,11 @@
 //! Array static constructors and brand checks.
 
+#[derive(Debug)]
+pub enum JsArrayConcatItem<T> {
+    Value(T),
+    Array(super::JsArray<T>),
+}
+
 /// Closed `Array.from` conversion for strings.
 ///
 /// This keeps a closed behavior with no iterator callbacks.

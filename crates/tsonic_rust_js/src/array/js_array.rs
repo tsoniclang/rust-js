@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use super::slot::JsSlot;
+use super::statics::JsArrayConcatItem;
 use crate::coercion::{normalize_slice_index, relative_index, to_integer_or_infinity};
 use crate::equality::{JsSameValueZero, JsStrictEqual};
 use tsonic_rust_runtime::{JsError, JsErrorKind};
@@ -188,6 +189,22 @@ impl<T> JsArray<T> {
             .slots
             .splice(0..0, items.into_iter().map(JsSlot::Present));
         state.slots.len()
+    }
+
+    pub fn concat<const N: usize>(&self, items: [JsArrayConcatItem<T>; N]) -> Self
+    where
+        T: Clone,
+    {
+        let mut slots = self.state.borrow().slots.clone();
+        for item in items {
+            match item {
+                JsArrayConcatItem::Value(value) => slots.push(JsSlot::Present(value)),
+                JsArrayConcatItem::Array(array) => {
+                    slots.extend(array.state.borrow().slots.iter().cloned());
+                }
+            }
+        }
+        Self::from_slots(slots)
     }
 
     pub fn fill_all(&self, value: T) -> Self

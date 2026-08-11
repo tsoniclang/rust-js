@@ -206,6 +206,30 @@ fn array_static_factories_preserve_values_and_array_brand() {
 }
 
 #[test]
+fn concat_preserves_holes_values_order_and_source_identity() {
+    let left = JsArray::from_sparse(3, vec![(0, 1), (2, 3)]);
+    let right = JsArray::from_sparse(2, vec![(1, 5)]);
+
+    let joined = left.concat([
+        statics::JsArrayConcatItem::Value(4),
+        statics::JsArrayConcatItem::Array(right.clone()),
+    ]);
+
+    assert_eq!(joined.len(), 6);
+    assert_eq!(joined.get(0), Some(1));
+    assert!(!joined.has_index(1));
+    assert_eq!(joined.get(2), Some(3));
+    assert_eq!(joined.get(3), Some(4));
+    assert!(!joined.has_index(4));
+    assert_eq!(joined.get(5), Some(5));
+
+    left.set(0, 9);
+    right.set(1, 8);
+    assert_eq!(joined.get(0), Some(1));
+    assert_eq!(joined.get(5), Some(5));
+}
+
+#[test]
 fn array_callbacks_receive_exact_declared_argument_shapes() {
     let values = JsArray::from_dense(vec![2, 4, 6]);
     let alias = values.clone();

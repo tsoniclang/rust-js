@@ -50,6 +50,7 @@ Rust `String` cannot represent that result.
 | `includes` / `indexOf` | implemented on `array::JsArray` with hole-aware search semantics |
 | `join` | implemented on `array::JsArray`; holes stringify as empty fields |
 | `slice` | implemented on `array::JsArray` and preserves holes |
+| `concat` | implemented on `array::JsArray` with exact `JsArrayConcatItem<T>` value/array alternatives; preserves holes and shallow-copies source arrays |
 | `map` / `filter` / `reduce` / `some` / `every` | implemented on `array::JsArray` with initial-length callback bounds and live element reads |
 | `Array.of` | implemented as `array::of`, ABI `array_of`; owns each exact element in one fixed Rust array before constructing the identity-preserving carrier |
 | `Array.from(string)` | implemented as `array::from_string`, ABI `array_from_string`; iterates Unicode code points exactly |
