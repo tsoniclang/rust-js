@@ -19,7 +19,10 @@ pub use crate::json::{
 };
 pub use crate::map::JsMap;
 pub use crate::math::{
-    max as math_max, min as math_min, random as math_random, round as math_round,
+    clz32 as math_clz32, fround as math_fround, hypot as math_hypot, imul as math_imul,
+    max as math_max, min as math_min, pow as math_pow, random as math_random, round as math_round,
+    sign as math_sign, E as MATH_E, LN10 as MATH_LN10, LN2 as MATH_LN2, LOG10E as MATH_LOG10E,
+    LOG2E as MATH_LOG2E, PI as MATH_PI, SQRT1_2 as MATH_SQRT1_2, SQRT2 as MATH_SQRT2,
 };
 pub use crate::number::{
     is_finite as number_is_finite, is_integer as number_is_integer, is_nan as number_is_nan,
