@@ -6,7 +6,10 @@ use std::fmt;
 use std::rc::Rc;
 
 use crate::array::JsArray;
-use crate::equality::{same_value_zero_f64, strict_equal_f64, JsSameValueZero, JsStrictEqual};
+use crate::equality::{
+    same_value_f64, same_value_zero_f64, strict_equal_f64, JsSameValue, JsSameValueZero,
+    JsStrictEqual,
+};
 use crate::object::JsObject;
 
 #[derive(Clone, Debug)]
@@ -168,6 +171,20 @@ impl PartialEq for JsValue {
 }
 
 impl Eq for JsValue {}
+
+impl JsSameValue for JsValue {
+    fn same_value(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Undefined, Self::Undefined) | (Self::Null, Self::Null) => true,
+            (Self::Bool(left), Self::Bool(right)) => left == right,
+            (Self::Number(left), Self::Number(right)) => same_value_f64(*left, *right),
+            (Self::String(left), Self::String(right)) => left == right,
+            (Self::Object(left), Self::Object(right)) => Rc::ptr_eq(left, right),
+            (Self::Array(left), Self::Array(right)) => left.ptr_eq(right),
+            _ => false,
+        }
+    }
+}
 
 impl JsSameValueZero for JsValue {
     fn same_value_zero(&self, other: &Self) -> bool {

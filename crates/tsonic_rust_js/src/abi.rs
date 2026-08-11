@@ -41,7 +41,7 @@ pub use crate::number::{
     MIN_VALUE as NUMBER_MIN_VALUE, NAN as NUMBER_NAN,
     NEGATIVE_INFINITY as NUMBER_NEGATIVE_INFINITY, POSITIVE_INFINITY as NUMBER_POSITIVE_INFINITY,
 };
-pub use crate::object::JsObject;
+pub use crate::object::{is as object_is, JsObject};
 pub use crate::regexp::{JsRegExp, JsRegExpMatch};
 pub use crate::set::JsSet;
 pub use crate::string::{

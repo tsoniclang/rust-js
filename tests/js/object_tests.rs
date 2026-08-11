@@ -1,3 +1,4 @@
+use tsonic_rust_js::object;
 use tsonic_rust_js::{JsObject, JsValue};
 
 #[test]
@@ -42,4 +43,22 @@ fn object_keys_follow_ecmascript_array_index_order() {
         object.keys(),
         vec!["1", "2", "4294967294", "01", "4294967295"]
     );
+}
+
+#[test]
+fn object_is_uses_same_value_semantics() {
+    assert!(object::is([
+        JsValue::Number(f64::NAN),
+        JsValue::Number(f64::NAN),
+    ]));
+    assert!(!object::is([JsValue::Number(0.0), JsValue::Number(-0.0),]));
+    assert!(object::is([
+        JsValue::String("same".to_string()),
+        JsValue::String("same".to_string()),
+    ]));
+
+    let object = JsValue::object(JsObject::new());
+    let alias = object.clone();
+    assert!(object::is([object.clone(), alias]));
+    assert!(!object::is([object, JsValue::object(JsObject::new())]));
 }
