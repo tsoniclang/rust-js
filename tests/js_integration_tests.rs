@@ -6,6 +6,8 @@ mod console_tests;
 mod date_tests;
 #[path = "js/equality_tests.rs"]
 mod equality_tests;
+#[path = "js/fallible_callback_tests.rs"]
+mod fallible_callback_tests;
 #[path = "js/globals_uri_dataview_tests.rs"]
 mod globals_uri_dataview_tests;
 #[path = "js/js_array_sparse_tests.rs"]

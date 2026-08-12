@@ -1,4 +1,5 @@
 use tsonic_rust_js::JsMap;
+use tsonic_rust_runtime::TsonicError;
 
 #[test]
 fn map_preserves_insertion_order_and_updates_existing_key() {
@@ -68,5 +69,47 @@ fn map_aliases_share_state_and_iteration_observes_live_mutation() {
             current.delete(&2);
         }
     });
+    assert_eq!(seen, vec![(1, "a"), (3, "c")]);
+}
+
+#[test]
+fn fallible_map_callbacks_preserve_arity_live_mutation_and_short_circuiting() {
+    let map = JsMap::from_entries([(1, "a"), (2, "b")]);
+    let mut zero_visits = 0;
+    map.try_for_each_zero(|| {
+        zero_visits += 1;
+        Ok::<_, TsonicError>(())
+    })
+    .unwrap();
+    assert_eq!(zero_visits, 2);
+
+    let mut values = Vec::new();
+    map.try_for_each_value(|value| {
+        values.push(value);
+        Ok::<_, TsonicError>(())
+    })
+    .unwrap();
+    assert_eq!(values, vec!["a", "b"]);
+
+    let mut pairs = Vec::new();
+    map.try_for_each_value_key(|value, key| {
+        pairs.push((key, value));
+        Ok::<_, TsonicError>(())
+    })
+    .unwrap();
+    assert_eq!(pairs, vec![(1, "a"), (2, "b")]);
+
+    let mut seen = Vec::new();
+    let failure = map.try_for_each(|value, key, current| {
+        seen.push((key, value));
+        if key == 1 {
+            current.set(3, "c");
+            current.delete(&2);
+            Ok(())
+        } else {
+            Err(TsonicError::unsupported("stop"))
+        }
+    });
+    assert_eq!(failure, Err(TsonicError::unsupported("stop")));
     assert_eq!(seen, vec![(1, "a"), (3, "c")]);
 }

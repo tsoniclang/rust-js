@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
+use tsonic_rust_runtime::TsonicResult;
 
 use crate::equality::{JsSameValueZero, JsStrictEqual};
 
@@ -265,6 +266,61 @@ impl<T> JsSet<T> {
         T: Clone + JsSameValueZero,
     {
         self.values().iter().all(|value| !other.has(value))
+    }
+
+    fn try_for_each_with<F>(&self, mut callback: F) -> TsonicResult<()>
+    where
+        T: Clone,
+        F: FnMut(T, T, Self) -> TsonicResult<()>,
+    {
+        let mut index = 0;
+        loop {
+            let next = {
+                let state = self.state.borrow();
+                while index < state.entries.len() && !state.entries[index].present {
+                    index += 1;
+                }
+                state.entries.get(index).map(|entry| entry.value.clone())
+            };
+            let Some(value) = next else {
+                break;
+            };
+            index += 1;
+            callback(value.clone(), value, self.clone())?;
+        }
+        Ok(())
+    }
+
+    pub fn try_for_each_zero<F>(&self, mut callback: F) -> TsonicResult<()>
+    where
+        T: Clone,
+        F: FnMut() -> TsonicResult<()>,
+    {
+        self.try_for_each_with(|_, _, _| callback())
+    }
+
+    pub fn try_for_each_value<F>(&self, mut callback: F) -> TsonicResult<()>
+    where
+        T: Clone,
+        F: FnMut(T) -> TsonicResult<()>,
+    {
+        self.try_for_each_with(|value, _, _| callback(value))
+    }
+
+    pub fn try_for_each_value_key<F>(&self, mut callback: F) -> TsonicResult<()>
+    where
+        T: Clone,
+        F: FnMut(T, T) -> TsonicResult<()>,
+    {
+        self.try_for_each_with(|value, key, _| callback(value, key))
+    }
+
+    pub fn try_for_each<F>(&self, callback: F) -> TsonicResult<()>
+    where
+        T: Clone,
+        F: FnMut(T, T, Self) -> TsonicResult<()>,
+    {
+        self.try_for_each_with(callback)
     }
 }
 
