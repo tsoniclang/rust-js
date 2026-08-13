@@ -18,6 +18,30 @@ fn sparse_array_length_delete_and_holes() {
 }
 
 #[test]
+fn number_indexes_preserve_array_slots_and_non_index_properties() {
+    let values = JsArray::from_dense(vec![10, 20]);
+
+    assert_eq!(values.get_number(1.0), Some(20));
+    assert_eq!(values.get_number(-0.0), Some(10));
+    assert_eq!(values.get_number(2.5), None);
+
+    values.set_number(2.0, 30);
+    values.set_number(2.5, 25);
+    values.set_number(f64::NAN, 99);
+    assert_eq!(values.values(), vec![Some(10), Some(20), Some(30)]);
+    assert_eq!(values.get_number(2.5), Some(25));
+    assert_eq!(values.get_number(f64::NAN), Some(99));
+    assert_eq!(
+        values.enumerable_own_keys(),
+        vec!["0", "1", "2", "2.5", "NaN"],
+    );
+
+    assert!(values.delete_number(2.5));
+    assert_eq!(values.get_number(2.5), None);
+    assert_eq!(values.len(), 3);
+}
+
+#[test]
 fn sparse_array_mutation_helpers_preserve_holes() {
     let xs = JsArray::with_length(4);
     xs.set(0, 1);
