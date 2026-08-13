@@ -1,8 +1,12 @@
 //! Backend-legal ABI re-exports for generated Rust.
 
 pub use crate::array::{
-    from_string as array_from_string, is_array_value as array_is_array_value, of as array_of,
-    JsArray, JsArrayConcatItem, JsSlot,
+    from_string as array_from_string, from_vec as array_from_vec,
+    from_vec_map as array_from_vec_map, from_vec_map_with_index as array_from_vec_map_with_index,
+    from_vec_map_zero as array_from_vec_map_zero, from_vec_try_map as array_from_vec_try_map,
+    from_vec_try_map_with_index as array_from_vec_try_map_with_index,
+    from_vec_try_map_zero as array_from_vec_try_map_zero, is_array_value as array_is_array_value,
+    of as array_of, JsArray, JsArrayConcatItem, JsSlot,
 };
 pub use crate::array_buffer::ArrayBuffer;
 pub use crate::console::{

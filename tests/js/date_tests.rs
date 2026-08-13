@@ -157,7 +157,10 @@ fn date_to_json_serializes_invalid_dates_as_null() {
 #[test]
 fn date_now_is_finite_and_monotonic_enough() {
     let before = JsDate::now();
+    let constructed = JsDate::new();
     let after = JsDate::now();
     assert!(before.is_finite());
+    assert!(constructed.get_time() >= before);
+    assert!(constructed.get_time() <= after);
     assert!(after >= before);
 }

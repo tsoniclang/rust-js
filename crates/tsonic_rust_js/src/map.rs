@@ -104,6 +104,19 @@ impl<K, V> JsMap<K, V> {
             .map(|entry| entry.value.clone())
     }
 
+    pub fn get_eq(&self, key: &K) -> Option<V>
+    where
+        K: PartialEq,
+        V: Clone,
+    {
+        self.state
+            .borrow()
+            .entries
+            .iter()
+            .find(|entry| entry.present && entry.key == *key)
+            .map(|entry| entry.value.clone())
+    }
+
     pub fn set(&self, key: K, value: V) -> Self
     where
         K: JsSameValueZero,
@@ -113,6 +126,29 @@ impl<K, V> JsMap<K, V> {
             .entries
             .iter_mut()
             .find(|entry| entry.present && entry.key.same_value_zero(&key))
+        {
+            entry.value = value;
+        } else {
+            state.entries.push(MapEntry {
+                key,
+                value,
+                present: true,
+            });
+            state.size += 1;
+        }
+        drop(state);
+        self.clone()
+    }
+
+    pub fn set_eq(&self, key: K, value: V) -> Self
+    where
+        K: PartialEq,
+    {
+        let mut state = self.state.borrow_mut();
+        if let Some(entry) = state
+            .entries
+            .iter_mut()
+            .find(|entry| entry.present && entry.key == key)
         {
             entry.value = value;
         } else {
@@ -138,6 +174,17 @@ impl<K, V> JsMap<K, V> {
             .any(|entry| entry.present && entry.key.same_value_zero(key))
     }
 
+    pub fn has_eq(&self, key: &K) -> bool
+    where
+        K: PartialEq,
+    {
+        self.state
+            .borrow()
+            .entries
+            .iter()
+            .any(|entry| entry.present && entry.key == *key)
+    }
+
     pub fn delete<Q: ?Sized>(&self, key: &Q) -> bool
     where
         K: JsSameValueZero<Q>,
@@ -147,6 +194,23 @@ impl<K, V> JsMap<K, V> {
             .entries
             .iter_mut()
             .find(|entry| entry.present && entry.key.same_value_zero(key))
+        {
+            entry.present = false;
+            state.size -= 1;
+            return true;
+        }
+        false
+    }
+
+    pub fn delete_eq(&self, key: &K) -> bool
+    where
+        K: PartialEq,
+    {
+        let mut state = self.state.borrow_mut();
+        if let Some(entry) = state
+            .entries
+            .iter_mut()
+            .find(|entry| entry.present && entry.key == *key)
         {
             entry.present = false;
             state.size -= 1;

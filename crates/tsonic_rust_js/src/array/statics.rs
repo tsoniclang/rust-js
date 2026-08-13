@@ -14,6 +14,86 @@ pub fn from_string(value: &str) -> super::JsArray<String> {
     super::JsArray::from_dense(value.chars().map(|ch| ch.to_string()).collect())
 }
 
+pub fn from_vec<T: Clone>(values: &Vec<T>) -> super::JsArray<T> {
+    super::JsArray::from_dense(values.clone())
+}
+
+pub fn from_vec_map_zero<T: Clone, U, F>(values: &Vec<T>, mut callback: F) -> super::JsArray<U>
+where
+    F: FnMut() -> U,
+{
+    super::JsArray::from_dense(values.iter().map(|_| callback()).collect())
+}
+
+pub fn from_vec_map<T: Clone, U, F>(values: &Vec<T>, mut callback: F) -> super::JsArray<U>
+where
+    F: FnMut(T) -> U,
+{
+    super::JsArray::from_dense(values.iter().cloned().map(&mut callback).collect())
+}
+
+pub fn from_vec_map_with_index<T: Clone, U, F>(
+    values: &Vec<T>,
+    mut callback: F,
+) -> super::JsArray<U>
+where
+    F: FnMut(T, f64) -> U,
+{
+    super::JsArray::from_dense(
+        values
+            .iter()
+            .cloned()
+            .enumerate()
+            .map(|(index, value)| callback(value, index as f64))
+            .collect(),
+    )
+}
+
+pub fn from_vec_try_map_zero<T: Clone, U, F>(
+    values: &Vec<T>,
+    mut callback: F,
+) -> tsonic_rust_runtime::TsonicResult<super::JsArray<U>>
+where
+    F: FnMut() -> tsonic_rust_runtime::TsonicResult<U>,
+{
+    let values = values
+        .iter()
+        .map(|_| callback())
+        .collect::<tsonic_rust_runtime::TsonicResult<Vec<_>>>()?;
+    Ok(super::JsArray::from_dense(values))
+}
+
+pub fn from_vec_try_map<T: Clone, U, F>(
+    values: &Vec<T>,
+    mut callback: F,
+) -> tsonic_rust_runtime::TsonicResult<super::JsArray<U>>
+where
+    F: FnMut(T) -> tsonic_rust_runtime::TsonicResult<U>,
+{
+    let values = values
+        .iter()
+        .cloned()
+        .map(&mut callback)
+        .collect::<tsonic_rust_runtime::TsonicResult<Vec<_>>>()?;
+    Ok(super::JsArray::from_dense(values))
+}
+
+pub fn from_vec_try_map_with_index<T: Clone, U, F>(
+    values: &Vec<T>,
+    mut callback: F,
+) -> tsonic_rust_runtime::TsonicResult<super::JsArray<U>>
+where
+    F: FnMut(T, f64) -> tsonic_rust_runtime::TsonicResult<U>,
+{
+    let values = values
+        .iter()
+        .cloned()
+        .enumerate()
+        .map(|(index, value)| callback(value, index as f64))
+        .collect::<tsonic_rust_runtime::TsonicResult<Vec<_>>>()?;
+    Ok(super::JsArray::from_dense(values))
+}
+
 pub fn of<T, const N: usize>(items: [T; N]) -> super::JsArray<T> {
     super::JsArray::from_dense(Vec::from(items))
 }

@@ -34,6 +34,10 @@ impl JsStrictEqual for JsDate {
 }
 
 impl JsDate {
+    pub fn new() -> Self {
+        Self::from_millis(Self::now())
+    }
+
     pub fn now() -> f64 {
         use std::time::{SystemTime, UNIX_EPOCH};
         SystemTime::now()

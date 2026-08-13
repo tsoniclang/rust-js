@@ -216,6 +216,24 @@ fn array_static_factories_preserve_values_and_array_brand() {
     let values = statics::of([1, 2, 3]);
     assert_eq!(values.values(), vec![Some(1), Some(2), Some(3)]);
 
+    let vector = vec![2, 4, 6];
+    assert_eq!(
+        statics::from_vec(&vector).values(),
+        vec![Some(2), Some(4), Some(6)]
+    );
+    assert_eq!(
+        statics::from_vec_map_zero(&vector, || 7).values(),
+        vec![Some(7), Some(7), Some(7)]
+    );
+    assert_eq!(
+        statics::from_vec_map(&vector, |value| value / 2).values(),
+        vec![Some(1), Some(2), Some(3)]
+    );
+    assert_eq!(
+        statics::from_vec_map_with_index(&vector, |value, index| value + index as i32).values(),
+        vec![Some(2), Some(5), Some(8)]
+    );
+
     let text = statics::from_string("a😀");
     assert_eq!(
         text.values(),
@@ -433,4 +451,21 @@ fn default_array_sort_compares_utf16_code_units() {
         values.values(),
         vec![Some("\u{10000}".to_string()), Some("\u{e000}".to_string())]
     );
+}
+
+#[test]
+fn comparator_sort_entrypoints_preserve_callback_arity_and_identity() {
+    let binary = JsArray::from_dense(vec![3, 1, 2]);
+    let binary_alias = binary.clone();
+    let sorted = binary.sort(|left, right| f64::from(left - right));
+    assert!(sorted.ptr_eq(&binary_alias));
+    assert_eq!(binary.values(), vec![Some(1), Some(2), Some(3)]);
+
+    let unary = JsArray::from_dense(vec![3, 1, 2]);
+    unary.sort_value(|left| f64::from(left - 2));
+    assert_eq!(unary.len(), 3);
+
+    let zero = JsArray::from_dense(vec![3, 1, 2]);
+    zero.sort_zero(|| 0.0);
+    assert_eq!(zero.values(), vec![Some(3), Some(1), Some(2)]);
 }
