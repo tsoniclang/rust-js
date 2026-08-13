@@ -1,4 +1,5 @@
 use tsonic_rust_js::JsSet;
+use tsonic_rust_runtime::TsonicError;
 
 #[test]
 fn set_preserves_order_and_uniqueness() {
@@ -88,6 +89,48 @@ fn set_aliases_share_state_and_iteration_observes_live_mutation() {
             current.delete(&2);
         }
     });
+    assert_eq!(seen, vec![1, 3]);
+}
+
+#[test]
+fn fallible_set_callbacks_preserve_arity_live_mutation_and_short_circuiting() {
+    let set = JsSet::from_values([1, 2]);
+    let mut zero_visits = 0;
+    set.try_for_each_zero(|| {
+        zero_visits += 1;
+        Ok::<_, TsonicError>(())
+    })
+    .unwrap();
+    assert_eq!(zero_visits, 2);
+
+    let mut values = Vec::new();
+    set.try_for_each_value(|value| {
+        values.push(value);
+        Ok::<_, TsonicError>(())
+    })
+    .unwrap();
+    assert_eq!(values, vec![1, 2]);
+
+    let mut pairs = Vec::new();
+    set.try_for_each_value_key(|value, key| {
+        pairs.push((key, value));
+        Ok::<_, TsonicError>(())
+    })
+    .unwrap();
+    assert_eq!(pairs, vec![(1, 1), (2, 2)]);
+
+    let mut seen = Vec::new();
+    let failure = set.try_for_each(|value, _, current| {
+        seen.push(value);
+        if value == 1 {
+            current.add(3);
+            current.delete(&2);
+            Ok(())
+        } else {
+            Err(TsonicError::unsupported("stop"))
+        }
+    });
+    assert_eq!(failure, Err(TsonicError::unsupported("stop")));
     assert_eq!(seen, vec![1, 3]);
 }
 

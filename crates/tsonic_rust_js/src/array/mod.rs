@@ -1,5 +1,6 @@
 //! Canonical JavaScript array carrier and static helpers.
 
+mod fallible_callbacks;
 pub mod js_array;
 pub mod slot;
 pub mod statics;
