@@ -2,6 +2,30 @@ use super::js_array::JsArray;
 use tsonic_rust_runtime::{JsError, JsErrorKind, TsonicResult};
 
 impl<T> JsArray<T> {
+    pub fn try_sort_zero<F>(&self, mut compare: F) -> TsonicResult<Self>
+    where
+        T: Clone,
+        F: FnMut() -> TsonicResult<f64>,
+    {
+        self.try_sort_present_by(|_, _| compare())
+    }
+
+    pub fn try_sort_value<F>(&self, mut compare: F) -> TsonicResult<Self>
+    where
+        T: Clone,
+        F: FnMut(T) -> TsonicResult<f64>,
+    {
+        self.try_sort_present_by(|left, _| compare(left))
+    }
+
+    pub fn try_sort<F>(&self, compare: F) -> TsonicResult<Self>
+    where
+        T: Clone,
+        F: FnMut(T, T) -> TsonicResult<f64>,
+    {
+        self.try_sort_present_by(compare)
+    }
+
     fn try_map_with<U, F>(&self, mut mapper: F) -> TsonicResult<JsArray<U>>
     where
         T: Clone,

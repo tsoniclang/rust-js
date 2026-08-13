@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::convert::Infallible;
 use std::rc::Rc;
 
 use super::slot::JsSlot;
@@ -85,6 +86,69 @@ impl<T> JsArray<T> {
                 numeric_properties: Vec::new(),
             })),
         }
+    }
+
+    pub(super) fn replace_present_values(&self, values: Vec<T>) {
+        let mut state = self.state.borrow_mut();
+        let length = state.slots.len();
+        state.slots = values.into_iter().map(JsSlot::Present).collect();
+        state.slots.resize_with(length, || JsSlot::Hole);
+    }
+
+    pub(super) fn try_sort_present_by<E, F>(&self, mut compare: F) -> Result<Self, E>
+    where
+        T: Clone,
+        F: FnMut(T, T) -> Result<f64, E>,
+    {
+        let mut values = self.values().into_iter().flatten().collect::<Vec<_>>();
+        for index in 1..values.len() {
+            let mut current = index;
+            while current > 0 {
+                let order = compare(values[current - 1].clone(), values[current].clone())?;
+                if order.is_nan() || order <= 0.0 {
+                    break;
+                }
+                values.swap(current - 1, current);
+                current -= 1;
+            }
+        }
+        self.replace_present_values(values);
+        Ok(self.clone())
+    }
+
+    fn sort_present_by<F>(&self, mut compare: F) -> Self
+    where
+        T: Clone,
+        F: FnMut(T, T) -> f64,
+    {
+        match self.try_sort_present_by(|left, right| Ok::<_, Infallible>(compare(left, right))) {
+            Ok(sorted) => sorted,
+            Err(never) => match never {},
+        }
+    }
+
+    pub fn sort_zero<F>(&self, mut compare: F) -> Self
+    where
+        T: Clone,
+        F: FnMut() -> f64,
+    {
+        self.sort_present_by(|_, _| compare())
+    }
+
+    pub fn sort_value<F>(&self, mut compare: F) -> Self
+    where
+        T: Clone,
+        F: FnMut(T) -> f64,
+    {
+        self.sort_present_by(|left, _| compare(left))
+    }
+
+    pub fn sort<F>(&self, compare: F) -> Self
+    where
+        T: Clone,
+        F: FnMut(T, T) -> f64,
+    {
+        self.sort_present_by(compare)
     }
 
     pub fn ptr_eq(&self, other: &Self) -> bool {
