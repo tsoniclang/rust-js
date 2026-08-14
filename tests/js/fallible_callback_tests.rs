@@ -175,7 +175,7 @@ fn fallible_array_callbacks_short_circuit_and_preserve_reduce_errors() {
     let failure = values.try_map(|value| {
         visits.push(value);
         if value == 2 {
-            Err(JsError::error("stop").into())
+            Err(TsonicError::from(JsError::error("stop")))
         } else {
             Ok(value)
         }
@@ -224,7 +224,7 @@ fn fallible_sort_callbacks_are_stable_preserve_holes_and_publish_atomically() {
     let before = unchanged.values();
     let failure = unchanged.try_sort(|left, right| {
         if left == 2 || right == 2 {
-            Err(JsError::error("stop").into())
+            Err(TsonicError::from(JsError::error("stop")))
         } else {
             Ok(f64::from(left - right))
         }

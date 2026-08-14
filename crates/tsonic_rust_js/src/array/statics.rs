@@ -49,48 +49,48 @@ where
     )
 }
 
-pub fn from_vec_try_map_zero<T: Clone, U, F>(
+pub fn from_vec_try_map_zero<T: Clone, U, E, F>(
     values: &Vec<T>,
     mut callback: F,
-) -> tsonic_rust_runtime::TsonicResult<super::JsArray<U>>
+) -> Result<super::JsArray<U>, E>
 where
-    F: FnMut() -> tsonic_rust_runtime::TsonicResult<U>,
+    F: FnMut() -> Result<U, E>,
 {
     let values = values
         .iter()
         .map(|_| callback())
-        .collect::<tsonic_rust_runtime::TsonicResult<Vec<_>>>()?;
+        .collect::<Result<Vec<_>, E>>()?;
     Ok(super::JsArray::from_dense(values))
 }
 
-pub fn from_vec_try_map<T: Clone, U, F>(
+pub fn from_vec_try_map<T: Clone, U, E, F>(
     values: &Vec<T>,
     mut callback: F,
-) -> tsonic_rust_runtime::TsonicResult<super::JsArray<U>>
+) -> Result<super::JsArray<U>, E>
 where
-    F: FnMut(T) -> tsonic_rust_runtime::TsonicResult<U>,
+    F: FnMut(T) -> Result<U, E>,
 {
     let values = values
         .iter()
         .cloned()
         .map(&mut callback)
-        .collect::<tsonic_rust_runtime::TsonicResult<Vec<_>>>()?;
+        .collect::<Result<Vec<_>, E>>()?;
     Ok(super::JsArray::from_dense(values))
 }
 
-pub fn from_vec_try_map_with_index<T: Clone, U, F>(
+pub fn from_vec_try_map_with_index<T: Clone, U, E, F>(
     values: &Vec<T>,
     mut callback: F,
-) -> tsonic_rust_runtime::TsonicResult<super::JsArray<U>>
+) -> Result<super::JsArray<U>, E>
 where
-    F: FnMut(T, f64) -> tsonic_rust_runtime::TsonicResult<U>,
+    F: FnMut(T, f64) -> Result<U, E>,
 {
     let values = values
         .iter()
         .cloned()
         .enumerate()
         .map(|(index, value)| callback(value, index as f64))
-        .collect::<tsonic_rust_runtime::TsonicResult<Vec<_>>>()?;
+        .collect::<Result<Vec<_>, E>>()?;
     Ok(super::JsArray::from_dense(values))
 }
 
