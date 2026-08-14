@@ -34,6 +34,10 @@ impl JsStrictEqual for JsDate {
 }
 
 impl JsDate {
+    pub fn new() -> Self {
+        Self::from_millis(Self::now())
+    }
+
     pub fn now() -> f64 {
         use std::time::{SystemTime, UNIX_EPOCH};
         SystemTime::now()
@@ -46,6 +50,10 @@ impl JsDate {
         Self {
             millis: Rc::new(Cell::new(millis)),
         }
+    }
+
+    pub fn from_string(value: &str) -> Self {
+        Self::from_millis(Self::parse(value))
     }
 
     /// Mirrors `Date.parse` over the ISO 8601 subset Node accepts

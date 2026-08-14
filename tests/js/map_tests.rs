@@ -1,6 +1,15 @@
 use tsonic_rust_js::JsMap;
 use tsonic_rust_runtime::TsonicError;
 
+#[derive(Clone, Debug)]
+struct IdentityKey(std::rc::Rc<()>);
+
+impl PartialEq for IdentityKey {
+    fn eq(&self, other: &Self) -> bool {
+        std::rc::Rc::ptr_eq(&self.0, &other.0)
+    }
+}
+
 #[test]
 fn map_preserves_insertion_order_and_updates_existing_key() {
     let map = JsMap::new();
@@ -22,6 +31,23 @@ fn map_uses_same_value_zero_for_nan() {
     assert_eq!(map.get(&f64::NAN), Some("nan"));
     map.set(-0.0, "zero");
     assert_eq!(map.get(&0.0), Some("zero"));
+}
+
+#[test]
+fn map_exact_equality_entrypoints_preserve_project_identity() {
+    let first = IdentityKey(std::rc::Rc::new(()));
+    let alias = first.clone();
+    let distinct = IdentityKey(std::rc::Rc::new(()));
+    let map = JsMap::new();
+
+    map.set_eq(first, "first");
+    assert_eq!(map.get_eq(&alias), Some("first"));
+    assert_eq!(map.get_eq(&distinct), None);
+    map.set_eq(alias.clone(), "updated");
+    assert_eq!(map.len(), 1);
+    assert_eq!(map.get_eq(&alias), Some("updated"));
+    assert!(!map.delete_eq(&distinct));
+    assert!(map.delete_eq(&alias));
 }
 
 #[test]

@@ -7,4 +7,8 @@ pub mod statics;
 
 pub use js_array::{JsArray, JsArrayIterator};
 pub use slot::JsSlot;
-pub use statics::{from_string, is_array, is_array_value, of, JsArrayConcatItem};
+pub use statics::{
+    from_string, from_vec, from_vec_map, from_vec_map_with_index, from_vec_map_zero,
+    from_vec_try_map, from_vec_try_map_with_index, from_vec_try_map_zero, is_array, is_array_value,
+    of, JsArrayConcatItem,
+};

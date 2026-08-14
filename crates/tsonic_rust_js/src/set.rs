@@ -70,6 +70,20 @@ impl<T> JsSet<T> {
         set
     }
 
+    pub fn from_array(values: &crate::array::JsArray<T>) -> Self
+    where
+        T: Clone + JsSameValueZero,
+    {
+        Self::from_values(values.iter_values())
+    }
+
+    pub fn from_fixed_array<const LENGTH: usize>(values: &[T; LENGTH]) -> Self
+    where
+        T: Clone + JsSameValueZero,
+    {
+        Self::from_values(values.iter().cloned())
+    }
+
     pub fn ptr_eq(&self, other: &Self) -> bool {
         Rc::ptr_eq(&self.state, &other.state)
     }
@@ -101,11 +115,37 @@ impl<T> JsSet<T> {
             .any(|entry| entry.present && entry.value.same_value_zero(value))
     }
 
+    pub fn has_eq(&self, value: &T) -> bool
+    where
+        T: PartialEq,
+    {
+        self.state
+            .borrow()
+            .entries
+            .iter()
+            .any(|entry| entry.present && entry.value == *value)
+    }
+
     pub fn add(&self, value: T) -> Self
     where
         T: JsSameValueZero,
     {
         if !self.has(&value) {
+            let mut state = self.state.borrow_mut();
+            state.entries.push(SetEntry {
+                value,
+                present: true,
+            });
+            state.size += 1;
+        }
+        self.clone()
+    }
+
+    pub fn add_eq(&self, value: T) -> Self
+    where
+        T: PartialEq,
+    {
+        if !self.has_eq(&value) {
             let mut state = self.state.borrow_mut();
             state.entries.push(SetEntry {
                 value,
@@ -125,6 +165,23 @@ impl<T> JsSet<T> {
             .entries
             .iter_mut()
             .find(|entry| entry.present && entry.value.same_value_zero(value))
+        {
+            entry.present = false;
+            state.size -= 1;
+            return true;
+        }
+        false
+    }
+
+    pub fn delete_eq(&self, value: &T) -> bool
+    where
+        T: PartialEq,
+    {
+        let mut state = self.state.borrow_mut();
+        if let Some(entry) = state
+            .entries
+            .iter_mut()
+            .find(|entry| entry.present && entry.value == *value)
         {
             entry.present = false;
             state.size -= 1;

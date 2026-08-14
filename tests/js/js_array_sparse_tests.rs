@@ -18,6 +18,30 @@ fn sparse_array_length_delete_and_holes() {
 }
 
 #[test]
+fn number_indexes_preserve_array_slots_and_non_index_properties() {
+    let values = JsArray::from_dense(vec![10, 20]);
+
+    assert_eq!(values.get_number(1.0), Some(20));
+    assert_eq!(values.get_number(-0.0), Some(10));
+    assert_eq!(values.get_number(2.5), None);
+
+    values.set_number(2.0, 30);
+    values.set_number(2.5, 25);
+    values.set_number(f64::NAN, 99);
+    assert_eq!(values.values(), vec![Some(10), Some(20), Some(30)]);
+    assert_eq!(values.get_number(2.5), Some(25));
+    assert_eq!(values.get_number(f64::NAN), Some(99));
+    assert_eq!(
+        values.enumerable_own_keys(),
+        vec!["0", "1", "2", "2.5", "NaN"],
+    );
+
+    assert!(values.delete_number(2.5));
+    assert_eq!(values.get_number(2.5), None);
+    assert_eq!(values.len(), 3);
+}
+
+#[test]
 fn sparse_array_mutation_helpers_preserve_holes() {
     let xs = JsArray::with_length(4);
     xs.set(0, 1);
@@ -191,6 +215,24 @@ fn canonical_array_receiver_entrypoints_preserve_js_results() {
 fn array_static_factories_preserve_values_and_array_brand() {
     let values = statics::of([1, 2, 3]);
     assert_eq!(values.values(), vec![Some(1), Some(2), Some(3)]);
+
+    let vector = vec![2, 4, 6];
+    assert_eq!(
+        statics::from_vec(&vector).values(),
+        vec![Some(2), Some(4), Some(6)]
+    );
+    assert_eq!(
+        statics::from_vec_map_zero(&vector, || 7).values(),
+        vec![Some(7), Some(7), Some(7)]
+    );
+    assert_eq!(
+        statics::from_vec_map(&vector, |value| value / 2).values(),
+        vec![Some(1), Some(2), Some(3)]
+    );
+    assert_eq!(
+        statics::from_vec_map_with_index(&vector, |value, index| value + index as i32).values(),
+        vec![Some(2), Some(5), Some(8)]
+    );
 
     let text = statics::from_string("a😀");
     assert_eq!(
@@ -409,4 +451,21 @@ fn default_array_sort_compares_utf16_code_units() {
         values.values(),
         vec![Some("\u{10000}".to_string()), Some("\u{e000}".to_string())]
     );
+}
+
+#[test]
+fn comparator_sort_entrypoints_preserve_callback_arity_and_identity() {
+    let binary = JsArray::from_dense(vec![3, 1, 2]);
+    let binary_alias = binary.clone();
+    let sorted = binary.sort(|left, right| f64::from(left - right));
+    assert!(sorted.ptr_eq(&binary_alias));
+    assert_eq!(binary.values(), vec![Some(1), Some(2), Some(3)]);
+
+    let unary = JsArray::from_dense(vec![3, 1, 2]);
+    unary.sort_value(|left| f64::from(left - 2));
+    assert_eq!(unary.len(), 3);
+
+    let zero = JsArray::from_dense(vec![3, 1, 2]);
+    zero.sort_zero(|| 0.0);
+    assert_eq!(zero.values(), vec![Some(3), Some(1), Some(2)]);
 }

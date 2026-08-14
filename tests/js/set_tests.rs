@@ -1,6 +1,15 @@
 use tsonic_rust_js::JsSet;
 use tsonic_rust_runtime::TsonicError;
 
+#[derive(Clone, Debug)]
+struct IdentityValue(std::rc::Rc<()>);
+
+impl PartialEq for IdentityValue {
+    fn eq(&self, other: &Self) -> bool {
+        std::rc::Rc::ptr_eq(&self.0, &other.0)
+    }
+}
+
 #[test]
 fn set_preserves_order_and_uniqueness() {
     let set = JsSet::new();
@@ -21,6 +30,26 @@ fn set_uses_same_value_zero_for_nan() {
     set.add(f64::NAN);
     assert_eq!(set.len(), 1);
     assert!(set.has(&f64::NAN));
+}
+
+#[test]
+fn set_constructors_and_exact_equality_preserve_source_contracts() {
+    let array = tsonic_rust_js::JsArray::from_dense(vec![1, 2, 1]);
+    assert_eq!(JsSet::from_array(&array).values(), vec![1, 2]);
+    assert_eq!(JsSet::from_fixed_array(&[2, 1, 2]).values(), vec![2, 1]);
+
+    let first = IdentityValue(std::rc::Rc::new(()));
+    let alias = first.clone();
+    let distinct = IdentityValue(std::rc::Rc::new(()));
+    let set = JsSet::new();
+    set.add_eq(first)
+        .add_eq(alias.clone())
+        .add_eq(distinct.clone());
+    assert_eq!(set.len(), 2);
+    assert!(set.has_eq(&alias));
+    assert!(set.delete_eq(&alias));
+    assert!(!set.delete_eq(&alias));
+    assert!(set.has_eq(&distinct));
 }
 
 #[test]
