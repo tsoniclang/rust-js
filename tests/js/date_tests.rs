@@ -22,6 +22,13 @@ fn date_epoch_and_iso_roundtrip() {
 }
 
 #[test]
+fn date_string_constructor_uses_the_same_exact_parse_contract() {
+    let date = JsDate::from_string("1970-01-02T00:00:00.000Z");
+    assert_eq!(date.get_time(), 86_400_000.0);
+    assert!(JsDate::from_string("not-a-date").get_time().is_nan());
+}
+
+#[test]
 fn date_supports_common_utc_iso_values() {
     let date = JsDate::from_millis(JsDate::parse("2020-02-29T12:34:56.789Z"));
     assert_eq!(date.to_iso_string().unwrap(), "2020-02-29T12:34:56.789Z");

@@ -52,6 +52,10 @@ impl JsDate {
         }
     }
 
+    pub fn from_string(value: &str) -> Self {
+        Self::from_millis(Self::parse(value))
+    }
+
     /// Mirrors `Date.parse` over the ISO 8601 subset Node accepts
     /// deterministically: `YYYY-MM-DD` (UTC midnight) and
     /// `YYYY-MM-DDTHH:mm:ss(.sss)?(Z|±HH:MM)`. Returns milliseconds since the
