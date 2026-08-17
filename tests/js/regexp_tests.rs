@@ -493,8 +493,11 @@ fn regexp_match_all_requires_the_g_flag() {
     assert_eq!(matches[0].text(), "a1");
     assert_eq!(matches[0].group(1), Some("a".to_string()));
     assert_eq!(matches[0].group(2), Some("1".to_string()));
+    assert_eq!(matches[0].len(), 3);
+    assert!(!matches[0].is_empty());
     assert_eq!(matches[1].text(), "b");
     assert_eq!(matches[1].group(2), None);
+    assert_eq!(matches[1].len(), 3);
     assert_eq!(matches[1].index(), 3);
 
     // matchAll is stateless: lastIndex is not consulted or mutated.
