@@ -9,6 +9,7 @@ pub use crate::array::{
     of as array_of, JsArray, JsArrayConcatItem, JsSlot,
 };
 pub use crate::array_buffer::ArrayBuffer;
+pub use crate::boolean::{to_string as boolean_to_string, value_of as boolean_value_of};
 pub use crate::console::{
     debug as console_debug, debug_to as console_debug_to, dir_to as console_dir_to,
     dirxml_to as console_dirxml_to, error as console_error, error_to as console_error_to,
@@ -51,15 +52,17 @@ pub use crate::set::JsSet;
 pub use crate::string::{
     at as js_string_at, char_at as js_string_char_at, char_code_at as js_string_char_code_at,
     code_point_at as js_string_code_point_at, from_char_code as js_string_from_char_code,
-    from_code_point as js_string_from_code_point, last_index_of as js_string_last_index_of,
-    last_index_of_from_end as js_string_last_index_of_from_end, pad_end as js_string_pad_end,
+    from_code_point as js_string_from_code_point, is_well_formed as js_string_is_well_formed,
+    last_index_of as js_string_last_index_of,
+    last_index_of_from_end as js_string_last_index_of_from_end, normalize as js_string_normalize,
+    normalize_with_form as js_string_normalize_with_form, pad_end as js_string_pad_end,
     pad_end_with as js_string_pad_end_with, pad_start as js_string_pad_start,
     pad_start_with as js_string_pad_start_with, repeat as js_string_repeat,
     replace as js_string_replace, replace_all as js_string_replace_all, split as js_string_split,
     split_all as js_string_split_all, substr as js_string_substr,
     substr_from as js_string_substr_from, substring as js_string_substring,
-    substring_from as js_string_substring_from, trim_end as js_string_trim_end,
-    trim_start as js_string_trim_start,
+    substring_from as js_string_substring_from, to_well_formed as js_string_to_well_formed,
+    trim_end as js_string_trim_end, trim_start as js_string_trim_start,
 };
 pub use crate::typed_array::{
     Float32Array, Float64Array, Int16Array, Int32Array, Int8Array, Uint16Array, Uint32Array,

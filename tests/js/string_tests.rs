@@ -187,6 +187,30 @@ fn conversion_helpers() {
     assert_eq!(string::concat("a", &["b", "c"]), "abc");
 }
 
+#[test]
+fn unicode_normalization_and_well_formed_contracts_are_exact() {
+    assert_eq!(string::normalize("A\u{030a}"), "\u{00c5}");
+    assert_eq!(
+        string::normalize_with_form("\u{00c5}", "NFD").as_deref(),
+        Ok("A\u{030a}")
+    );
+    assert_eq!(
+        string::normalize_with_form("\u{fb03}", "NFKC").as_deref(),
+        Ok("ffi")
+    );
+    assert_eq!(
+        string::normalize_with_form("value", "invalid")
+            .unwrap_err()
+            .kind(),
+        JsErrorKind::TypeError
+    );
+    assert!(string::is_well_formed("scalar \u{1f600}"));
+    assert_eq!(
+        string::to_well_formed("scalar \u{1f600}"),
+        "scalar \u{1f600}"
+    );
+}
+
 fn dense(array: tsonic_rust_js::JsArray<String>) -> Vec<String> {
     array.iter_values().collect()
 }
