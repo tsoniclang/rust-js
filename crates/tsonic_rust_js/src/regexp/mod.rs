@@ -92,6 +92,15 @@ impl JsRegExpMatch {
     pub fn group_count(&self) -> usize {
         self.groups.len()
     }
+
+    /// JavaScript array length, including the whole match at index zero.
+    pub fn len(&self) -> usize {
+        self.groups.len() + 1
+    }
+
+    pub fn is_empty(&self) -> bool {
+        false
+    }
 }
 
 #[derive(Debug)]

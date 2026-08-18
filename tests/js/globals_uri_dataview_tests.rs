@@ -1,4 +1,12 @@
-use tsonic_rust_js::{abi, data_view::DataView, errors, wrappers, ArrayBuffer, JsValue};
+use tsonic_rust_js::{abi, boolean, data_view::DataView, errors, wrappers, ArrayBuffer, JsValue};
+
+#[test]
+fn boolean_primitive_methods_preserve_javascript_text_and_value() {
+    assert_eq!(boolean::to_string(true), "true");
+    assert_eq!(boolean::to_string(false), "false");
+    assert!(boolean::value_of(true));
+    assert!(!boolean::value_of(false));
+}
 
 #[test]
 fn coercive_number_globals_follow_closed_value_rules() {

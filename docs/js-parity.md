@@ -31,8 +31,9 @@ Date, and RegExp surfaces of `crates/tsonic_rust_js` measured against
 | `concat`, `valueOf`, `trimLeft`, `trimRight` | implemented — exact aliases and one borrowed string-slice concat ABI |
 | `String.fromCharCode` / `String.fromCodePoint` | implemented — fallible UTF-16/code-point constructors over one numeric slice ABI |
 | `match` / `matchAll` | implemented — `regexp::JsRegExpMatch` carrier via `JsRegExp::match_first` (non-`g` `match`), `JsRegExp::match_strings` (`g` `match`), and `JsRegExp::match_all` (`matchAll`, `TypeError` without `g`) |
-| `localeCompare`, `toLocale*`, `normalize` | requires-icu-contract — locale/normalization tables are not part of the closed runtime |
-| `isWellFormed` / `toWellFormed` | rejected-by-architecture — Rust `str` is always well-formed UTF-8; lone surrogates cannot be carried |
+| `normalize` | implemented — `string::normalize` / `normalize_with_form`; NFC, NFD, NFKC, and NFKD use one pinned Unicode normalization implementation and invalid forms return `TypeError` |
+| `isWellFormed` / `toWellFormed` | implemented over the representable source domain — every Rust `String` is well-formed, so the predicate is true and conversion preserves the exact string; operations that would first create a lone surrogate fail closed at that earlier operation |
+| `localeCompare`, `toLocale*` | requires-icu-contract — locale-sensitive collation and case tables are not part of the closed runtime |
 
 All other members on the C# `String` surface (`slice`, `indexOf`,
 `startsWith`, `endsWith`, `includes`, `replace` (string form), `split`
@@ -96,8 +97,10 @@ surface: `union`, `intersection`, `difference`, `symmetric_difference`
 ## Date
 
 UTC-based surface is implemented in `date.rs` (`now`, `from_millis`,
-`get_time`, `value_of`, `to_iso_string`, `to_json` — the ISO string, `"null"`
-for an invalid date — and the UTC getters). `Date.parse` is implemented as
+`get_time`, `value_of`, `to_iso_string`, `to_utc_string`, `to_json` — the ISO
+string, `"null"` for an invalid date — the UTC getters, and every UTC setter).
+The carrier preserves JavaScript object identity, so mutating one alias updates
+every alias, and every setter applies `TimeClip`. `Date.parse` is implemented as
 `JsDate::parse` over the ISO 8601 subset Node accepts deterministically:
 `YYYY-MM-DD` (UTC midnight) and `YYYY-MM-DDTHH:mm:ss(.sss)?(Z|±HH:MM)`;
 everything else — including formats Node's legacy parser reads as local time
@@ -105,9 +108,7 @@ everything else — including formats Node's legacy parser reads as local time
 truncation, month/day overflow carry, the 1900-mapping of two-digit years,
 and time-range clipping to NaN. Local-time getters/setters,
 `getTimezoneOffset`, and the locale renderers present in the C# `Date.cs`
-are requires-timezone-contract: the closed runtime has no IANA tzdata
-source. UTC setters are requires-date-mutation-contract (the carrier is an
-immutable millisecond value).
+are requires-timezone-contract: the closed runtime has no IANA tzdata source.
 
 ## RegExp
 

@@ -1,9 +1,11 @@
 //! UTF-16-aware JS string helpers over valid Rust `str`.
 
 use tsonic_rust_runtime::{JsError, JsErrorKind};
+use unicode_normalization::UnicodeNormalization;
 
 use crate::array::JsArray;
 use crate::coercion::{absolute_index, relative_index, to_integer_or_infinity};
+use crate::errors::{type_error, JsResult};
 
 /// JS-facing string value conversion contract used by dense array join and future array helpers.
 pub trait JsToString {
@@ -522,6 +524,30 @@ pub fn to_upper_case(value: &str) -> String {
 }
 
 pub fn identity(value: &str) -> String {
+    value.to_string()
+}
+
+pub fn normalize(value: &str) -> String {
+    value.nfc().collect()
+}
+
+pub fn normalize_with_form(value: &str, form: &str) -> JsResult<String> {
+    match form {
+        "NFC" => Ok(value.nfc().collect()),
+        "NFD" => Ok(value.nfd().collect()),
+        "NFKC" => Ok(value.nfkc().collect()),
+        "NFKD" => Ok(value.nfkd().collect()),
+        _ => Err(type_error(
+            "String.prototype.normalize form must be NFC, NFD, NFKC, or NFKD",
+        )),
+    }
+}
+
+pub fn is_well_formed(_value: &str) -> bool {
+    true
+}
+
+pub fn to_well_formed(value: &str) -> String {
     value.to_string()
 }
 

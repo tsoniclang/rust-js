@@ -171,3 +171,102 @@ fn date_now_is_finite_and_monotonic_enough() {
     assert!(constructed.get_time() <= after);
     assert!(after >= before);
 }
+
+#[test]
+fn date_utc_getters_and_text_cover_calendar_boundaries() {
+    let date = JsDate::from_millis(JsDate::utc(2020.0, 1.0, 29.0, 23.0, 59.0, 58.0, 987.0));
+    assert_eq!(date.get_utc_full_year_number(), 2020.0);
+    assert_eq!(date.get_utc_month_number(), 1.0);
+    assert_eq!(date.get_utc_date_number(), 29.0);
+    assert_eq!(date.get_utc_day_number(), 6.0);
+    assert_eq!(date.get_utc_hours_number(), 23.0);
+    assert_eq!(date.get_utc_minutes_number(), 59.0);
+    assert_eq!(date.get_utc_seconds_number(), 58.0);
+    assert_eq!(date.get_utc_milliseconds_number(), 987.0);
+    assert_eq!(date.to_utc_string(), "Sat, 29 Feb 2020 23:59:58 GMT");
+
+    let invalid = JsDate::from_millis(f64::NAN);
+    assert!(invalid.get_utc_full_year_number().is_nan());
+    assert_eq!(invalid.to_utc_string(), "Invalid Date");
+}
+
+#[test]
+fn date_utc_setters_mutate_shared_identity_with_javascript_overflow() {
+    let date = JsDate::from_millis(JsDate::utc(2020.0, 0.0, 31.0, 23.0, 59.0, 58.0, 900.0));
+    let alias = date.clone();
+    date.set_utc_month(1.0);
+    assert_eq!(alias.to_iso_string().unwrap(), "2020-03-02T23:59:58.900Z");
+    date.set_utc_seconds_milliseconds(61.0, 250.0);
+    assert_eq!(alias.to_iso_string().unwrap(), "2020-03-03T00:00:01.250Z");
+    date.set_utc_hours_minutes_seconds_milliseconds(1.0, 2.0, 3.0, 4.0);
+    assert_eq!(alias.to_iso_string().unwrap(), "2020-03-03T01:02:03.004Z");
+    date.set_utc_full_year_month_date(2024.0, 1.0, 29.0);
+    assert_eq!(alias.to_iso_string().unwrap(), "2024-02-29T01:02:03.004Z");
+    date.set_utc_date(0.0);
+    assert_eq!(alias.to_iso_string().unwrap(), "2024-01-31T01:02:03.004Z");
+}
+
+#[test]
+fn every_utc_setter_arity_preserves_omitted_fields() {
+    let base = || JsDate::from_millis(JsDate::utc(2020.0, 0.0, 2.0, 3.0, 4.0, 5.0, 6.0));
+
+    let date = base();
+    date.set_utc_milliseconds(250.0);
+    assert_eq!(date.to_iso_string().unwrap(), "2020-01-02T03:04:05.250Z");
+
+    let date = base();
+    date.set_utc_minutes(10.0);
+    assert_eq!(date.to_iso_string().unwrap(), "2020-01-02T03:10:05.006Z");
+
+    let date = base();
+    date.set_utc_minutes_seconds(10.0, 20.0);
+    assert_eq!(date.to_iso_string().unwrap(), "2020-01-02T03:10:20.006Z");
+
+    let date = base();
+    date.set_utc_minutes_seconds_milliseconds(10.0, 20.0, 30.0);
+    assert_eq!(date.to_iso_string().unwrap(), "2020-01-02T03:10:20.030Z");
+
+    let date = base();
+    date.set_utc_hours(8.0);
+    assert_eq!(date.to_iso_string().unwrap(), "2020-01-02T08:04:05.006Z");
+
+    let date = base();
+    date.set_utc_hours_minutes(8.0, 9.0);
+    assert_eq!(date.to_iso_string().unwrap(), "2020-01-02T08:09:05.006Z");
+
+    let date = base();
+    date.set_utc_hours_minutes_seconds(8.0, 9.0, 10.0);
+    assert_eq!(date.to_iso_string().unwrap(), "2020-01-02T08:09:10.006Z");
+
+    let date = base();
+    date.set_utc_month_date(1.0, 29.0);
+    assert_eq!(date.to_iso_string().unwrap(), "2020-02-29T03:04:05.006Z");
+
+    let date = base();
+    date.set_utc_full_year_month(2024.0, 1.0);
+    assert_eq!(date.to_iso_string().unwrap(), "2024-02-02T03:04:05.006Z");
+}
+
+#[test]
+fn date_setter_invalid_date_and_time_clip_rules_match_javascript() {
+    let invalid = JsDate::from_millis(f64::NAN);
+    assert!(invalid.set_utc_seconds(1.0).is_nan());
+    assert_eq!(invalid.set_utc_full_year(2000.0), 946_684_800_000.0);
+    assert_eq!(invalid.to_iso_string().unwrap(), "2000-01-01T00:00:00.000Z");
+    assert!(invalid.set_time(8_640_000_000_000_001.0).is_nan());
+    assert!(invalid.get_time().is_nan());
+    assert_eq!(invalid.set_time(-0.0).to_bits(), 0.0_f64.to_bits());
+}
+
+#[test]
+fn date_iso_string_uses_ecmascript_extended_years() {
+    let future = JsDate::from_millis(JsDate::utc(10_000.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0));
+    assert_eq!(
+        future.to_iso_string().unwrap(),
+        "+010000-01-01T00:00:00.000Z"
+    );
+    assert_eq!(future.to_utc_string(), "Sat, 01 Jan 10000 00:00:00 GMT");
+    let past = JsDate::from_millis(JsDate::utc(-1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0));
+    assert_eq!(past.to_iso_string().unwrap(), "-000001-01-01T00:00:00.000Z");
+    assert_eq!(past.to_utc_string(), "Fri, 01 Jan -0001 00:00:00 GMT");
+}

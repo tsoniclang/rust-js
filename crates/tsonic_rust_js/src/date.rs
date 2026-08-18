@@ -7,6 +7,7 @@ use crate::equality::{JsSameValueZero, JsStrictEqual};
 use crate::errors::{range_error, JsResult};
 
 const MS_PER_DAY: i64 = 86_400_000;
+const MAX_TIME_MILLIS: f64 = 8_640_000_000_000_000.0;
 
 #[derive(Debug, Clone)]
 pub struct JsDate {
@@ -48,7 +49,7 @@ impl JsDate {
 
     pub fn from_millis(millis: f64) -> Self {
         Self {
-            millis: Rc::new(Cell::new(millis)),
+            millis: Rc::new(Cell::new(time_clip(millis))),
         }
     }
 
@@ -83,38 +84,13 @@ impl JsDate {
         seconds: f64,
         ms: f64,
     ) -> f64 {
-        if ![year, month, day, hours, minutes, seconds, ms]
-            .iter()
-            .all(|value| value.is_finite())
-        {
-            return f64::NAN;
-        }
         let year = year.trunc();
         let year = if (0.0..=99.0).contains(&year) {
             1900.0 + year
         } else {
             year
         };
-        // Same year/month domain as the major engines; anything beyond is far
-        // outside the ±8.64e15 ms time range once combined with in-range
-        // day/time arguments.
-        if year.abs() > 1_000_000.0 || month.trunc().abs() > 10_000_000.0 {
-            return f64::NAN;
-        }
-        let total_months = year as i64 * 12 + month.trunc() as i64;
-        let civil_year = total_months.div_euclid(12) as i32;
-        let civil_month = total_months.rem_euclid(12) as u32 + 1;
-        let day_number = days_from_civil(civil_year, civil_month, 1) as f64;
-        let millis = (day_number + day.trunc() - 1.0) * MS_PER_DAY as f64
-            + hours.trunc() * 3_600_000.0
-            + minutes.trunc() * 60_000.0
-            + seconds.trunc() * 1_000.0
-            + ms.trunc();
-        if millis.abs() > 8.64e15 {
-            f64::NAN
-        } else {
-            millis
-        }
+        make_utc_millis(year, month, day, hours, minutes, seconds, ms)
     }
 
     pub fn get_time(&self) -> f64 {
@@ -139,7 +115,8 @@ impl JsDate {
         let second = (ms_in_day % 60_000) / 1_000;
         let milli = ms_in_day % 1_000;
         Ok(format!(
-            "{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.{milli:03}Z"
+            "{}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.{milli:03}Z",
+            iso_year(year),
         ))
     }
 
@@ -185,6 +162,200 @@ impl JsDate {
         Ok(milli)
     }
 
+    pub fn get_utc_full_year_number(&self) -> f64 {
+        self.get_utc_full_year().map_or(f64::NAN, f64::from)
+    }
+
+    pub fn get_utc_month_number(&self) -> f64 {
+        self.get_utc_month().map_or(f64::NAN, f64::from)
+    }
+
+    pub fn get_utc_date_number(&self) -> f64 {
+        self.get_utc_date().map_or(f64::NAN, f64::from)
+    }
+
+    pub fn get_utc_day_number(&self) -> f64 {
+        let millis = self.millis.get();
+        if !millis.is_finite() {
+            return f64::NAN;
+        }
+        (millis.trunc() as i64)
+            .div_euclid(MS_PER_DAY)
+            .checked_add(4)
+            .map_or(f64::NAN, |day| day.rem_euclid(7) as f64)
+    }
+
+    pub fn get_utc_hours_number(&self) -> f64 {
+        self.get_utc_hours().map_or(f64::NAN, |value| value as f64)
+    }
+
+    pub fn get_utc_minutes_number(&self) -> f64 {
+        self.get_utc_minutes()
+            .map_or(f64::NAN, |value| value as f64)
+    }
+
+    pub fn get_utc_seconds_number(&self) -> f64 {
+        self.get_utc_seconds()
+            .map_or(f64::NAN, |value| value as f64)
+    }
+
+    pub fn get_utc_milliseconds_number(&self) -> f64 {
+        self.get_utc_milliseconds()
+            .map_or(f64::NAN, |value| value as f64)
+    }
+
+    pub fn set_time(&self, millis: f64) -> f64 {
+        let clipped = time_clip(millis);
+        self.millis.set(clipped);
+        clipped
+    }
+
+    pub fn set_utc_milliseconds(&self, milliseconds: f64) -> f64 {
+        self.mutate_utc(false, |parts| parts[6] = milliseconds)
+    }
+
+    pub fn set_utc_seconds(&self, seconds: f64) -> f64 {
+        self.mutate_utc(false, |parts| parts[5] = seconds)
+    }
+
+    pub fn set_utc_seconds_milliseconds(&self, seconds: f64, milliseconds: f64) -> f64 {
+        self.mutate_utc(false, |parts| {
+            parts[5] = seconds;
+            parts[6] = milliseconds;
+        })
+    }
+
+    pub fn set_utc_minutes(&self, minutes: f64) -> f64 {
+        self.mutate_utc(false, |parts| parts[4] = minutes)
+    }
+
+    pub fn set_utc_minutes_seconds(&self, minutes: f64, seconds: f64) -> f64 {
+        self.mutate_utc(false, |parts| {
+            parts[4] = minutes;
+            parts[5] = seconds;
+        })
+    }
+
+    pub fn set_utc_minutes_seconds_milliseconds(
+        &self,
+        minutes: f64,
+        seconds: f64,
+        milliseconds: f64,
+    ) -> f64 {
+        self.mutate_utc(false, |parts| {
+            parts[4] = minutes;
+            parts[5] = seconds;
+            parts[6] = milliseconds;
+        })
+    }
+
+    pub fn set_utc_hours(&self, hours: f64) -> f64 {
+        self.mutate_utc(false, |parts| parts[3] = hours)
+    }
+
+    pub fn set_utc_hours_minutes(&self, hours: f64, minutes: f64) -> f64 {
+        self.mutate_utc(false, |parts| {
+            parts[3] = hours;
+            parts[4] = minutes;
+        })
+    }
+
+    pub fn set_utc_hours_minutes_seconds(&self, hours: f64, minutes: f64, seconds: f64) -> f64 {
+        self.mutate_utc(false, |parts| {
+            parts[3] = hours;
+            parts[4] = minutes;
+            parts[5] = seconds;
+        })
+    }
+
+    pub fn set_utc_hours_minutes_seconds_milliseconds(
+        &self,
+        hours: f64,
+        minutes: f64,
+        seconds: f64,
+        milliseconds: f64,
+    ) -> f64 {
+        self.mutate_utc(false, |parts| {
+            parts[3] = hours;
+            parts[4] = minutes;
+            parts[5] = seconds;
+            parts[6] = milliseconds;
+        })
+    }
+
+    pub fn set_utc_date(&self, date: f64) -> f64 {
+        self.mutate_utc(false, |parts| parts[2] = date)
+    }
+
+    pub fn set_utc_month(&self, month: f64) -> f64 {
+        self.mutate_utc(false, |parts| parts[1] = month)
+    }
+
+    pub fn set_utc_month_date(&self, month: f64, date: f64) -> f64 {
+        self.mutate_utc(false, |parts| {
+            parts[1] = month;
+            parts[2] = date;
+        })
+    }
+
+    pub fn set_utc_full_year(&self, year: f64) -> f64 {
+        self.mutate_utc(true, |parts| parts[0] = year)
+    }
+
+    pub fn set_utc_full_year_month(&self, year: f64, month: f64) -> f64 {
+        self.mutate_utc(true, |parts| {
+            parts[0] = year;
+            parts[1] = month;
+        })
+    }
+
+    pub fn set_utc_full_year_month_date(&self, year: f64, month: f64, date: f64) -> f64 {
+        self.mutate_utc(true, |parts| {
+            parts[0] = year;
+            parts[1] = month;
+            parts[2] = date;
+        })
+    }
+
+    pub fn to_utc_string(&self) -> String {
+        let Ok((year, month, day, hour, minute, second, _)) = self.utc_parts() else {
+            return "Invalid Date".to_string();
+        };
+        const WEEKDAYS: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+        const MONTHS: [&str; 12] = [
+            "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+        ];
+        let weekday = self.get_utc_day_number() as usize;
+        format!(
+            "{}, {day:02} {} {} {hour:02}:{minute:02}:{second:02} GMT",
+            WEEKDAYS[weekday],
+            MONTHS[month as usize - 1],
+            utc_string_year(year),
+        )
+    }
+
+    fn mutate_utc(&self, invalid_uses_epoch: bool, update: impl FnOnce(&mut [f64; 7])) -> f64 {
+        let mut parts = match self.utc_parts() {
+            Ok((year, month, day, hour, minute, second, millisecond)) => [
+                year as f64,
+                month as f64 - 1.0,
+                day as f64,
+                hour as f64,
+                minute as f64,
+                second as f64,
+                millisecond as f64,
+            ],
+            Err(_) if invalid_uses_epoch => [1970.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+            Err(_) => return self.set_time(f64::NAN),
+        };
+        update(&mut parts);
+        let millis = make_utc_millis(
+            parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], parts[6],
+        );
+        self.millis.set(millis);
+        millis
+    }
+
     fn utc_parts(&self) -> JsResult<(i32, u32, u32, i64, i64, i64, i64)> {
         let millis = self.millis.get();
         if !millis.is_finite() {
@@ -199,6 +370,75 @@ impl JsDate {
         let second = (ms_in_day % 60_000) / 1_000;
         let milli = ms_in_day % 1_000;
         Ok((year, month, day, hour, minute, second, milli))
+    }
+}
+
+fn make_utc_millis(
+    year: f64,
+    month: f64,
+    day: f64,
+    hours: f64,
+    minutes: f64,
+    seconds: f64,
+    milliseconds: f64,
+) -> f64 {
+    if ![year, month, day, hours, minutes, seconds, milliseconds]
+        .iter()
+        .all(|value| value.is_finite())
+    {
+        return f64::NAN;
+    }
+    let year = year.trunc();
+    let month = month.trunc();
+    if year.abs() > 1_000_000.0 || month.abs() > 10_000_000.0 {
+        return f64::NAN;
+    }
+    let Some(total_months) = (year as i64)
+        .checked_mul(12)
+        .and_then(|value| value.checked_add(month as i64))
+    else {
+        return f64::NAN;
+    };
+    let civil_year = total_months.div_euclid(12);
+    if civil_year.unsigned_abs() > 1_000_000 {
+        return f64::NAN;
+    }
+    let civil_month = total_months.rem_euclid(12) as u32 + 1;
+    let day_number = days_from_civil(civil_year as i32, civil_month, 1) as f64;
+    time_clip(
+        (day_number + day.trunc() - 1.0) * MS_PER_DAY as f64
+            + hours.trunc() * 3_600_000.0
+            + minutes.trunc() * 60_000.0
+            + seconds.trunc() * 1_000.0
+            + milliseconds.trunc(),
+    )
+}
+
+fn time_clip(value: f64) -> f64 {
+    if !value.is_finite() || value.abs() > MAX_TIME_MILLIS {
+        f64::NAN
+    } else if value == 0.0 {
+        0.0
+    } else {
+        value.trunc()
+    }
+}
+
+fn iso_year(year: i32) -> String {
+    if (0..=9999).contains(&year) {
+        format!("{year:04}")
+    } else if year < 0 {
+        format!("-{:06}", i64::from(year).unsigned_abs())
+    } else {
+        format!("+{year:06}")
+    }
+}
+
+fn utc_string_year(year: i32) -> String {
+    if year >= 0 {
+        format!("{year:04}")
+    } else {
+        format!("-{:04}", i64::from(year).unsigned_abs())
     }
 }
 

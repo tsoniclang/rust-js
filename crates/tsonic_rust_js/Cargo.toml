@@ -8,6 +8,7 @@ num-bigint = "=0.4.8"
 num-traits = "=0.2.19"
 ryu-js = "=1.0.3"
 tsonic_rust_runtime = "=0.1.0"
+unicode-normalization = "=0.1.24"
 
 [[test]]
 name = "no_forbidden_shortcuts"
