@@ -48,7 +48,7 @@ mod vm;
 use std::cell::Cell;
 use std::rc::Rc;
 
-use crate::equality::{JsSameValueZero, JsStrictEqual};
+use crate::equality::{hash_identity, JsHash, JsSameValueZero, JsStrictEqual};
 use crate::errors::{range_error, type_error, unsupported, JsResult};
 
 /// Match carrier mirroring the JS `RegExpMatchArray` shape: the whole match
@@ -131,6 +131,12 @@ impl Eq for JsRegExp {}
 impl JsSameValueZero for JsRegExp {
     fn same_value_zero(&self, other: &Self) -> bool {
         self == other
+    }
+}
+
+impl JsHash for JsRegExp {
+    fn js_hash(&self) -> u64 {
+        hash_identity(Rc::as_ptr(&self.state) as usize)
     }
 }
 

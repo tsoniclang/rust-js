@@ -251,6 +251,21 @@ fn fallible_sort_callbacks_are_stable_preserve_holes_and_publish_atomically() {
 }
 
 #[test]
+fn fallible_sort_uses_n_log_n_comparisons() {
+    let values = JsArray::from_dense((0..4096).rev().collect::<Vec<_>>());
+    let mut comparisons = 0_usize;
+    values
+        .try_sort(|left, right| {
+            comparisons += 1;
+            Ok::<_, TsonicError>(f64::from(left - right))
+        })
+        .unwrap();
+    assert!(comparisons < 100_000);
+    assert_eq!(values.get(0), Some(0));
+    assert_eq!(values.get(4095), Some(4095));
+}
+
+#[test]
 fn fallible_vector_factories_preserve_callback_arity_and_short_circuiting() {
     let values = vec![2, 4, 6];
     assert_eq!(

@@ -201,3 +201,12 @@ fn set_algebra_uses_same_value_zero() {
     assert!(zero.is_subset_of(&negative_zero));
     assert_eq!(zero.union(&negative_zero).len(), 1);
 }
+
+#[test]
+fn discard_add_entrypoint_preserves_set_identity_and_contents() {
+    let set = JsSet::new();
+    let alias = set.clone();
+    set.add_discard("name".to_string());
+    assert!(set.ptr_eq(&alias));
+    assert!(alias.has("name"));
+}

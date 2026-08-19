@@ -3,7 +3,7 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use crate::equality::{JsSameValueZero, JsStrictEqual};
+use crate::equality::{hash_identity, JsHash, JsSameValueZero, JsStrictEqual};
 use crate::errors::{range_error, JsResult};
 
 const MS_PER_DAY: i64 = 86_400_000;
@@ -25,6 +25,12 @@ impl Eq for JsDate {}
 impl JsSameValueZero for JsDate {
     fn same_value_zero(&self, other: &Self) -> bool {
         self == other
+    }
+}
+
+impl JsHash for JsDate {
+    fn js_hash(&self) -> u64 {
+        hash_identity(Rc::as_ptr(&self.millis) as usize)
     }
 }
 

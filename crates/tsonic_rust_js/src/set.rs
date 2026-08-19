@@ -1,18 +1,21 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 use tsonic_rust_runtime::TsonicResult;
 
-use crate::equality::{JsSameValueZero, JsStrictEqual};
+use crate::equality::{hash_identity, JsHash, JsSameValueZero, JsStrictEqual};
 
 #[derive(Debug)]
 struct SetEntry<T> {
     value: T,
+    hash: u64,
     present: bool,
 }
 
 #[derive(Debug)]
 struct JsSetState<T> {
     entries: Vec<SetEntry<T>>,
+    indices_by_hash: HashMap<u64, Vec<usize>>,
     size: usize,
 }
 
@@ -43,6 +46,12 @@ impl<T> JsSameValueZero for JsSet<T> {
     }
 }
 
+impl<T> JsHash for JsSet<T> {
+    fn js_hash(&self) -> u64 {
+        hash_identity(Rc::as_ptr(&self.state) as usize)
+    }
+}
+
 impl<T> JsStrictEqual for JsSet<T> {
     fn strict_equal(&self, other: &Self) -> bool {
         self.ptr_eq(other)
@@ -54,6 +63,7 @@ impl<T> JsSet<T> {
         Self {
             state: Rc::new(RefCell::new(JsSetState {
                 entries: Vec::new(),
+                indices_by_hash: HashMap::new(),
                 size: 0,
             })),
         }
@@ -61,7 +71,7 @@ impl<T> JsSet<T> {
 
     pub fn from_values(values: impl IntoIterator<Item = T>) -> Self
     where
-        T: JsSameValueZero,
+        T: JsHash + JsSameValueZero,
     {
         let set = Self::new();
         for value in values {
@@ -72,14 +82,14 @@ impl<T> JsSet<T> {
 
     pub fn from_array(values: &crate::array::JsArray<T>) -> Self
     where
-        T: Clone + JsSameValueZero,
+        T: Clone + JsHash + JsSameValueZero,
     {
         Self::from_values(values.iter_values())
     }
 
     pub fn from_fixed_array<const LENGTH: usize>(values: &[T; LENGTH]) -> Self
     where
-        T: Clone + JsSameValueZero,
+        T: Clone + JsHash + JsSameValueZero,
     {
         Self::from_values(values.iter().cloned())
     }
@@ -101,18 +111,16 @@ impl<T> JsSet<T> {
         for entry in &mut state.entries {
             entry.present = false;
         }
+        state.indices_by_hash.clear();
         state.size = 0;
     }
 
     pub fn has<Q: ?Sized>(&self, value: &Q) -> bool
     where
         T: JsSameValueZero<Q>,
+        Q: JsHash,
     {
-        self.state
-            .borrow()
-            .entries
-            .iter()
-            .any(|entry| entry.present && entry.value.same_value_zero(value))
+        find_index(&self.state.borrow(), value.js_hash(), value).is_some()
     }
 
     pub fn has_eq(&self, value: &T) -> bool
@@ -128,20 +136,39 @@ impl<T> JsSet<T> {
 
     pub fn add(&self, value: T) -> Self
     where
-        T: JsSameValueZero,
+        T: JsHash + JsSameValueZero,
     {
-        if !self.has(&value) {
-            let mut state = self.state.borrow_mut();
-            state.entries.push(SetEntry {
-                value,
-                present: true,
-            });
-            state.size += 1;
-        }
+        self.add_discard(value);
         self.clone()
     }
 
+    pub fn add_discard(&self, value: T)
+    where
+        T: JsHash + JsSameValueZero,
+    {
+        let hash = value.js_hash();
+        let mut state = self.state.borrow_mut();
+        if find_index(&state, hash, &value).is_none() {
+            let index = state.entries.len();
+            state.entries.push(SetEntry {
+                value,
+                hash,
+                present: true,
+            });
+            state.indices_by_hash.entry(hash).or_default().push(index);
+            state.size += 1;
+        }
+    }
+
     pub fn add_eq(&self, value: T) -> Self
+    where
+        T: PartialEq,
+    {
+        self.add_eq_discard(value);
+        self.clone()
+    }
+
+    pub fn add_eq_discard(&self, value: T)
     where
         T: PartialEq,
     {
@@ -149,24 +176,23 @@ impl<T> JsSet<T> {
             let mut state = self.state.borrow_mut();
             state.entries.push(SetEntry {
                 value,
+                hash: 0,
                 present: true,
             });
             state.size += 1;
         }
-        self.clone()
     }
 
     pub fn delete<Q: ?Sized>(&self, value: &Q) -> bool
     where
         T: JsSameValueZero<Q>,
+        Q: JsHash,
     {
+        let hash = value.js_hash();
         let mut state = self.state.borrow_mut();
-        if let Some(entry) = state
-            .entries
-            .iter_mut()
-            .find(|entry| entry.present && entry.value.same_value_zero(value))
-        {
-            entry.present = false;
+        if let Some(index) = find_index(&state, hash, value) {
+            state.entries[index].present = false;
+            remove_hash_index(&mut state.indices_by_hash, hash, index);
             state.size -= 1;
             return true;
         }
@@ -268,21 +294,21 @@ impl<T> JsSet<T> {
 
     pub fn difference(&self, other: &Self) -> Self
     where
-        T: Clone + JsSameValueZero,
+        T: Clone + JsHash + JsSameValueZero,
     {
         Self::from_values(self.values().into_iter().filter(|value| !other.has(value)))
     }
 
     pub fn intersection(&self, other: &Self) -> Self
     where
-        T: Clone + JsSameValueZero,
+        T: Clone + JsHash + JsSameValueZero,
     {
         Self::from_values(self.values().into_iter().filter(|value| other.has(value)))
     }
 
     pub fn union(&self, other: &Self) -> Self
     where
-        T: Clone + JsSameValueZero,
+        T: Clone + JsHash + JsSameValueZero,
     {
         let output = Self::from_values(self.values());
         for value in other.values() {
@@ -293,7 +319,7 @@ impl<T> JsSet<T> {
 
     pub fn symmetric_difference(&self, other: &Self) -> Self
     where
-        T: Clone + JsSameValueZero,
+        T: Clone + JsHash + JsSameValueZero,
     {
         let output = self.difference(other);
         for value in other.values() {
@@ -306,21 +332,21 @@ impl<T> JsSet<T> {
 
     pub fn is_subset_of(&self, other: &Self) -> bool
     where
-        T: Clone + JsSameValueZero,
+        T: Clone + JsHash + JsSameValueZero,
     {
         self.values().iter().all(|value| other.has(value))
     }
 
     pub fn is_superset_of(&self, other: &Self) -> bool
     where
-        T: Clone + JsSameValueZero,
+        T: Clone + JsHash + JsSameValueZero,
     {
         other.is_subset_of(self)
     }
 
     pub fn is_disjoint_from(&self, other: &Self) -> bool
     where
-        T: Clone + JsSameValueZero,
+        T: Clone + JsHash + JsSameValueZero,
     {
         self.values().iter().all(|value| !other.has(value))
     }
@@ -378,6 +404,33 @@ impl<T> JsSet<T> {
         F: FnMut(T, T, Self) -> TsonicResult<()>,
     {
         self.try_for_each_with(callback)
+    }
+}
+
+fn find_index<T, Q: ?Sized>(state: &JsSetState<T>, hash: u64, value: &Q) -> Option<usize>
+where
+    T: JsSameValueZero<Q>,
+{
+    state
+        .indices_by_hash
+        .get(&hash)?
+        .iter()
+        .copied()
+        .find(|index| {
+            let entry = &state.entries[*index];
+            entry.present && entry.hash == hash && entry.value.same_value_zero(value)
+        })
+}
+
+fn remove_hash_index(indices_by_hash: &mut HashMap<u64, Vec<usize>>, hash: u64, index: usize) {
+    let remove_bucket = if let Some(indices) = indices_by_hash.get_mut(&hash) {
+        indices.retain(|candidate| *candidate != index);
+        indices.is_empty()
+    } else {
+        false
+    };
+    if remove_bucket {
+        indices_by_hash.remove(&hash);
     }
 }
 

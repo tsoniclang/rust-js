@@ -3,7 +3,7 @@
 use std::cell::{Ref, RefCell, RefMut};
 use std::rc::Rc;
 
-use crate::equality::{JsSameValueZero, JsStrictEqual};
+use crate::equality::{hash_identity, JsHash, JsSameValueZero, JsStrictEqual};
 
 #[derive(Debug, Clone)]
 pub struct ArrayBuffer {
@@ -21,6 +21,12 @@ impl Eq for ArrayBuffer {}
 impl JsSameValueZero for ArrayBuffer {
     fn same_value_zero(&self, other: &Self) -> bool {
         self == other
+    }
+}
+
+impl JsHash for ArrayBuffer {
+    fn js_hash(&self) -> u64 {
+        hash_identity(Rc::as_ptr(&self.bytes) as usize)
     }
 }
 
