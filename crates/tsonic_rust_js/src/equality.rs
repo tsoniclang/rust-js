@@ -14,6 +14,28 @@ pub trait JsStrictEqual<Rhs: ?Sized = Self> {
     fn strict_equal(&self, other: &Rhs) -> bool;
 }
 
+/// Stable hash corresponding to JS SameValueZero comparison.
+///
+/// Equal values must return the same hash. Hash collisions are resolved with
+/// [`JsSameValueZero`], so this is an index contract rather than an identity
+/// substitute.
+pub trait JsHash {
+    fn js_hash(&self) -> u64;
+}
+
+const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
+const FNV_PRIME: u64 = 0x100000001b3;
+
+fn hash_bytes(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(FNV_OFFSET_BASIS, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(FNV_PRIME)
+    })
+}
+
+pub(crate) fn hash_identity(identity: usize) -> u64 {
+    hash_bytes(&identity.to_ne_bytes())
+}
+
 pub fn same_value_zero_f64(left: f64, right: f64) -> bool {
     if left.is_nan() && right.is_nan() {
         return true;
@@ -56,6 +78,19 @@ impl JsStrictEqual for f64 {
     }
 }
 
+impl JsHash for f64 {
+    fn js_hash(&self) -> u64 {
+        let bits = if self.is_nan() {
+            f64::NAN.to_bits()
+        } else if *self == 0.0 {
+            0
+        } else {
+            self.to_bits()
+        };
+        hash_bytes(&bits.to_ne_bytes())
+    }
+}
+
 impl JsSameValueZero for f32 {
     fn same_value_zero(&self, other: &Self) -> bool {
         if self.is_nan() && other.is_nan() {
@@ -86,6 +121,19 @@ impl JsStrictEqual for f32 {
     }
 }
 
+impl JsHash for f32 {
+    fn js_hash(&self) -> u64 {
+        let bits = if self.is_nan() {
+            f32::NAN.to_bits()
+        } else if *self == 0.0 {
+            0
+        } else {
+            self.to_bits()
+        };
+        hash_bytes(&bits.to_ne_bytes())
+    }
+}
+
 impl JsSameValueZero for BigInt {
     fn same_value_zero(&self, other: &Self) -> bool {
         self == other
@@ -101,6 +149,12 @@ impl JsSameValue for BigInt {
 impl JsStrictEqual for BigInt {
     fn strict_equal(&self, other: &Self) -> bool {
         self == other
+    }
+}
+
+impl JsHash for BigInt {
+    fn js_hash(&self) -> u64 {
+        hash_bytes(&self.to_signed_bytes_le())
     }
 }
 
@@ -122,6 +176,12 @@ impl JsStrictEqual for Undefined {
     }
 }
 
+impl JsHash for Undefined {
+    fn js_hash(&self) -> u64 {
+        FNV_OFFSET_BASIS
+    }
+}
+
 impl JsSameValueZero<str> for String {
     fn same_value_zero(&self, other: &str) -> bool {
         self == other
@@ -137,6 +197,24 @@ impl JsSameValue<str> for String {
 impl JsStrictEqual<str> for String {
     fn strict_equal(&self, other: &str) -> bool {
         self == other
+    }
+}
+
+impl JsHash for str {
+    fn js_hash(&self) -> u64 {
+        hash_bytes(self.as_bytes())
+    }
+}
+
+impl JsHash for String {
+    fn js_hash(&self) -> u64 {
+        self.as_str().js_hash()
+    }
+}
+
+impl JsHash for &str {
+    fn js_hash(&self) -> u64 {
+        (*self).js_hash()
     }
 }
 
@@ -163,6 +241,32 @@ macro_rules! impl_js_primitive_equality {
         )*
     };
 }
+
+macro_rules! impl_js_integer_hash {
+    ($($t:ty),* $(,)?) => {
+        $(
+            impl JsHash for $t {
+                fn js_hash(&self) -> u64 {
+                    hash_bytes(&self.to_ne_bytes())
+                }
+            }
+        )*
+    };
+}
+
+impl JsHash for bool {
+    fn js_hash(&self) -> u64 {
+        hash_bytes(&[u8::from(*self)])
+    }
+}
+
+impl JsHash for char {
+    fn js_hash(&self) -> u64 {
+        hash_bytes(&u32::from(*self).to_ne_bytes())
+    }
+}
+
+impl_js_integer_hash!(i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize);
 
 impl_js_primitive_equality!(
     bool, i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize, char, String, &str

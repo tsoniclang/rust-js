@@ -1,5 +1,5 @@
 use crate::array_buffer::ArrayBuffer;
-use crate::equality::{JsSameValueZero, JsStrictEqual};
+use crate::equality::{hash_identity, JsHash, JsSameValueZero, JsStrictEqual};
 use crate::errors::{range_error, JsResult};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -25,6 +25,12 @@ impl Eq for DataView {}
 impl JsSameValueZero for DataView {
     fn same_value_zero(&self, other: &Self) -> bool {
         self == other
+    }
+}
+
+impl JsHash for DataView {
+    fn js_hash(&self) -> u64 {
+        hash_identity(Rc::as_ptr(&self.state) as usize)
     }
 }
 

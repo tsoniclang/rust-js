@@ -5,7 +5,7 @@ use std::fmt;
 use std::rc::Rc;
 
 use crate::array_buffer::ArrayBuffer;
-use crate::equality::{JsSameValueZero, JsStrictEqual};
+use crate::equality::{hash_identity, JsHash, JsSameValueZero, JsStrictEqual};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TypedArrayKind {
@@ -97,6 +97,12 @@ impl<T: TypedElement> Eq for TypedArray<T> {}
 impl<T: TypedElement> JsSameValueZero for TypedArray<T> {
     fn same_value_zero(&self, other: &Self) -> bool {
         self == other
+    }
+}
+
+impl<T: TypedElement> JsHash for TypedArray<T> {
+    fn js_hash(&self) -> u64 {
+        hash_identity(Rc::as_ptr(&self.shared) as usize)
     }
 }
 

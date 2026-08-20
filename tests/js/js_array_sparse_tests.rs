@@ -123,6 +123,22 @@ fn variadic_mutations_move_values_in_source_order_and_preserve_identity() {
 }
 
 #[test]
+fn discarded_variadic_mutations_preserve_order_and_shared_identity() {
+    let values = JsArray::from_dense(vec![2]);
+    let alias = values.clone();
+
+    values.unshift_many_discard([0, 1]);
+    values.push_many_discard([3, 4]);
+    values.push_many_discard([]);
+
+    assert_eq!(
+        alias.values(),
+        vec![Some(0), Some(1), Some(2), Some(3), Some(4)]
+    );
+    assert!(values.ptr_eq(&alias));
+}
+
+#[test]
 fn splice_uses_js_numeric_bounds_and_returns_a_distinct_removed_array() {
     let values = JsArray::from_dense(vec![0, 1, 2, 3]);
     let removed = values.splice_many(-3.8, 1.9, [8, 9]);

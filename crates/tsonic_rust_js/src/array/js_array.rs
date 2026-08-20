@@ -1,11 +1,12 @@
 use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::convert::Infallible;
 use std::rc::Rc;
 
 use super::slot::JsSlot;
 use super::statics::JsArrayConcatItem;
 use crate::coercion::{normalize_slice_index, relative_index, to_integer_or_infinity};
-use crate::equality::{JsSameValueZero, JsStrictEqual};
+use crate::equality::{hash_identity, JsHash, JsSameValueZero, JsStrictEqual};
 use tsonic_rust_runtime::{JsError, JsErrorKind};
 
 #[derive(Debug)]
@@ -43,6 +44,12 @@ impl<T> Eq for JsArray<T> {}
 impl<T> JsSameValueZero for JsArray<T> {
     fn same_value_zero(&self, other: &Self) -> bool {
         self.ptr_eq(other)
+    }
+}
+
+impl<T> JsHash for JsArray<T> {
+    fn js_hash(&self) -> u64 {
+        hash_identity(self.identity())
     }
 }
 
@@ -100,18 +107,8 @@ impl<T> JsArray<T> {
         T: Clone,
         F: FnMut(T, T) -> Result<f64, E>,
     {
-        let mut values = self.values().into_iter().flatten().collect::<Vec<_>>();
-        for index in 1..values.len() {
-            let mut current = index;
-            while current > 0 {
-                let order = compare(values[current - 1].clone(), values[current].clone())?;
-                if order.is_nan() || order <= 0.0 {
-                    break;
-                }
-                values.swap(current - 1, current);
-                current -= 1;
-            }
-        }
+        let values = self.values().into_iter().flatten().collect::<Vec<_>>();
+        let values = try_stable_sort(values, &mut compare)?;
         self.replace_present_values(values);
         Ok(self.clone())
     }
@@ -272,6 +269,13 @@ impl<T> JsArray<T> {
         state.slots.len()
     }
 
+    pub fn push_many_discard<const N: usize>(&self, items: [T; N]) {
+        self.state
+            .borrow_mut()
+            .slots
+            .extend(items.into_iter().map(JsSlot::Present));
+    }
+
     pub fn pop(&self) -> Option<T> {
         match self.state.borrow_mut().slots.pop() {
             Some(JsSlot::Present(value)) => Some(value),
@@ -302,6 +306,13 @@ impl<T> JsArray<T> {
             .slots
             .splice(0..0, items.into_iter().map(JsSlot::Present));
         state.slots.len()
+    }
+
+    pub fn unshift_many_discard<const N: usize>(&self, items: [T; N]) {
+        self.state
+            .borrow_mut()
+            .slots
+            .splice(0..0, items.into_iter().map(JsSlot::Present));
     }
 
     pub fn concat<const N: usize>(&self, items: [JsArrayConcatItem<T>; N]) -> Self
@@ -1169,6 +1180,31 @@ impl<T> JsArray<T> {
         output.reverse();
         output
     }
+}
+
+fn try_stable_sort<T, E, F>(mut values: Vec<T>, compare: &mut F) -> Result<Vec<T>, E>
+where
+    T: Clone,
+    F: FnMut(T, T) -> Result<f64, E>,
+{
+    if values.len() <= 1 {
+        return Ok(values);
+    }
+    let right = values.split_off(values.len() / 2);
+    let mut left = VecDeque::from(try_stable_sort(values, compare)?);
+    let mut right = VecDeque::from(try_stable_sort(right, compare)?);
+    let mut sorted = Vec::with_capacity(left.len() + right.len());
+    while let (Some(left_value), Some(right_value)) = (left.front(), right.front()) {
+        let order = compare(left_value.clone(), right_value.clone())?;
+        if order.is_nan() || order <= 0.0 {
+            sorted.push(left.pop_front().expect("left front exists"));
+        } else {
+            sorted.push(right.pop_front().expect("right front exists"));
+        }
+    }
+    sorted.extend(left);
+    sorted.extend(right);
+    Ok(sorted)
 }
 
 fn canonical_array_index(value: f64) -> Option<usize> {

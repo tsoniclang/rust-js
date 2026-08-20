@@ -1,8 +1,30 @@
+use std::cell::Cell;
+use std::rc::Rc;
+use tsonic_rust_js::equality::{JsHash, JsSameValueZero};
 use tsonic_rust_js::JsMap;
 use tsonic_rust_runtime::TsonicError;
 
 #[derive(Clone, Debug)]
 struct IdentityKey(std::rc::Rc<()>);
+
+#[derive(Clone)]
+struct CountedKey {
+    value: u64,
+    comparisons: Rc<Cell<usize>>,
+}
+
+impl JsHash for CountedKey {
+    fn js_hash(&self) -> u64 {
+        self.value
+    }
+}
+
+impl JsSameValueZero for CountedKey {
+    fn same_value_zero(&self, other: &Self) -> bool {
+        self.comparisons.set(self.comparisons.get() + 1);
+        self.value == other.value
+    }
+}
 
 impl PartialEq for IdentityKey {
     fn eq(&self, other: &Self) -> bool {
@@ -138,4 +160,37 @@ fn fallible_map_callbacks_preserve_arity_live_mutation_and_short_circuiting() {
     });
     assert_eq!(failure, Err(TsonicError::unsupported("stop")));
     assert_eq!(seen, vec![(1, "a"), (3, "c")]);
+}
+
+#[test]
+fn map_indexes_same_value_zero_keys_without_linear_scans() {
+    let comparisons = Rc::new(Cell::new(0));
+    let map = JsMap::new();
+    for value in 0..4096 {
+        map.set_discard(
+            CountedKey {
+                value,
+                comparisons: comparisons.clone(),
+            },
+            value,
+        );
+    }
+    comparisons.set(0);
+    assert_eq!(
+        map.get(&CountedKey {
+            value: 4095,
+            comparisons: comparisons.clone()
+        }),
+        Some(4095),
+    );
+    assert!(comparisons.get() <= 2);
+}
+
+#[test]
+fn discard_set_entrypoint_preserves_map_identity_and_contents() {
+    let map = JsMap::new();
+    let alias = map.clone();
+    map.set_discard("name".to_string(), 1);
+    assert!(map.ptr_eq(&alias));
+    assert_eq!(alias.get("name"), Some(1));
 }

@@ -7,8 +7,8 @@ use std::rc::Rc;
 
 use crate::array::JsArray;
 use crate::equality::{
-    same_value_f64, same_value_zero_f64, strict_equal_f64, JsSameValue, JsSameValueZero,
-    JsStrictEqual,
+    hash_identity, same_value_f64, same_value_zero_f64, strict_equal_f64, JsHash, JsSameValue,
+    JsSameValueZero, JsStrictEqual,
 };
 use crate::object::JsObject;
 
@@ -196,6 +196,20 @@ impl JsSameValueZero for JsValue {
             (Self::Object(left), Self::Object(right)) => Rc::ptr_eq(left, right),
             (Self::Array(left), Self::Array(right)) => left.ptr_eq(right),
             _ => false,
+        }
+    }
+}
+
+impl JsHash for JsValue {
+    fn js_hash(&self) -> u64 {
+        match self {
+            Self::Undefined => 0x11,
+            Self::Null => 0x12,
+            Self::Bool(value) => value.js_hash(),
+            Self::Number(value) => value.js_hash(),
+            Self::String(value) => value.js_hash(),
+            Self::Object(value) => hash_identity(Rc::as_ptr(value) as usize),
+            Self::Array(value) => value.js_hash(),
         }
     }
 }
