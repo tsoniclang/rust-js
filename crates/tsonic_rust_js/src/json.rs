@@ -3,9 +3,10 @@
 use std::collections::HashSet;
 use std::rc::Rc;
 
-use crate::errors::{range_error, syntax_error, type_error, unsupported, JsResult};
+use crate::errors::{range_error, syntax_error, type_error, JsResult};
 use crate::object::JsObject;
 use crate::value::JsValue;
+use crate::JsString;
 
 pub const JSON_MAX_INPUT_BYTES: usize = 16 * 1024 * 1024;
 pub const JSON_MAX_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
@@ -34,12 +35,16 @@ impl Default for JsonLimits {
     }
 }
 
-pub fn parse(text: &str) -> JsResult<JsValue> {
+pub fn parse(text: &JsString) -> JsResult<JsValue> {
     parse_with_limits(text, JsonLimits::default())
 }
 
-pub fn parse_with_limits(text: &str, limits: JsonLimits) -> JsResult<JsValue> {
-    if text.len() > limits.max_input_bytes {
+pub fn parse_with_limits(text: &JsString, limits: JsonLimits) -> JsResult<JsValue> {
+    let input_bytes = text
+        .len()
+        .checked_mul(std::mem::size_of::<u16>())
+        .ok_or_else(|| range_error("JSON input length overflow"))?;
+    if input_bytes > limits.max_input_bytes {
         return Err(range_error("JSON input exceeds the configured byte limit"));
     }
     let mut parser = Parser::new(text, limits);
@@ -52,35 +57,35 @@ pub fn parse_with_limits(text: &str, limits: JsonLimits) -> JsResult<JsValue> {
     }
 }
 
-pub fn stringify(value: &JsValue) -> JsResult<Option<String>> {
-    stringify_with_indent_and_limits(value, "", JsonLimits::default())
+pub fn stringify(value: &JsValue) -> JsResult<Option<JsString>> {
+    stringify_with_indent_and_limits(value, &JsString::new(), JsonLimits::default())
 }
 
-pub fn stringify_pretty(value: &JsValue) -> JsResult<Option<String>> {
+pub fn stringify_pretty(value: &JsValue) -> JsResult<Option<JsString>> {
     stringify(value)
 }
 
-pub fn stringify_with_indent(value: &JsValue, indent: &str) -> JsResult<Option<String>> {
+pub fn stringify_with_indent(value: &JsValue, indent: &JsString) -> JsResult<Option<JsString>> {
     stringify_with_indent_and_limits(value, indent, JsonLimits::default())
 }
 
-pub fn stringify_with_limits(value: &JsValue, limits: JsonLimits) -> JsResult<Option<String>> {
-    stringify_with_indent_and_limits(value, "", limits)
+pub fn stringify_with_limits(value: &JsValue, limits: JsonLimits) -> JsResult<Option<JsString>> {
+    stringify_with_indent_and_limits(value, &JsString::new(), limits)
 }
 
 pub fn stringify_with_indent_and_limits(
     value: &JsValue,
-    indent: &str,
+    indent: &JsString,
     limits: JsonLimits,
-) -> JsResult<Option<String>> {
-    if indent.encode_utf16().count() > 10 {
+) -> JsResult<Option<JsString>> {
+    if indent.len() > 10 {
         return Err(type_error(
             "JSON indentation must be pre-resolved to at most 10 UTF-16 code units",
         ));
     }
     let mut serializer = Serializer::new(indent, limits);
     if serializer.serialize_value(value, 0)? {
-        Ok(Some(serializer.output))
+        Ok(Some(JsString::from_units(serializer.output)))
     } else {
         Ok(None)
     }
@@ -93,20 +98,20 @@ enum ContainerId {
 }
 
 struct Serializer<'a> {
-    indent: &'a str,
+    indent: &'a JsString,
     limits: JsonLimits,
-    output: String,
+    output: Vec<u16>,
     active: HashSet<ContainerId>,
     nodes: usize,
     members: usize,
 }
 
 impl<'a> Serializer<'a> {
-    fn new(indent: &'a str, limits: JsonLimits) -> Self {
+    fn new(indent: &'a JsString, limits: JsonLimits) -> Self {
         Self {
             indent,
             limits,
-            output: String::new(),
+            output: Vec::new(),
             active: HashSet::new(),
             nodes: 0,
             members: 0,
@@ -246,48 +251,69 @@ impl<'a> Serializer<'a> {
     }
 
     fn push_indent(&mut self, depth: usize) -> JsResult<()> {
+        let indent = self.indent.clone();
         for _ in 0..depth {
-            self.push_str(self.indent)?;
+            self.push_js_string(&indent)?;
         }
         Ok(())
     }
 
-    fn push_quoted(&mut self, value: &str) -> JsResult<()> {
+    fn push_quoted(&mut self, value: &JsString) -> JsResult<()> {
         self.push_char('"')?;
-        for ch in value.chars() {
-            match ch {
-                '"' => self.push_str("\\\"")?,
-                '\\' => self.push_str("\\\\")?,
-                '\u{0008}' => self.push_str("\\b")?,
-                '\u{000c}' => self.push_str("\\f")?,
-                '\n' => self.push_str("\\n")?,
-                '\r' => self.push_str("\\r")?,
-                '\t' => self.push_str("\\t")?,
-                ch if (ch as u32) < 0x20 => self.push_str(&format!("\\u{:04x}", ch as u32))?,
-                ch => self.push_char(ch)?,
+        let units = value.units();
+        let mut index = 0;
+        while index < units.len() {
+            let unit = units[index];
+            match unit {
+                value if value == u16::from(b'"') => self.push_str("\\\"")?,
+                value if value == u16::from(b'\\') => self.push_str("\\\\")?,
+                0x0008 => self.push_str("\\b")?,
+                0x000c => self.push_str("\\f")?,
+                0x000a => self.push_str("\\n")?,
+                0x000d => self.push_str("\\r")?,
+                0x0009 => self.push_str("\\t")?,
+                0x0000..=0x001f => self.push_str(&format!("\\u{unit:04x}"))?,
+                0xd800..=0xdbff if matches!(units.get(index + 1), Some(0xdc00..=0xdfff)) => {
+                    self.push_units(&units[index..index + 2])?;
+                    index += 1;
+                }
+                0xd800..=0xdfff => self.push_str(&format!("\\u{unit:04x}"))?,
+                _ => self.push_units(&[unit])?,
             }
+            index += 1;
         }
         self.push_char('"')
     }
 
     fn push_char(&mut self, value: char) -> JsResult<()> {
-        let mut encoded = [0_u8; 4];
-        self.push_str(value.encode_utf8(&mut encoded))
+        let mut encoded = [0_u16; 2];
+        self.push_units(value.encode_utf16(&mut encoded))
     }
 
     fn push_str(&mut self, value: &str) -> JsResult<()> {
+        self.push_units(&value.encode_utf16().collect::<Vec<_>>())
+    }
+
+    fn push_js_string(&mut self, value: &JsString) -> JsResult<()> {
+        self.push_units(value.units())
+    }
+
+    fn push_units(&mut self, value: &[u16]) -> JsResult<()> {
         let next = self
             .output
             .len()
             .checked_add(value.len())
             .ok_or_else(|| range_error("JSON output length overflow"))?;
-        if next > self.limits.max_output_bytes {
+        let next_bytes = next
+            .checked_mul(std::mem::size_of::<u16>())
+            .ok_or_else(|| range_error("JSON output length overflow"))?;
+        if next_bytes > self.limits.max_output_bytes {
             return Err(range_error("JSON output exceeds the configured byte limit"));
         }
         self.output
             .try_reserve(value.len())
             .map_err(|_| range_error("JSON output allocation failed"))?;
-        self.output.push_str(value);
+        self.output.extend_from_slice(value);
         Ok(())
     }
 }
@@ -348,7 +374,7 @@ fn expand_exponential(value: &str) -> String {
 }
 
 struct Parser<'a> {
-    input: &'a [u8],
+    input: &'a [u16],
     pos: usize,
     limits: JsonLimits,
     nodes: usize,
@@ -356,9 +382,9 @@ struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    fn new(input: &'a str, limits: JsonLimits) -> Self {
+    fn new(input: &'a JsString, limits: JsonLimits) -> Self {
         Self {
-            input: input.as_bytes(),
+            input: input.units(),
             pos: 0,
             limits,
             nodes: 0,
@@ -370,13 +396,18 @@ impl<'a> Parser<'a> {
         self.count_node(depth)?;
         self.skip_ws();
         match self.peek() {
-            Some(b'n') => self.parse_literal(b"null", JsValue::Null),
-            Some(b't') => self.parse_literal(b"true", JsValue::Bool(true)),
-            Some(b'f') => self.parse_literal(b"false", JsValue::Bool(false)),
-            Some(b'"') => self.parse_string().map(JsValue::String),
-            Some(b'[') => self.parse_array(depth),
-            Some(b'{') => self.parse_object(depth),
-            Some(b'-' | b'0'..=b'9') => self.parse_number().map(JsValue::Number),
+            Some(0x006e) => self.parse_literal(&[0x006e, 0x0075, 0x006c, 0x006c], JsValue::Null),
+            Some(0x0074) => {
+                self.parse_literal(&[0x0074, 0x0072, 0x0075, 0x0065], JsValue::Bool(true))
+            }
+            Some(0x0066) => self.parse_literal(
+                &[0x0066, 0x0061, 0x006c, 0x0073, 0x0065],
+                JsValue::Bool(false),
+            ),
+            Some(0x0022) => self.parse_string().map(JsValue::String),
+            Some(0x005b) => self.parse_array(depth),
+            Some(0x007b) => self.parse_object(depth),
+            Some(0x002d | 0x0030..=0x0039) => self.parse_number().map(JsValue::Number),
             _ => Err(syntax_error("JSON.parse expected a value")),
         }
     }
@@ -410,7 +441,7 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn parse_literal(&mut self, literal: &[u8], value: JsValue) -> JsResult<JsValue> {
+    fn parse_literal(&mut self, literal: &[u16], value: JsValue) -> JsResult<JsValue> {
         if self.input.get(self.pos..self.pos + literal.len()) == Some(literal) {
             self.pos += literal.len();
             Ok(value)
@@ -419,78 +450,51 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_string(&mut self) -> JsResult<String> {
-        self.expect(b'"')?;
+    fn parse_string(&mut self) -> JsResult<JsString> {
+        self.expect(0x0022)?;
         let mut out = Vec::new();
-        while let Some(byte) = self.next() {
-            match byte {
-                b'"' => {
-                    return String::from_utf8(out)
-                        .map_err(|_| syntax_error("JSON string contains invalid UTF-8"));
-                }
-                b'\\' => self.parse_escape(&mut out)?,
+        while let Some(unit) = self.next() {
+            match unit {
+                0x0022 => return Ok(JsString::from_units(out)),
+                0x005c => self.parse_escape(&mut out)?,
                 0x00..=0x1f => return Err(syntax_error("JSON string contains control character")),
-                _ => out.push(byte),
+                _ => out.push(unit),
             }
         }
         Err(syntax_error("unterminated JSON string"))
     }
 
-    fn parse_escape(&mut self, out: &mut Vec<u8>) -> JsResult<()> {
-        let ch = match self.next() {
-            Some(b'"') => '"',
-            Some(b'\\') => '\\',
-            Some(b'/') => '/',
-            Some(b'b') => '\u{0008}',
-            Some(b'f') => '\u{000c}',
-            Some(b'n') => '\n',
-            Some(b'r') => '\r',
-            Some(b't') => '\t',
-            Some(b'u') => return self.parse_unicode_escape(out),
+    fn parse_escape(&mut self, out: &mut Vec<u16>) -> JsResult<()> {
+        let unit = match self.next() {
+            Some(0x0022) => 0x0022,
+            Some(0x005c) => 0x005c,
+            Some(0x002f) => 0x002f,
+            Some(0x0062) => 0x0008,
+            Some(0x0066) => 0x000c,
+            Some(0x006e) => 0x000a,
+            Some(0x0072) => 0x000d,
+            Some(0x0074) => 0x0009,
+            Some(0x0075) => return self.parse_unicode_escape(out),
             _ => return Err(syntax_error("invalid JSON string escape")),
         };
-        let mut buffer = [0_u8; 4];
-        out.extend_from_slice(ch.encode_utf8(&mut buffer).as_bytes());
+        out.push(unit);
         Ok(())
     }
 
-    fn parse_unicode_escape(&mut self, out: &mut Vec<u8>) -> JsResult<()> {
-        let first = self.parse_hex_unit()?;
-        let scalar = if (0xd800..=0xdbff).contains(&first) {
-            if self.next() != Some(b'\\') || self.next() != Some(b'u') {
-                return Err(unsupported(
-                    "JSON strings containing lone UTF-16 surrogates require a UTF-16 string carrier",
-                ));
-            }
-            let second = self.parse_hex_unit()?;
-            if !(0xdc00..=0xdfff).contains(&second) {
-                return Err(unsupported(
-                    "JSON strings containing lone UTF-16 surrogates require a UTF-16 string carrier",
-                ));
-            }
-            0x1_0000 + ((u32::from(first) - 0xd800) << 10) + (u32::from(second) - 0xdc00)
-        } else if (0xdc00..=0xdfff).contains(&first) {
-            return Err(unsupported(
-                "JSON strings containing lone UTF-16 surrogates require a UTF-16 string carrier",
-            ));
-        } else {
-            u32::from(first)
-        };
-        let ch = char::from_u32(scalar).ok_or_else(|| syntax_error("invalid unicode escape"))?;
-        let mut buffer = [0_u8; 4];
-        out.extend_from_slice(ch.encode_utf8(&mut buffer).as_bytes());
+    fn parse_unicode_escape(&mut self, out: &mut Vec<u16>) -> JsResult<()> {
+        out.push(self.parse_hex_unit()?);
         Ok(())
     }
 
     fn parse_hex_unit(&mut self) -> JsResult<u16> {
         let mut value = 0_u16;
         for _ in 0..4 {
-            let byte = self
+            let unit = self
                 .next()
                 .ok_or_else(|| syntax_error("unterminated unicode escape"))?;
             value = value
                 .checked_mul(16)
-                .and_then(|current| hex(byte).map(|digit| current + u16::from(digit)))
+                .and_then(|current| hex(unit).map(|digit| current + u16::from(digit)))
                 .ok_or_else(|| syntax_error("invalid unicode escape"))?;
         }
         Ok(value)
@@ -498,47 +502,47 @@ impl<'a> Parser<'a> {
 
     fn parse_number(&mut self) -> JsResult<f64> {
         let start = self.pos;
-        if self.peek() == Some(b'-') {
+        if self.peek() == Some(0x002d) {
             self.pos += 1;
         }
         match self.peek() {
-            Some(b'0') => {
+            Some(0x0030) => {
                 self.pos += 1;
-                if matches!(self.peek(), Some(b'0'..=b'9')) {
+                if matches!(self.peek(), Some(0x0030..=0x0039)) {
                     return Err(syntax_error("invalid JSON number"));
                 }
             }
-            Some(b'1'..=b'9') => self.consume_digits(),
+            Some(0x0031..=0x0039) => self.consume_digits(),
             _ => return Err(syntax_error("invalid JSON number")),
         }
-        if self.peek() == Some(b'.') {
+        if self.peek() == Some(0x002e) {
             self.pos += 1;
-            if !matches!(self.peek(), Some(b'0'..=b'9')) {
+            if !matches!(self.peek(), Some(0x0030..=0x0039)) {
                 return Err(syntax_error("invalid JSON number"));
             }
             self.consume_digits();
         }
-        if matches!(self.peek(), Some(b'e' | b'E')) {
+        if matches!(self.peek(), Some(0x0065 | 0x0045)) {
             self.pos += 1;
-            if matches!(self.peek(), Some(b'+' | b'-')) {
+            if matches!(self.peek(), Some(0x002b | 0x002d)) {
                 self.pos += 1;
             }
-            if !matches!(self.peek(), Some(b'0'..=b'9')) {
+            if !matches!(self.peek(), Some(0x0030..=0x0039)) {
                 return Err(syntax_error("invalid JSON number"));
             }
             self.consume_digits();
         }
-        std::str::from_utf8(&self.input[start..self.pos])
+        String::from_utf16(&self.input[start..self.pos])
             .ok()
             .and_then(|text| text.parse::<f64>().ok())
             .ok_or_else(|| syntax_error("invalid JSON number"))
     }
 
     fn parse_array(&mut self, depth: usize) -> JsResult<JsValue> {
-        self.expect(b'[')?;
+        self.expect(0x005b)?;
         let mut values = Vec::new();
         self.skip_ws();
-        if self.peek() == Some(b']') {
+        if self.peek() == Some(0x005d) {
             self.pos += 1;
             return Ok(JsValue::from(values));
         }
@@ -547,18 +551,18 @@ impl<'a> Parser<'a> {
             values.push(self.parse_value(depth + 1)?);
             self.skip_ws();
             match self.next() {
-                Some(b',') => {}
-                Some(b']') => return Ok(JsValue::from(values)),
+                Some(0x002c) => {}
+                Some(0x005d) => return Ok(JsValue::from(values)),
                 _ => return Err(syntax_error("JSON array expected comma or close bracket")),
             }
         }
     }
 
     fn parse_object(&mut self, depth: usize) -> JsResult<JsValue> {
-        self.expect(b'{')?;
+        self.expect(0x007b)?;
         let mut object = JsObject::new();
         self.skip_ws();
-        if self.peek() == Some(b'}') {
+        if self.peek() == Some(0x007d) {
             self.pos += 1;
             return Ok(JsValue::object(object));
         }
@@ -567,24 +571,24 @@ impl<'a> Parser<'a> {
             self.skip_ws();
             let key = self.parse_string()?;
             self.skip_ws();
-            self.expect(b':')?;
+            self.expect(0x003a)?;
             object.set(key, self.parse_value(depth + 1)?);
             self.skip_ws();
             match self.next() {
-                Some(b',') => {}
-                Some(b'}') => return Ok(JsValue::object(object)),
+                Some(0x002c) => {}
+                Some(0x007d) => return Ok(JsValue::object(object)),
                 _ => return Err(syntax_error("JSON object expected comma or close brace")),
             }
         }
     }
 
     fn consume_digits(&mut self) {
-        while matches!(self.peek(), Some(b'0'..=b'9')) {
+        while matches!(self.peek(), Some(0x0030..=0x0039)) {
             self.pos += 1;
         }
     }
 
-    fn expect(&mut self, expected: u8) -> JsResult<()> {
+    fn expect(&mut self, expected: u16) -> JsResult<()> {
         match self.next() {
             Some(actual) if actual == expected => Ok(()),
             _ => Err(syntax_error("JSON.parse unexpected token")),
@@ -592,18 +596,18 @@ impl<'a> Parser<'a> {
     }
 
     fn skip_ws(&mut self) {
-        while matches!(self.peek(), Some(b' ' | b'\n' | b'\r' | b'\t')) {
+        while matches!(self.peek(), Some(0x0020 | 0x000a | 0x000d | 0x0009)) {
             self.pos += 1;
         }
     }
 
-    fn next(&mut self) -> Option<u8> {
-        let byte = self.peek()?;
+    fn next(&mut self) -> Option<u16> {
+        let unit = self.peek()?;
         self.pos += 1;
-        Some(byte)
+        Some(unit)
     }
 
-    fn peek(&self) -> Option<u8> {
+    fn peek(&self) -> Option<u16> {
         self.input.get(self.pos).copied()
     }
 
@@ -612,11 +616,11 @@ impl<'a> Parser<'a> {
     }
 }
 
-fn hex(byte: u8) -> Option<u8> {
-    match byte {
-        b'0'..=b'9' => Some(byte - b'0'),
-        b'a'..=b'f' => Some(byte - b'a' + 10),
-        b'A'..=b'F' => Some(byte - b'A' + 10),
+fn hex(unit: u16) -> Option<u8> {
+    match unit {
+        0x0030..=0x0039 => Some((unit - 0x0030) as u8),
+        0x0061..=0x0066 => Some((unit - 0x0061 + 10) as u8),
+        0x0041..=0x0046 => Some((unit - 0x0041 + 10) as u8),
         _ => None,
     }
 }

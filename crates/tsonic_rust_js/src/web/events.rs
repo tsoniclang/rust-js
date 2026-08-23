@@ -372,7 +372,7 @@ impl AbortSignal {
     }
 
     pub fn timeout(_milliseconds: u64) -> Self {
-        Self::abort(JsValue::String("TimeoutError".to_string()))
+        Self::abort(JsValue::String("TimeoutError".into()))
     }
 
     pub fn any(signals: &[AbortSignal]) -> Self {

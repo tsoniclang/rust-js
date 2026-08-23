@@ -306,7 +306,7 @@ pub fn trace_to(writer: &mut impl Write, args: &[JsValue]) -> io::Result<()> {
 pub fn format_args(args: &[JsValue]) -> String {
     args.iter()
         .map(|value| match value {
-            JsValue::String(text) => text.clone(),
+            JsValue::String(text) => text.to_utf8_lossy(),
             value => value.inspect(),
         })
         .collect::<Vec<_>>()

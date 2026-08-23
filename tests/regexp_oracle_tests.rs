@@ -1,181 +1,194 @@
-//! Asserts the RegExp subset engine against Node-generated oracle vectors.
-//!
-//! The vectors are produced by `tools/generate-regexp-oracle.mjs` (run with
-//! Node) and committed at `tests/oracle/regexp-vectors.json`. Every construct
-//! the engine accepts must behave exactly like Node's RegExp on these
-//! vectors.
+//! Differential RegExp execution against committed Node oracle vectors.
 
 use std::fs;
 use std::path::Path;
 
 use tsonic_rust_js::json;
-use tsonic_rust_js::regexp::{JsRegExp, JsRegExpMatch};
-use tsonic_rust_js::value::JsValue;
-use tsonic_rust_js::JsErrorKind;
-
-fn dense_values<T: Clone>(array: &tsonic_rust_js::JsArray<T>) -> Vec<T> {
-    array.values().into_iter().flatten().collect()
-}
-
-fn load_vectors() -> Vec<JsValue> {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tests/oracle/regexp-vectors.json")
-        .canonicalize()
-        .expect("oracle vector path");
-    let text = fs::read_to_string(&path).expect("read oracle vectors");
-    let parsed = json::parse(&text).expect("parse oracle vectors");
-    let array = parsed.as_array().expect("vector array");
-    array
-        .values()
-        .into_iter()
-        .map(|value| value.expect("dense vector entry"))
-        .collect()
-}
-
-fn get_string(entry: &JsValue, key: &str) -> String {
-    match object_field(entry, key) {
-        JsValue::String(value) => value,
-        other => panic!("expected string for `{key}`, got {other}"),
-    }
-}
+use tsonic_rust_js::regexp::{JsRegExp, JsRegExpExecArray, JsRegExpMatchArray};
+use tsonic_rust_js::{JsString, JsValue};
+use tsonic_rust_runtime::JsErrorKind;
 
 fn object_field(entry: &JsValue, key: &str) -> JsValue {
     entry
         .as_object()
-        .expect("vector entry object")
+        .expect("oracle entry object")
         .borrow()
         .get(key)
 }
 
-fn get_number(entry: &JsValue, key: &str) -> f64 {
+fn string_field(entry: &JsValue, key: &str) -> JsString {
+    match object_field(entry, key) {
+        JsValue::String(value) => value,
+        other => panic!("expected string for `{key}`, got {other:?}"),
+    }
+}
+
+fn number_field(entry: &JsValue, key: &str) -> f64 {
     match object_field(entry, key) {
         JsValue::Number(value) => value,
-        other => panic!("expected number for `{key}`, got {other}"),
+        other => panic!("expected number for `{key}`, got {other:?}"),
     }
 }
 
 fn array_items(value: &JsValue) -> Vec<JsValue> {
     value
         .as_array()
-        .expect("expected array value")
+        .expect("oracle array")
         .values()
         .into_iter()
-        .map(|item| item.expect("dense array item"))
+        .map(|item| item.expect("dense oracle array item"))
         .collect()
 }
 
-/// Compares a `JsRegExpMatch` against an oracle `{text, index, groups}`
-/// record (groups are `null` for unmatched optional groups).
-fn check_match_record(
-    label: &str,
-    expected: &JsValue,
-    actual: &JsRegExpMatch,
-    input: &str,
-) -> Result<(), String> {
-    let text = get_string(expected, "text");
-    let index = get_number(expected, "index");
-    if actual.text() != text || f64::from(actual.index()) != index {
-        return Err(format!(
-            "{label}: expected match {text:?} at {index}, got {:?} at {}",
-            actual.text(),
-            actual.index()
-        ));
-    }
-    if actual.input() != input {
-        return Err(format!("{label}: match input diverged"));
-    }
-    let groups = array_items(&object_field(expected, "groups"));
-    if actual.group_count() != groups.len() {
-        return Err(format!(
-            "{label}: expected {} groups, got {}",
-            groups.len(),
-            actual.group_count()
-        ));
-    }
-    for (offset, group) in groups.iter().enumerate() {
-        let expected_group = match group {
+fn load_vectors() -> Vec<JsValue> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/oracle/regexp-vectors.json");
+    let source = fs::read_to_string(path).expect("read RegExp oracle vectors");
+    let parsed = json::parse(&JsString::from(source)).expect("parse RegExp oracle vectors");
+    array_items(&parsed)
+}
+
+#[derive(Debug)]
+struct ExpectedMatch {
+    text: JsString,
+    index: f64,
+    groups: Vec<Option<JsString>>,
+}
+
+fn expected_match(value: &JsValue) -> ExpectedMatch {
+    let groups = array_items(&object_field(value, "groups"))
+        .into_iter()
+        .map(|group| match group {
             JsValue::Null => None,
-            JsValue::String(value) => Some(value.clone()),
-            other => return Err(format!("{label}: bad group value {other}")),
-        };
-        if actual.group(offset + 1) != expected_group {
+            JsValue::String(value) => Some(value),
+            other => panic!("invalid oracle capture {other:?}"),
+        })
+        .collect();
+    ExpectedMatch {
+        text: string_field(value, "text"),
+        index: number_field(value, "index"),
+        groups,
+    }
+}
+
+fn compare_exec_match(
+    label: &str,
+    expected: &ExpectedMatch,
+    actual: &JsRegExpExecArray,
+) -> Result<(), String> {
+    if actual.text() != expected.text || actual.index() != expected.index {
+        return Err(format!(
+            "{label}: expected {:?} at {}, got {:?} at {}",
+            expected.text,
+            expected.index,
+            actual.text(),
+            actual.index(),
+        ));
+    }
+    compare_groups(label, &expected.groups, actual.group_count(), |index| {
+        actual.group(index)
+    })
+}
+
+fn compare_match_result(
+    label: &str,
+    expected: &ExpectedMatch,
+    actual: &JsRegExpMatchArray,
+) -> Result<(), String> {
+    if actual.text() != expected.text || actual.index() != Some(expected.index) {
+        return Err(format!(
+            "{label}: expected {:?} at {}, got {:?} at {:?}",
+            expected.text,
+            expected.index,
+            actual.text(),
+            actual.index(),
+        ));
+    }
+    compare_groups(label, &expected.groups, actual.group_count(), |index| {
+        actual.group(index)
+    })
+}
+
+fn compare_groups(
+    label: &str,
+    expected: &[Option<JsString>],
+    actual_count: usize,
+    actual: impl Fn(usize) -> Option<JsString>,
+) -> Result<(), String> {
+    if actual_count != expected.len() {
+        return Err(format!(
+            "{label}: expected {} captures, got {actual_count}",
+            expected.len(),
+        ));
+    }
+    for (offset, expected) in expected.iter().enumerate() {
+        let actual = actual(offset + 1);
+        if actual != *expected {
             return Err(format!(
-                "{label}: group {} expected {expected_group:?}, got {:?}",
+                "{label}: capture {} expected {expected:?}, got {actual:?}",
                 offset + 1,
-                actual.group(offset + 1)
             ));
         }
     }
     Ok(())
 }
 
-/// Drives `calls` sequential `test` calls on one regexp instance, asserting
-/// each boolean result and the `lastIndex` progression/reset recorded by
-/// Node (a global `test` delegates to `exec`; a non-global one is
-/// stateless).
-fn check_test_steps(
+fn compare_exec_sequence(
     label: &str,
-    steps: &[JsValue],
-    regexp: &JsRegExp,
-    input: &str,
+    expression: &JsRegExp,
+    input: &JsString,
+    expected: &[JsValue],
 ) -> Result<(), String> {
-    for (call, step) in steps.iter().enumerate() {
-        let step_label = format!("{label} call {call}");
-        let actual = regexp
-            .test(input)
-            .map_err(|error| format!("{step_label}: runtime rejected test: {error:?}"))?;
-        let expected = match object_field(step, "result") {
-            JsValue::Bool(value) => value,
-            other => return Err(format!("{step_label}: bad expected result {other}")),
-        };
-        if actual != expected {
-            return Err(format!("{step_label}: expected {expected}, got {actual}"));
-        }
-        let expected_last = get_number(step, "lastIndex");
-        if f64::from(regexp.last_index()) != expected_last {
-            return Err(format!(
-                "{step_label}: expected lastIndex {expected_last}, got {}",
-                regexp.last_index()
-            ));
-        }
-    }
-    Ok(())
-}
-
-/// Drives `calls` sequential `exec` calls on one regexp instance, asserting
-/// each result and the `lastIndex` progression/reset recorded by Node.
-fn check_exec_steps(
-    label: &str,
-    steps: &[JsValue],
-    regexp: &JsRegExp,
-    input: &str,
-) -> Result<(), String> {
-    for (call, step) in steps.iter().enumerate() {
-        let step_label = format!("{label} call {call}");
-        let actual = regexp
+    for (call, step) in expected.iter().enumerate() {
+        let call_label = format!("{label}, exec call {call}");
+        let actual = expression
             .exec(input)
-            .map_err(|error| format!("{step_label}: runtime rejected exec: {error:?}"))?;
+            .map_err(|error| format!("{call_label}: {error:?}"))?;
         match (object_field(step, "match"), actual) {
             (JsValue::Null, None) => {}
-            (JsValue::Null, Some(actual)) => {
+            (JsValue::Object(_), Some(actual)) => {
+                compare_exec_match(
+                    &call_label,
+                    &expected_match(&object_field(step, "match")),
+                    &actual,
+                )?;
+            }
+            (expected, actual) => {
                 return Err(format!(
-                    "{step_label}: expected null, got {:?}",
-                    actual.text()
+                    "{call_label}: expected {expected:?}, got {actual:?}",
                 ));
             }
-            (expected @ JsValue::Object(_), Some(actual)) => {
-                check_match_record(&step_label, &expected, &actual, input)?;
-            }
-            (expected, None) => {
-                return Err(format!("{step_label}: expected {expected}, got null"));
-            }
-            (other, _) => return Err(format!("{step_label}: bad expected value {other}")),
         }
-        let expected_last = get_number(step, "lastIndex");
-        if f64::from(regexp.last_index()) != expected_last {
+        let expected_last_index = number_field(step, "lastIndex");
+        if expression.last_index() != expected_last_index {
             return Err(format!(
-                "{step_label}: expected lastIndex {expected_last}, got {}",
-                regexp.last_index()
+                "{call_label}: expected lastIndex {expected_last_index}, got {}",
+                expression.last_index(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn compare_test_sequence(
+    label: &str,
+    expression: &JsRegExp,
+    input: &JsString,
+    expected: &[JsValue],
+) -> Result<(), String> {
+    for (call, step) in expected.iter().enumerate() {
+        let call_label = format!("{label}, test call {call}");
+        let actual = expression
+            .test(input)
+            .map_err(|error| format!("{call_label}: {error:?}"))?;
+        let expected_result = match object_field(step, "result") {
+            JsValue::Bool(value) => value,
+            other => return Err(format!("{call_label}: invalid result {other:?}")),
+        };
+        if actual != expected_result || expression.last_index() != number_field(step, "lastIndex") {
+            return Err(format!(
+                "{call_label}: expected ({expected_result}, {}), got ({actual}, {})",
+                number_field(step, "lastIndex"),
+                expression.last_index(),
             ));
         }
     }
@@ -183,196 +196,204 @@ fn check_exec_steps(
 }
 
 #[test]
-fn regexp_engine_matches_node_oracle_vectors() {
+fn regexp_runtime_matches_all_committed_node_vectors() {
     let vectors = load_vectors();
-    assert!(
-        vectors.len() >= 217,
-        "expected at least 217 oracle vectors, found {}",
-        vectors.len()
+    assert_eq!(
+        vectors.len(),
+        231,
+        "oracle vector inventory changed unexpectedly"
     );
-
     let mut failures = Vec::new();
-    for entry in &vectors {
-        let pattern = get_string(entry, "pattern");
-        let flags = get_string(entry, "flags");
-        let input = get_string(entry, "input");
-        let op = get_string(entry, "op");
-        let expected = object_field(entry, "expected");
-        let label = format!("/{pattern}/{flags} `{op}` on {input:?}");
 
-        let regexp = match JsRegExp::new(&pattern, &flags) {
-            Ok(regexp) => regexp,
+    for entry in &vectors {
+        let pattern = string_field(entry, "pattern");
+        let flags = string_field(entry, "flags");
+        let input = string_field(entry, "input");
+        let operation = string_field(entry, "op").to_utf8_lossy();
+        let expected = object_field(entry, "expected");
+        let label = format!("/{}/{}/ {operation} on {:?}", pattern, flags, input);
+        let expression = match JsRegExp::new(&pattern, &flags) {
+            Ok(expression) => expression,
             Err(error) => {
-                failures.push(format!("{label}: engine rejected pattern: {error:?}"));
+                failures.push(format!("{label}: construction failed: {error:?}"));
                 continue;
             }
         };
 
-        let outcome = match op.as_str() {
+        let outcome = match operation.as_str() {
             "test" => match expected {
-                JsValue::Bool(expected) => match regexp.test(&input) {
-                    Ok(actual) => (actual == expected)
-                        .then_some(())
-                        .ok_or(format!("{label}: expected {expected}, got {actual}")),
-                    Err(error) => Err(format!("{label}: test rejected: {error:?}")),
-                },
-                other => Err(format!("{label}: bad expected value {other}")),
+                JsValue::Bool(expected) => expression
+                    .test(&input)
+                    .map_err(|error| format!("{label}: {error:?}"))
+                    .and_then(|actual| {
+                        (actual == expected)
+                            .then_some(())
+                            .ok_or_else(|| format!("{label}: expected {expected}, got {actual}"))
+                    }),
+                other => Err(format!("{label}: invalid expected value {other:?}")),
             },
             "search" => match expected {
-                JsValue::Number(expected) => match regexp.search(&input) {
-                    Ok(actual) => (f64::from(actual) == expected)
-                        .then_some(())
-                        .ok_or(format!("{label}: expected {expected}, got {actual}")),
-                    Err(error) => Err(format!("{label}: search rejected: {error:?}")),
-                },
-                other => Err(format!("{label}: bad expected value {other}")),
+                JsValue::Number(expected) => expression
+                    .search(&input)
+                    .map_err(|error| format!("{label}: {error:?}"))
+                    .and_then(|actual| {
+                        (actual == expected)
+                            .then_some(())
+                            .ok_or_else(|| format!("{label}: expected {expected}, got {actual}"))
+                    }),
+                other => Err(format!("{label}: invalid expected value {other:?}")),
             },
-            "test-sequence" => check_test_steps(&label, &array_items(&expected), &regexp, &input),
             "replace" => {
-                let replacement = get_string(entry, "replacement");
-                match (expected, regexp.replace(&input, &replacement)) {
-                    (JsValue::String(expected), Ok(actual)) => {
-                        (actual == expected).then_some(()).ok_or(format!(
-                            "{label} with {replacement:?}: expected {expected:?}, got {actual:?}"
-                        ))
-                    }
-                    (_, Err(error)) => Err(format!("{label}: replace rejected: {error:?}")),
-                    (other, _) => Err(format!("{label}: bad expected value {other}")),
+                let replacement = string_field(entry, "replacement");
+                match expected {
+                    JsValue::String(expected) => expression
+                        .replace(&input, &replacement)
+                        .map_err(|error| format!("{label}: {error:?}"))
+                        .and_then(|actual| {
+                            (actual == expected).then_some(()).ok_or_else(|| {
+                                format!("{label}: expected {expected:?}, got {actual:?}")
+                            })
+                        }),
+                    other => Err(format!("{label}: invalid expected value {other:?}")),
                 }
             }
             "split" => {
-                let expected = match expected.as_array() {
-                    Some(values) => values
-                        .values()
-                        .into_iter()
-                        .map(|value| match value {
-                            Some(JsValue::String(part)) => part,
-                            other => panic!("{label}: bad split part {other:?}"),
+                let expected = array_items(&expected)
+                    .into_iter()
+                    .map(|value| match value {
+                        JsValue::String(value) => Ok(value),
+                        other => Err(format!("{label}: invalid split value {other:?}")),
+                    })
+                    .collect::<Result<Vec<_>, _>>();
+                expected.and_then(|expected| {
+                    expression
+                        .split_all(&input)
+                        .map_err(|error| format!("{label}: {error:?}"))
+                        .and_then(|actual| {
+                            let actual = actual.values().into_iter().flatten().collect::<Vec<_>>();
+                            (actual == expected).then_some(()).ok_or_else(|| {
+                                format!("{label}: expected {expected:?}, got {actual:?}")
+                            })
                         })
-                        .collect::<Vec<_>>(),
-                    None => panic!("{label}: expected array"),
-                };
-                match regexp.split(&input) {
-                    Ok(actual) => (dense_values(&actual) == expected)
-                        .then_some(())
-                        .ok_or(format!("{label}: expected {expected:?}, got {actual:?}")),
-                    Err(error) => Err(format!("{label}: split rejected: {error:?}")),
-                }
-            }
-            "exec" => check_exec_steps(&label, &array_items(&expected), &regexp, &input),
-            // Writes `setLastIndex` (a UTF-16 offset that may land inside a
-            // surrogate pair) via `set_last_index`, runs one `exec`, and
-            // asserts the match text and resulting `lastIndex` recorded from
-            // Node — proving mid-pair starts are equivalent to the next char
-            // boundary for non-nullable patterns. Nullable patterns reject
-            // the write itself, so these vectors are all non-nullable.
-            "set-lastindex" => {
-                regexp
-                    .set_last_index(get_number(entry, "setLastIndex") as i32)
-                    .expect("set-lastindex oracle vectors use non-nullable patterns");
-                let actual = regexp.exec(&input);
-                let text_outcome = match (object_field(&expected, "result"), &actual) {
-                    (JsValue::Null, Ok(None)) => Ok(()),
-                    (JsValue::String(text), Ok(Some(matched))) if matched.text() == text => Ok(()),
-                    (_, Err(error)) => Err(format!("{label}: exec rejected: {error:?}")),
-                    (expected_result, _) => Err(format!(
-                        "{label} from {}: expected {expected_result}, got {:?}",
-                        get_number(entry, "setLastIndex"),
-                        actual
-                            .as_ref()
-                            .ok()
-                            .and_then(Option::as_ref)
-                            .map(JsRegExpMatch::text)
-                    )),
-                };
-                text_outcome.and_then(|()| {
-                    let expected_last = get_number(&expected, "lastIndex");
-                    (f64::from(regexp.last_index()) == expected_last)
-                        .then_some(())
-                        .ok_or(format!(
-                            "{label}: expected lastIndex {expected_last}, got {}",
-                            regexp.last_index()
-                        ))
                 })
             }
-            "match" => {
-                if flags.contains('g') {
-                    let expected = match &expected {
-                        JsValue::Null => None,
-                        other => Some(
-                            array_items(other)
-                                .iter()
-                                .map(|item| match item {
-                                    JsValue::String(text) => text.clone(),
-                                    other => panic!("{label}: bad match text {other}"),
-                                })
-                                .collect::<Vec<_>>(),
-                        ),
-                    };
-                    match regexp.match_strings(&input) {
-                        Ok(actual) => (actual.as_ref().map(dense_values) == expected)
-                            .then_some(())
-                            .ok_or(format!("{label}: expected {expected:?}, got {actual:?}")),
-                        Err(error) => Err(format!("{label}: match rejected: {error:?}")),
+            "exec" => compare_exec_sequence(&label, &expression, &input, &array_items(&expected)),
+            "test-sequence" => {
+                compare_test_sequence(&label, &expression, &input, &array_items(&expected))
+            }
+            "set-lastindex" => {
+                expression.set_last_index(number_field(entry, "setLastIndex"));
+                let actual = expression.exec(&input);
+                let result = object_field(&expected, "result");
+                let comparison = match (result, actual) {
+                    (JsValue::Null, Ok(None)) => Ok(()),
+                    (JsValue::String(expected), Ok(Some(actual))) if actual.text() == expected => {
+                        Ok(())
                     }
-                } else {
-                    match (&expected, regexp.match_first(&input)) {
-                        (JsValue::Null, Ok(None)) => Ok(()),
-                        (JsValue::Null, Ok(Some(actual))) => {
-                            Err(format!("{label}: expected null, got {:?}", actual.text()))
-                        }
-                        (JsValue::Object(_), Ok(Some(actual))) => {
-                            check_match_record(&label, &expected, &actual, &input)
-                        }
-                        (expected, Ok(None)) => {
-                            Err(format!("{label}: expected {expected}, got null"))
-                        }
-                        (_, Err(error)) => Err(format!("{label}: match rejected: {error:?}")),
-                        (other, _) => Err(format!("{label}: bad expected value {other}")),
+                    (_, Err(error)) => Err(format!("{label}: {error:?}")),
+                    (expected, actual) => {
+                        Err(format!("{label}: expected {expected:?}, got {actual:?}"))
                     }
+                };
+                comparison.and_then(|()| {
+                    let expected_last_index = number_field(&expected, "lastIndex");
+                    (expression.last_index() == expected_last_index)
+                        .then_some(())
+                        .ok_or_else(|| {
+                            format!(
+                                "{label}: expected lastIndex {expected_last_index}, got {}",
+                                expression.last_index(),
+                            )
+                        })
+                })
+            }
+            "match" if flags.to_utf8_lossy().contains('g') => {
+                let expected = match expected {
+                    JsValue::Null => None,
+                    value => Some(
+                        array_items(&value)
+                            .into_iter()
+                            .map(|item| match item {
+                                JsValue::String(value) => value,
+                                other => panic!("{label}: invalid match item {other:?}"),
+                            })
+                            .collect::<Vec<_>>(),
+                    ),
+                };
+                expression
+                    .match_result(&input)
+                    .map_err(|error| format!("{label}: {error:?}"))
+                    .and_then(|actual| {
+                        let actual = actual.map(|array| {
+                            array
+                                .array()
+                                .values()
+                                .into_iter()
+                                .flatten()
+                                .collect::<Vec<_>>()
+                        });
+                        (actual == expected).then_some(()).ok_or_else(|| {
+                            format!("{label}: expected {expected:?}, got {actual:?}")
+                        })
+                    })
+            }
+            "match" => match (&expected, expression.match_result(&input)) {
+                (JsValue::Null, Ok(None)) => Ok(()),
+                (JsValue::Object(_), Ok(Some(actual))) => {
+                    compare_match_result(&label, &expected_match(&expected), &actual)
+                }
+                (_, Err(error)) => Err(format!("{label}: {error:?}")),
+                (expected, actual) => {
+                    Err(format!("{label}: expected {expected:?}, got {actual:?}"))
+                }
+            },
+            "matchAll" if matches!(expected, JsValue::Object(_)) => {
+                match expression.match_all_for_string(&input) {
+                    Err(error) if error.kind() == JsErrorKind::TypeError => Ok(()),
+                    Err(error) => Err(format!("{label}: expected TypeError, got {error:?}")),
+                    Ok(_) => Err(format!("{label}: expected TypeError")),
                 }
             }
-            "matchAll" => match &expected {
-                JsValue::Object(_) => {
-                    let throws = get_string(&expected, "throws");
-                    assert_eq!(throws, "TypeError", "{label}: unexpected oracle error");
-                    match regexp.match_all(&input) {
-                        Err(error) if error.kind() == JsErrorKind::TypeError => Ok(()),
-                        Err(error) => Err(format!("{label}: expected TypeError, got {error:?}")),
-                        Ok(_) => Err(format!("{label}: expected TypeError, got matches")),
-                    }
-                }
-                _ => {
-                    let records = array_items(&expected);
-                    match regexp.match_all(&input) {
-                        Err(error) => Err(format!("{label}: matchAll rejected: {error:?}")),
-                        Ok(actual) if actual.len() != records.len() => Err(format!(
-                            "{label}: expected {} matches, got {}",
-                            records.len(),
-                            actual.len()
-                        )),
+            "matchAll" => match expression.match_all_for_string(&input) {
+                Err(error) => Err(format!("{label}: {error:?}")),
+                Ok(iterator) => {
+                    let actual = iterator.collect::<Result<Vec<_>, _>>();
+                    match actual {
+                        Err(error) => Err(format!("{label}: {error:?}")),
                         Ok(actual) => {
-                            records
+                            let expected = array_items(&expected)
                                 .iter()
-                                .zip(&actual)
-                                .try_for_each(|(record, matched)| {
-                                    check_match_record(&label, record, matched, &input)
-                                })
+                                .map(expected_match)
+                                .collect::<Vec<_>>();
+                            if actual.len() != expected.len() {
+                                Err(format!(
+                                    "{label}: expected {} matches, got {}",
+                                    expected.len(),
+                                    actual.len(),
+                                ))
+                            } else {
+                                expected
+                                    .iter()
+                                    .zip(&actual)
+                                    .try_for_each(|(expected, actual)| {
+                                        compare_exec_match(&label, expected, actual)
+                                    })
+                            }
                         }
                     }
                 }
             },
-            other => Err(format!("{label}: unknown op `{other}`")),
+            other => Err(format!("{label}: unknown operation {other}")),
         };
-        if let Err(failure) = outcome {
-            failures.push(failure);
+        if let Err(error) = outcome {
+            failures.push(error);
         }
     }
 
     assert!(
         failures.is_empty(),
-        "{} oracle vector(s) diverged:\n - {}",
+        "{} Node oracle vector(s) diverged:\n - {}",
         failures.len(),
-        failures.join("\n - ")
+        failures.join("\n - "),
     );
 }

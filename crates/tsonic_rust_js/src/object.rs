@@ -5,6 +5,7 @@ use std::fmt;
 
 use crate::equality::JsSameValue;
 use crate::value::JsValue;
+use crate::JsString;
 
 pub type JsPropertyValue = JsValue;
 
@@ -14,14 +15,14 @@ pub fn is(values: [JsValue; 2]) -> bool {
 
 #[derive(Debug, Clone, PartialEq)]
 struct ObjectEntry {
-    key: String,
+    key: JsString,
     value: JsPropertyValue,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct JsObject {
     entries: Vec<ObjectEntry>,
-    indexes: HashMap<String, usize>,
+    indexes: HashMap<JsString, usize>,
 }
 
 impl JsObject {
@@ -31,7 +32,7 @@ impl JsObject {
 
     pub fn from_pairs<K, V>(pairs: impl IntoIterator<Item = (K, V)>) -> Self
     where
-        K: Into<String>,
+        K: Into<JsString>,
         V: Into<JsPropertyValue>,
     {
         let mut object = Self::new();
@@ -41,18 +42,19 @@ impl JsObject {
         object
     }
 
-    pub fn get(&self, key: &str) -> JsValue {
+    pub fn get(&self, key: impl Into<JsString>) -> JsValue {
         self.get_ref(key).cloned().unwrap_or(JsValue::Undefined)
     }
 
-    pub fn get_ref(&self, key: &str) -> Option<&JsValue> {
+    pub fn get_ref(&self, key: impl Into<JsString>) -> Option<&JsValue> {
+        let key = key.into();
         self.indexes
-            .get(key)
+            .get(&key)
             .and_then(|index| self.entries.get(*index))
             .map(|entry| &entry.value)
     }
 
-    pub fn set(&mut self, key: impl Into<String>, value: impl Into<JsPropertyValue>) {
+    pub fn set(&mut self, key: impl Into<JsString>, value: impl Into<JsPropertyValue>) {
         let key = key.into();
         let value = value.into();
         match self.indexes.get(&key).copied() {
@@ -65,8 +67,8 @@ impl JsObject {
         }
     }
 
-    pub fn delete(&mut self, key: &str) -> bool {
-        if let Some(index) = self.indexes.remove(key) {
+    pub fn delete(&mut self, key: impl Into<JsString>) -> bool {
+        if let Some(index) = self.indexes.remove(&key.into()) {
             self.entries.remove(index);
             for current in self.indexes.values_mut() {
                 if *current > index {
@@ -79,11 +81,11 @@ impl JsObject {
         }
     }
 
-    pub fn has_own_property(&self, key: &str) -> bool {
-        self.indexes.contains_key(key)
+    pub fn has_own_property(&self, key: impl Into<JsString>) -> bool {
+        self.indexes.contains_key(&key.into())
     }
 
-    pub fn keys(&self) -> Vec<String> {
+    pub fn keys(&self) -> Vec<JsString> {
         self.ordered_entries()
             .map(|entry| entry.key.clone())
             .collect()
@@ -95,7 +97,7 @@ impl JsObject {
             .collect()
     }
 
-    pub fn entries(&self) -> Vec<(String, JsPropertyValue)> {
+    pub fn entries(&self) -> Vec<(JsString, JsPropertyValue)> {
         self.ordered_entries()
             .map(|entry| (entry.key.clone(), entry.value.clone()))
             .collect()
@@ -112,7 +114,7 @@ impl JsObject {
     pub fn inspect(&self) -> String {
         let body = self
             .ordered_entries()
-            .map(|entry| format!("{}: {}", entry.key, entry.value.inspect()))
+            .map(|entry| format!("{}: {}", entry.key.to_utf8_lossy(), entry.value.inspect()))
             .collect::<Vec<_>>()
             .join(", ");
         format!("{{{body}}}")
@@ -135,12 +137,20 @@ impl JsObject {
     }
 }
 
-fn array_index(key: &str) -> Option<u32> {
-    if key.is_empty() || (key.len() > 1 && key.starts_with('0')) {
+fn array_index(key: &JsString) -> Option<u32> {
+    if key.is_empty() || (key.len() > 1 && key.code_unit_at(0) == Some(u16::from(b'0'))) {
         return None;
     }
-    let value = key.parse::<u32>().ok()?;
-    (value != u32::MAX && value.to_string() == key).then_some(value)
+    let mut value = 0_u32;
+    for unit in key.units() {
+        if !(u16::from(b'0')..=u16::from(b'9')).contains(unit) {
+            return None;
+        }
+        value = value
+            .checked_mul(10)?
+            .checked_add(u32::from(*unit - u16::from(b'0')))?;
+    }
+    (value != u32::MAX).then_some(value)
 }
 
 impl fmt::Display for JsObject {

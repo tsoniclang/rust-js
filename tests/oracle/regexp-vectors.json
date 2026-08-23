@@ -2509,5 +2509,168 @@
         "groups": []
       }
     ]
+  },
+  {
+    "pattern": "a+?",
+    "flags": "",
+    "input": "aaaa",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "(a)\\1",
+    "flags": "",
+    "input": "zaaz",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "a(?=b)",
+    "flags": "",
+    "input": "zab",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "(?<=a)b",
+    "flags": "",
+    "input": "zab",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "\\p{Script=Greek}+",
+    "flags": "u",
+    "input": "aαβz",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "[\\p{ASCII}&&\\p{Letter}]+",
+    "flags": "v",
+    "input": "éAb9",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "(?i:a)b",
+    "flags": "",
+    "input": "Ab",
+    "op": "test",
+    "expected": true
+  },
+  {
+    "pattern": "(?<word>[a-z]+)(?<digits>\\d+)?",
+    "flags": "d",
+    "input": "abc 42",
+    "op": "exec",
+    "calls": 2,
+    "expected": [
+      {
+        "match": {
+          "text": "abc",
+          "index": 0,
+          "groups": [
+            "abc",
+            null
+          ]
+        },
+        "lastIndex": 0
+      },
+      {
+        "match": {
+          "text": "abc",
+          "index": 0,
+          "groups": [
+            "abc",
+            null
+          ]
+        },
+        "lastIndex": 0
+      }
+    ]
+  },
+  {
+    "pattern": ".",
+    "flags": "du",
+    "input": "😀",
+    "op": "exec",
+    "calls": 1,
+    "expected": [
+      {
+        "match": {
+          "text": "😀",
+          "index": 0,
+          "groups": []
+        },
+        "lastIndex": 0
+      }
+    ]
+  },
+  {
+    "pattern": ".",
+    "flags": "d",
+    "input": "😀",
+    "op": "exec",
+    "calls": 1,
+    "expected": [
+      {
+        "match": {
+          "text": "\ud83d",
+          "index": 0,
+          "groups": []
+        },
+        "lastIndex": 0
+      }
+    ]
+  },
+  {
+    "pattern": "(?:)",
+    "flags": "gu",
+    "input": "😀",
+    "op": "match",
+    "expected": [
+      "",
+      ""
+    ]
+  },
+  {
+    "pattern": "(?:)",
+    "flags": "gu",
+    "input": "😀",
+    "op": "matchAll",
+    "expected": [
+      {
+        "text": "",
+        "index": 0,
+        "groups": []
+      },
+      {
+        "text": "",
+        "index": 2,
+        "groups": []
+      }
+    ]
+  },
+  {
+    "pattern": "(?<digit>\\d)(x)?",
+    "flags": "g",
+    "input": "a1b2x",
+    "op": "replace",
+    "replacement": "<$<digit>>",
+    "expected": "a<1>b<2>"
+  },
+  {
+    "pattern": "(\\d+)",
+    "flags": "",
+    "input": "a1b22c",
+    "op": "split",
+    "expected": [
+      "a",
+      "1",
+      "b",
+      "22",
+      "c"
+    ]
   }
 ]

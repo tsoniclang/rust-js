@@ -7,6 +7,7 @@ use super::slot::JsSlot;
 use super::statics::JsArrayConcatItem;
 use crate::coercion::{normalize_slice_index, relative_index, to_integer_or_infinity};
 use crate::equality::{hash_identity, JsHash, JsSameValueZero, JsStrictEqual};
+use crate::JsString;
 use tsonic_rust_runtime::{JsError, JsErrorKind};
 
 #[derive(Debug)]
@@ -204,7 +205,7 @@ impl<T> JsArray<T> {
         if let Some(index) = canonical_array_index(index) {
             return self.get(index);
         }
-        let key = crate::number::to_string(index);
+        let key = crate::number::to_string(index).to_string();
         self.state
             .borrow()
             .numeric_properties
@@ -232,7 +233,7 @@ impl<T> JsArray<T> {
             self.set(index, value);
             return;
         }
-        let key = crate::number::to_string(index);
+        let key = crate::number::to_string(index).to_string();
         let mut state = self.state.borrow_mut();
         if let Some((_, current)) = state
             .numeric_properties
@@ -249,7 +250,7 @@ impl<T> JsArray<T> {
         if let Some(index) = canonical_array_index(index) {
             return self.delete_at(index);
         }
-        let key = crate::number::to_string(index);
+        let key = crate::number::to_string(index).to_string();
         self.state
             .borrow_mut()
             .numeric_properties
@@ -448,17 +449,22 @@ impl<T> JsArray<T> {
         (0..self.len()).collect()
     }
 
-    pub fn enumerable_own_keys(&self) -> Vec<String> {
+    pub fn enumerable_own_keys(&self) -> Vec<JsString> {
         let state = self.state.borrow();
         state
             .slots
             .iter()
             .enumerate()
             .filter_map(|(index, slot)| match slot {
-                JsSlot::Present(_) => Some(index.to_string()),
+                JsSlot::Present(_) => Some(JsString::from(index.to_string())),
                 JsSlot::Hole => None,
             })
-            .chain(state.numeric_properties.iter().map(|(key, _)| key.clone()))
+            .chain(
+                state
+                    .numeric_properties
+                    .iter()
+                    .map(|(key, _)| JsString::from(key.clone())),
+            )
             .collect()
     }
 
@@ -551,27 +557,29 @@ impl<T> JsArray<T> {
         self.last_index_of(value, f64::INFINITY)
     }
 
-    pub fn join(&self, separator: &str) -> String
+    pub fn join(&self, separator: &crate::JsString) -> crate::JsString
     where
         T: crate::string::JsToString,
     {
-        self.state
-            .borrow()
-            .slots
-            .iter()
-            .map(|slot| {
+        let state = self.state.borrow();
+        let mut parts = Vec::with_capacity(state.slots.len().saturating_mul(2));
+        for (index, slot) in state.slots.iter().enumerate() {
+            if index != 0 {
+                parts.push(separator.clone());
+            }
+            parts.push(
                 slot.as_ref()
-                    .map_or_else(String::new, |value| value.to_js_string())
-            })
-            .collect::<Vec<_>>()
-            .join(separator)
+                    .map_or_else(crate::JsString::new, |value| value.to_js_string()),
+            );
+        }
+        crate::JsString::concat(&parts)
     }
 
-    pub fn join_default(&self) -> String
+    pub fn join_default(&self) -> crate::JsString
     where
         T: crate::string::JsToString,
     {
-        self.join(",")
+        self.join(&crate::JsString::from(","))
     }
 
     pub fn slice(&self, start: f64, end: Option<f64>) -> Self
@@ -1162,7 +1170,7 @@ impl<T> JsArray<T> {
             .iter()
             .filter_map(|slot| slot.as_ref().cloned())
             .collect::<Vec<_>>();
-        present.sort_by_key(|item| item.to_js_string().encode_utf16().collect::<Vec<_>>());
+        present.sort_by_key(|item| item.to_js_string().units().to_vec());
         let present_len = present.len();
         let length = state.slots.len();
         state.slots = present.into_iter().map(JsSlot::Present).collect();

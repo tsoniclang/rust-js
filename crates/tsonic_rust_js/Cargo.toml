@@ -7,6 +7,7 @@ edition = "2021"
 num-bigint = "=0.4.8"
 num-traits = "=0.2.19"
 ryu-js = "=1.0.3"
+regress = { path = "../regress", features = ["utf16"] }
 tsonic_rust_runtime = "=0.1.0"
 unicode-normalization = "=0.1.24"
 
@@ -33,3 +34,7 @@ path = "../../tests/regexp_oracle_tests.rs"
 [[test]]
 name = "regexp_acceptance_corpus"
 path = "../../tests/regexp_acceptance_corpus.rs"
+
+[[test]]
+name = "regexp_runtime_tests"
+path = "../../tests/regexp_runtime_tests.rs"
