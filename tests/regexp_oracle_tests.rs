@@ -43,7 +43,7 @@ fn array_items(value: &JsValue) -> Vec<JsValue> {
 fn load_vectors() -> Vec<JsValue> {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/oracle/regexp-vectors.json");
     let source = fs::read_to_string(path).expect("read RegExp oracle vectors");
-    let parsed = json::parse(&JsString::from(source)).expect("parse RegExp oracle vectors");
+    let parsed = json::parse(&source).expect("parse RegExp oracle vectors");
     array_items(&parsed)
 }
 
@@ -200,7 +200,7 @@ fn regexp_runtime_matches_all_committed_node_vectors() {
     let vectors = load_vectors();
     assert_eq!(
         vectors.len(),
-        231,
+        235,
         "oracle vector inventory changed unexpectedly"
     );
     let mut failures = Vec::new();
@@ -209,10 +209,21 @@ fn regexp_runtime_matches_all_committed_node_vectors() {
         let pattern = string_field(entry, "pattern");
         let flags = string_field(entry, "flags");
         let input = string_field(entry, "input");
-        let operation = string_field(entry, "op").to_utf8_lossy();
+        let operation = string_field(entry, "op")
+            .to_utf8()
+            .expect("oracle operation names must be well-formed UTF-16");
         let expected = object_field(entry, "expected");
-        let label = format!("/{}/{}/ {operation} on {:?}", pattern, flags, input);
-        let expression = match JsRegExp::new(&pattern, &flags) {
+        let pattern_text = pattern
+            .to_utf8()
+            .expect("oracle patterns must be well-formed UTF-16");
+        let flags_text = flags
+            .to_utf8()
+            .expect("oracle flags must be well-formed UTF-16");
+        let input_text = input
+            .to_utf8()
+            .expect("oracle inputs must be well-formed UTF-16");
+        let label = format!("/{pattern_text}/{flags_text}/ {operation} on {input_text:?}");
+        let expression = match JsRegExp::new(pattern.clone(), flags.clone()) {
             Ok(expression) => expression,
             Err(error) => {
                 failures.push(format!("{label}: construction failed: {error:?}"));
@@ -307,7 +318,7 @@ fn regexp_runtime_matches_all_committed_node_vectors() {
                         })
                 })
             }
-            "match" if flags.to_utf8_lossy().contains('g') => {
+            "match" if flags_text.contains('g') => {
                 let expected = match expected {
                     JsValue::Null => None,
                     value => Some(

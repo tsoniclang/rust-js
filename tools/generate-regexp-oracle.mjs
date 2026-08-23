@@ -246,11 +246,10 @@ match("b*", "g", "abc");
 matchAll("x?", "g", "ab");
 matchAll("b{0,2}", "g", "abcb");
 
-// --- non-nullable patterns over astral input (exact vs Node) ------------------
-// Astral literals stay unquantified: without the `u` flag Node reads 💚 as
-// two code units, so a quantifier would bind to the trailing surrogate only
-// (the Rust engine rejects a directly quantified astral literal for that
-// reason). A grouped astral literal repeats the whole pair and is exact.
+// --- patterns over astral input (exact vs Node) -------------------------------
+// Without the `u` flag, a quantifier on an authored astral literal applies to
+// its trailing UTF-16 code unit. Grouping the literal quantifies the pair.
+exec("💚+", "", "a💚💚b", 1);
 test("(?:💚)+", "", "a💚💚b");
 replace("(?:💚)+", "g", "a💚💚b💚", "x");
 test("💚", "", "a💚b");
@@ -262,14 +261,13 @@ match("\\d+", "g", "💚1💚22");
 match("💚", "", "a💚b");
 matchAll("💚|\\d", "g", "a💚💚b1");
 exec("💚", "g", "a💚b💚", 3);
-// Nullable pattern over astral input: natural-flow exec stays on char
-// boundaries (the empty match at 0 leaves lastIndex at 0 on every call), so
-// it is exact even though manual lastIndex writes are rejected for /a*/.
+// Nullable patterns retain exact UTF-16 lastIndex behavior over astral input.
 exec("a*", "g", "💚a", 3);
 
 // --- writable lastIndex landing inside/around surrogate pairs ------------------
-// Non-nullable patterns only: the Rust engine rejects manual lastIndex
-// writes on nullable patterns (see the set-lastindex note above).
+setLastIndex("a*", "g", "😀a", 1);
+setLastIndex("a*", "g", "😀a", 2);
+setLastIndex("(?:)", "g", "😀", 1);
 // "ab😀cd😀x": a=0 b=1 😀=2..3 c=4 d=5 😀=6..7 x=8 (length 9).
 setLastIndex("[a-z]+", "g", "ab😀cd😀x", 2); // at a high surrogate (pair start)
 setLastIndex("[a-z]+", "g", "ab😀cd😀x", 3); // at the low surrogate (mid-pair)

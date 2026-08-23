@@ -1,47 +1,50 @@
-use crate::js;
 use tsonic_rust_js::equality::{same_value_zero_f64, strict_equal_f64};
 use tsonic_rust_js::number;
 
+fn text(value: impl AsRef<str>) -> String {
+    value.as_ref().to_owned()
+}
+
 #[test]
 fn parse_int_radix_examples() {
-    assert_eq!(number::parse_int(&js("ff"), Some(16.0)), 255.0);
-    assert!(number::parse_int(&js("08"), Some(10.0)).is_finite());
-    assert!(number::parse_int(&js("08"), None).is_finite());
-    assert_eq!(number::parse_int(&js("08"), None), 8.0);
-    assert!(number::parse_int(&js("xyz"), None).is_nan());
-    assert!(number::parse_int(&js("2"), Some(1.0)).is_nan());
-    assert_eq!(number::parse_int(&js("0x10"), Some(10.0)), 0.0);
-    assert_eq!(number::parse_int(&js("0x10"), None), 16.0);
-    assert_eq!(number::parse_int(&js("10"), Some(4_294_967_298.0)), 2.0);
-    assert!(number::parse_int(&js("-0"), None).is_sign_negative());
-    assert_eq!(number::parse_int(&js("\u{feff}42"), None), 42.0,);
-    assert!(number::parse_int(&js("\u{85}42"), None).is_nan());
-    assert!(number::parse_int(&js("1".repeat(309)), Some(10.0)).is_finite());
+    assert_eq!(number::parse_int(&text("ff"), Some(16.0)), 255.0);
+    assert!(number::parse_int(&text("08"), Some(10.0)).is_finite());
+    assert!(number::parse_int(&text("08"), None).is_finite());
+    assert_eq!(number::parse_int(&text("08"), None), 8.0);
+    assert!(number::parse_int(&text("xyz"), None).is_nan());
+    assert!(number::parse_int(&text("2"), Some(1.0)).is_nan());
+    assert_eq!(number::parse_int(&text("0x10"), Some(10.0)), 0.0);
+    assert_eq!(number::parse_int(&text("0x10"), None), 16.0);
+    assert_eq!(number::parse_int(&text("10"), Some(4_294_967_298.0)), 2.0);
+    assert!(number::parse_int(&text("-0"), None).is_sign_negative());
+    assert_eq!(number::parse_int(&text("\u{feff}42"), None), 42.0,);
+    assert!(number::parse_int(&text("\u{85}42"), None).is_nan());
+    assert!(number::parse_int(&text("1".repeat(309)), Some(10.0)).is_finite());
 }
 
 #[test]
 fn parse_float_prefix_parse() {
-    assert_eq!(number::parse_float(&js("  +1.5x")), 1.5);
-    assert_eq!(number::parse_float(&js("  -1.5e+2")), -150.0);
-    assert_eq!(number::parse_float(&js("1.5x")), 1.5);
-    assert_eq!(number::parse_float(&js("0x10")), 0.0);
-    assert_eq!(number::parse_float(&js("-3.25e1")), -32.5);
-    assert_eq!(number::parse_float(&js("1e")), 1.0);
-    assert_eq!(number::parse_float(&js("1e+")), 1.0);
-    assert_eq!(number::parse_float(&js("Infinityx")), f64::INFINITY);
-    assert!(number::parse_float(&js("infinityx")).is_nan());
-    assert!(number::parse_float(&js("x")).is_nan());
+    assert_eq!(number::parse_float(&text("  +1.5x")), 1.5);
+    assert_eq!(number::parse_float(&text("  -1.5e+2")), -150.0);
+    assert_eq!(number::parse_float(&text("1.5x")), 1.5);
+    assert_eq!(number::parse_float(&text("0x10")), 0.0);
+    assert_eq!(number::parse_float(&text("-3.25e1")), -32.5);
+    assert_eq!(number::parse_float(&text("1e")), 1.0);
+    assert_eq!(number::parse_float(&text("1e+")), 1.0);
+    assert_eq!(number::parse_float(&text("Infinityx")), f64::INFINITY);
+    assert!(number::parse_float(&text("infinityx")).is_nan());
+    assert!(number::parse_float(&text("x")).is_nan());
     assert!(
-        number::parse_float(&js("Infinity")).is_infinite()
-            && number::parse_float(&js("Infinity")).is_sign_positive()
+        number::parse_float(&text("Infinity")).is_infinite()
+            && number::parse_float(&text("Infinity")).is_sign_positive()
     );
     assert!(
-        number::parse_float(&js("+Infinity")).is_infinite()
-            && number::parse_float(&js("+Infinity")).is_sign_positive()
+        number::parse_float(&text("+Infinity")).is_infinite()
+            && number::parse_float(&text("+Infinity")).is_sign_positive()
     );
     assert!(
-        number::parse_float(&js("-Infinity")).is_infinite()
-            && number::parse_float(&js("-Infinity")).is_sign_negative()
+        number::parse_float(&text("-Infinity")).is_infinite()
+            && number::parse_float(&text("-Infinity")).is_sign_negative()
     );
 }
 
@@ -110,11 +113,11 @@ fn same_value_zero_and_strict_equal_for_nans_and_zeroes() {
 
 #[test]
 fn parse_float_invalid_leading_sign_combinations() {
-    assert!(number::parse_float(&js("-")).is_nan());
-    assert!(number::parse_float(&js("+")).is_nan());
-    assert!(number::parse_float(&js("  +Infinity")).is_infinite());
-    assert!(number::parse_float(&js("0x1.2")).is_finite());
-    assert_eq!(number::parse_float(&js("0x1.2")), 0.0);
+    assert!(number::parse_float(&text("-")).is_nan());
+    assert!(number::parse_float(&text("+")).is_nan());
+    assert!(number::parse_float(&text("  +Infinity")).is_infinite());
+    assert!(number::parse_float(&text("0x1.2")).is_finite());
+    assert_eq!(number::parse_float(&text("0x1.2")), 0.0);
 }
 
 #[test]

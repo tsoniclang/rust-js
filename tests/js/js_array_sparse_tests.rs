@@ -250,10 +250,10 @@ fn array_static_factories_preserve_values_and_array_brand() {
         vec![Some(2), Some(5), Some(8)]
     );
 
-    let text = statics::from_string(&crate::js("a😀"));
+    let text = statics::from_string("a😀");
     assert_eq!(
         text.values(),
-        vec![Some(crate::js("a")), Some(crate::js("😀"))]
+        vec![Some("a".to_owned()), Some("😀".to_owned())]
     );
 
     assert!(statics::is_array(&values));

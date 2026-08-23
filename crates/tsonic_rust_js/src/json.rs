@@ -35,19 +35,16 @@ impl Default for JsonLimits {
     }
 }
 
-pub fn parse(text: &JsString) -> JsResult<JsValue> {
+pub fn parse(text: &str) -> JsResult<JsValue> {
     parse_with_limits(text, JsonLimits::default())
 }
 
-pub fn parse_with_limits(text: &JsString, limits: JsonLimits) -> JsResult<JsValue> {
-    let input_bytes = text
-        .len()
-        .checked_mul(std::mem::size_of::<u16>())
-        .ok_or_else(|| range_error("JSON input length overflow"))?;
-    if input_bytes > limits.max_input_bytes {
+pub fn parse_with_limits(text: &str, limits: JsonLimits) -> JsResult<JsValue> {
+    if text.len() > limits.max_input_bytes {
         return Err(range_error("JSON input exceeds the configured byte limit"));
     }
-    let mut parser = Parser::new(text, limits);
+    let exact = JsString::from_utf8(text);
+    let mut parser = Parser::new(&exact, limits);
     let value = parser.parse_value(0)?;
     parser.skip_ws();
     if parser.is_done() {
@@ -57,27 +54,28 @@ pub fn parse_with_limits(text: &JsString, limits: JsonLimits) -> JsResult<JsValu
     }
 }
 
-pub fn stringify(value: &JsValue) -> JsResult<Option<JsString>> {
-    stringify_with_indent_and_limits(value, &JsString::new(), JsonLimits::default())
+pub fn stringify(value: &JsValue) -> JsResult<Option<String>> {
+    stringify_with_indent_and_limits(value, "", JsonLimits::default())
 }
 
-pub fn stringify_pretty(value: &JsValue) -> JsResult<Option<JsString>> {
+pub fn stringify_pretty(value: &JsValue) -> JsResult<Option<String>> {
     stringify(value)
 }
 
-pub fn stringify_with_indent(value: &JsValue, indent: &JsString) -> JsResult<Option<JsString>> {
+pub fn stringify_with_indent(value: &JsValue, indent: &str) -> JsResult<Option<String>> {
     stringify_with_indent_and_limits(value, indent, JsonLimits::default())
 }
 
-pub fn stringify_with_limits(value: &JsValue, limits: JsonLimits) -> JsResult<Option<JsString>> {
-    stringify_with_indent_and_limits(value, &JsString::new(), limits)
+pub fn stringify_with_limits(value: &JsValue, limits: JsonLimits) -> JsResult<Option<String>> {
+    stringify_with_indent_and_limits(value, "", limits)
 }
 
 pub fn stringify_with_indent_and_limits(
     value: &JsValue,
-    indent: &JsString,
+    indent: &str,
     limits: JsonLimits,
-) -> JsResult<Option<JsString>> {
+) -> JsResult<Option<String>> {
+    let indent = JsString::from_utf8(indent);
     if indent.len() > 10 {
         return Err(type_error(
             "JSON indentation must be pre-resolved to at most 10 UTF-16 code units",
@@ -85,7 +83,9 @@ pub fn stringify_with_indent_and_limits(
     }
     let mut serializer = Serializer::new(indent, limits);
     if serializer.serialize_value(value, 0)? {
-        Ok(Some(JsString::from_units(serializer.output)))
+        let output = String::from_utf16(&serializer.output)
+            .map_err(|_| type_error("JSON serialization produced an invalid native Rust string"))?;
+        Ok(Some(output))
     } else {
         Ok(None)
     }
@@ -97,21 +97,23 @@ enum ContainerId {
     Array(usize),
 }
 
-struct Serializer<'a> {
-    indent: &'a JsString,
+struct Serializer {
+    indent: JsString,
     limits: JsonLimits,
     output: Vec<u16>,
+    output_bytes: usize,
     active: HashSet<ContainerId>,
     nodes: usize,
     members: usize,
 }
 
-impl<'a> Serializer<'a> {
-    fn new(indent: &'a JsString, limits: JsonLimits) -> Self {
+impl Serializer {
+    fn new(indent: JsString, limits: JsonLimits) -> Self {
         Self {
             indent,
             limits,
             output: Vec::new(),
+            output_bytes: 0,
             active: HashSet::new(),
             nodes: 0,
             members: 0,
@@ -163,7 +165,7 @@ impl<'a> Serializer<'a> {
                     })?;
                     serializer.push_char('{')?;
                     let mut first = true;
-                    for (key, value) in object.entries() {
+                    for (key, value) in object.entries_exact() {
                         if matches!(value, JsValue::Undefined) {
                             continue;
                         }
@@ -299,13 +301,11 @@ impl<'a> Serializer<'a> {
     }
 
     fn push_units(&mut self, value: &[u16]) -> JsResult<()> {
-        let next = self
-            .output
-            .len()
-            .checked_add(value.len())
-            .ok_or_else(|| range_error("JSON output length overflow"))?;
-        let next_bytes = next
-            .checked_mul(std::mem::size_of::<u16>())
+        let added_bytes = utf8_length(value)
+            .ok_or_else(|| type_error("JSON serialization attempted to publish invalid UTF-16"))?;
+        let next_bytes = self
+            .output_bytes
+            .checked_add(added_bytes)
             .ok_or_else(|| range_error("JSON output length overflow"))?;
         if next_bytes > self.limits.max_output_bytes {
             return Err(range_error("JSON output exceeds the configured byte limit"));
@@ -314,8 +314,33 @@ impl<'a> Serializer<'a> {
             .try_reserve(value.len())
             .map_err(|_| range_error("JSON output allocation failed"))?;
         self.output.extend_from_slice(value);
+        self.output_bytes = next_bytes;
         Ok(())
     }
+}
+
+fn utf8_length(units: &[u16]) -> Option<usize> {
+    let mut length = 0_usize;
+    let mut index = 0_usize;
+    while index < units.len() {
+        let unit = units[index];
+        let bytes = match unit {
+            0x0000..=0x007f => 1,
+            0x0080..=0x07ff => 2,
+            0xd800..=0xdbff => {
+                if !matches!(units.get(index + 1), Some(0xdc00..=0xdfff)) {
+                    return None;
+                }
+                index += 1;
+                4
+            }
+            0xdc00..=0xdfff => return None,
+            _ => 3,
+        };
+        length = length.checked_add(bytes)?;
+        index += 1;
+    }
+    Some(length)
 }
 
 fn json_number(value: f64) -> String {
@@ -572,7 +597,7 @@ impl<'a> Parser<'a> {
             let key = self.parse_string()?;
             self.skip_ws();
             self.expect(0x003a)?;
-            object.set(key, self.parse_value(depth + 1)?);
+            object.set_exact(key, self.parse_value(depth + 1)?);
             self.skip_ws();
             match self.next() {
                 Some(0x002c) => {}

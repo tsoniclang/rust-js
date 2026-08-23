@@ -12,6 +12,9 @@ use crate::equality::{hash_identity, JsHash, JsSameValueZero, JsStrictEqual};
 use crate::errors::{range_error, syntax_error, type_error, JsError, JsResult};
 use crate::{JsObject, JsString, JsValue};
 
+mod native;
+pub use native::*;
+
 pub type JsRegExpIndexPair = (f64, f64);
 
 #[derive(Debug, Clone)]
@@ -152,6 +155,10 @@ impl JsRegExpIndices {
     pub fn groups(&self) -> Option<JsRegExpNamedIndices> {
         self.groups.clone()
     }
+
+    pub fn iter_values(&self) -> std::vec::IntoIter<Option<JsRegExpIndexPair>> {
+        self.values.values().into_iter()
+    }
 }
 
 impl Deref for JsRegExpIndices {
@@ -220,6 +227,10 @@ impl JsRegExpMatchArray {
     pub fn array(&self) -> JsArray<JsString> {
         self.values.clone()
     }
+
+    pub fn iter_values(&self) -> std::vec::IntoIter<Option<JsString>> {
+        self.values.values().into_iter()
+    }
 }
 
 impl Deref for JsRegExpMatchArray {
@@ -283,6 +294,10 @@ impl JsRegExpExecArray {
 
     pub fn indices(&self) -> Option<JsRegExpIndices> {
         self.indices.clone()
+    }
+
+    pub fn iter_values(&self) -> std::vec::IntoIter<Option<JsString>> {
+        self.values.values().into_iter()
     }
 
     fn into_match_array(self) -> JsRegExpMatchArray {
@@ -386,7 +401,7 @@ impl ParsedFlags {
         if self.sticky {
             value.push('y');
         }
-        value.into()
+        JsString::from_utf8(&value)
     }
 
     fn engine_flags(self) -> Flags {
@@ -520,18 +535,13 @@ impl JsStrictEqual for JsRegExp {
 }
 
 impl JsRegExp {
-    pub fn new<P, F>(pattern: P, flags: F) -> JsResult<Self>
-    where
-        P: Into<JsString>,
-        F: Into<JsString>,
-    {
-        let pattern = pattern.into();
+    pub fn new(pattern: JsString, flags: JsString) -> JsResult<Self> {
         if pattern.len() > 1_048_576 {
             return Err(range_error(
                 "regular-expression pattern exceeds the deterministic compilation budget",
             ));
         }
-        let source_flags = flags.into();
+        let source_flags = flags;
         let parsed_flags = ParsedFlags::parse(&source_flags)?;
         let flags = parsed_flags.canonical();
         let key = CompiledRegExpKey {
@@ -875,9 +885,9 @@ impl JsRegExp {
 
     pub fn to_string_value(&self) -> JsString {
         JsString::concat(&[
-            JsString::from("/"),
+            JsString::from_utf8("/"),
             self.source(),
-            JsString::from("/"),
+            JsString::from_utf8("/"),
             self.flags(),
         ])
     }
@@ -959,7 +969,7 @@ impl JsRegExp {
         let mut groups = BTreeMap::new();
         let mut named_indices = BTreeMap::new();
         for (name, range) in matched.named_groups() {
-            let key = JsString::from(name);
+            let key = JsString::from_utf8(name);
             groups.insert(
                 key.clone(),
                 range.clone().map(|span| input.slice(span.clone())),
@@ -1078,6 +1088,98 @@ pub fn regexp_search_string(input: &JsString, pattern: &JsString) -> JsResult<f6
     JsRegExp::new(pattern.clone(), JsString::new())?.search(input)
 }
 
+pub fn string_match_regexp(
+    input: &JsString,
+    expression: &JsRegExp,
+) -> JsResult<Option<JsRegExpMatchArray>> {
+    expression.match_result(input)
+}
+
+pub fn string_match_all_regexp(
+    input: &JsString,
+    expression: &JsRegExp,
+) -> JsResult<JsRegExpStringIterator> {
+    expression.match_all_for_string(input)
+}
+
+pub fn string_replace_regexp(
+    input: &JsString,
+    expression: &JsRegExp,
+    replacement: &JsString,
+) -> JsResult<JsString> {
+    expression.replace(input, replacement)
+}
+
+pub fn string_replace_all_regexp(
+    input: &JsString,
+    expression: &JsRegExp,
+    replacement: &JsString,
+) -> JsResult<JsString> {
+    expression.replace_all_for_string(input, replacement)
+}
+
+pub fn string_replace_regexp_with<F>(
+    input: &JsString,
+    expression: &JsRegExp,
+    replacer: F,
+) -> JsResult<JsString>
+where
+    F: Fn(JsArray<JsValue>) -> JsString,
+{
+    expression.replace_with(input, replacer)
+}
+
+pub fn string_replace_all_regexp_with<F>(
+    input: &JsString,
+    expression: &JsRegExp,
+    replacer: F,
+) -> JsResult<JsString>
+where
+    F: Fn(JsArray<JsValue>) -> JsString,
+{
+    expression.replace_all_for_string_with(input, replacer)
+}
+
+pub fn string_try_replace_regexp_with<E, F>(
+    input: &JsString,
+    expression: &JsRegExp,
+    replacer: F,
+) -> Result<JsString, E>
+where
+    E: From<JsError>,
+    F: Fn(JsArray<JsValue>) -> Result<JsString, E>,
+{
+    expression.try_replace_with(input, replacer)
+}
+
+pub fn string_try_replace_all_regexp_with<E, F>(
+    input: &JsString,
+    expression: &JsRegExp,
+    replacer: F,
+) -> Result<JsString, E>
+where
+    E: From<JsError>,
+    F: Fn(JsArray<JsValue>) -> Result<JsString, E>,
+{
+    expression.try_replace_all_for_string_with(input, replacer)
+}
+
+pub fn string_search_regexp(input: &JsString, expression: &JsRegExp) -> JsResult<f64> {
+    expression.search(input)
+}
+
+pub fn string_split_regexp(input: &JsString, expression: &JsRegExp) -> JsResult<JsArray<JsString>> {
+    expression.split_all(input)
+}
+
+pub fn string_split_regexp_with_limit(
+    input: &JsString,
+    expression: &JsRegExp,
+    limit: f64,
+) -> JsResult<JsArray<JsString>> {
+    expression.split_with_limit(input, limit)
+}
+
 pub fn regexp_replacement_argument_string(arguments: &JsArray<JsValue>, index: usize) -> JsString {
     match arguments.get(index) {
         Some(JsValue::String(value)) => value,
@@ -1097,18 +1199,22 @@ pub fn regexp_replacement_argument_rest(
 }
 
 pub fn regexp_named_groups_get(groups: &JsRegExpNamedGroups, name: &str) -> Option<JsString> {
-    groups.get(&JsString::from(name))
+    groups.get(&JsString::from_utf8(name))
 }
 
 pub fn regexp_named_groups_set(groups: &JsRegExpNamedGroups, value: Option<JsString>, name: &str) {
-    groups.set(&JsString::from(name), value);
+    groups.set(&JsString::from_utf8(name), value);
+}
+
+pub fn regexp_named_groups_delete(groups: &JsRegExpNamedGroups, name: &str) -> bool {
+    groups.delete(&JsString::from_utf8(name))
 }
 
 pub fn regexp_named_indices_get(
     groups: &JsRegExpNamedIndices,
     name: &str,
 ) -> Option<JsRegExpIndexPair> {
-    groups.get(&JsString::from(name))
+    groups.get(&JsString::from_utf8(name))
 }
 
 pub fn regexp_named_indices_set(
@@ -1116,7 +1222,11 @@ pub fn regexp_named_indices_set(
     value: Option<JsRegExpIndexPair>,
     name: &str,
 ) {
-    groups.set(&JsString::from(name), value);
+    groups.set(&JsString::from_utf8(name), value);
+}
+
+pub fn regexp_named_indices_delete(groups: &JsRegExpNamedIndices, name: &str) -> bool {
+    groups.delete(&JsString::from_utf8(name))
 }
 
 fn replace_core<E, F>(input: &JsString, expression: &JsRegExp, replacer: F) -> Result<JsString, E>
@@ -1194,7 +1304,7 @@ fn regexp_replacement_arguments(matched: &JsRegExpExecArray, input: &JsString) -
                 )
             })
             .collect::<Vec<_>>();
-        values.push(JsValue::object(JsObject::from_pairs(entries)));
+        values.push(JsValue::object(JsObject::from_exact_pairs(entries)));
     }
     JsArray::from_dense(values)
 }
@@ -1301,7 +1411,7 @@ fn pattern_code_points(pattern: &JsString, unicode: bool) -> Vec<u32> {
 
 fn escape_source(pattern: &JsString) -> JsString {
     if pattern.is_empty() {
-        return JsString::from("(?:)");
+        return JsString::from_utf8("(?:)");
     }
     let mut output = Vec::with_capacity(pattern.len());
     for unit in pattern.units() {

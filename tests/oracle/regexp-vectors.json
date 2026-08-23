@@ -1827,6 +1827,23 @@
     ]
   },
   {
+    "pattern": "💚+",
+    "flags": "",
+    "input": "a💚💚b",
+    "op": "exec",
+    "calls": 1,
+    "expected": [
+      {
+        "match": {
+          "text": "💚",
+          "index": 1,
+          "groups": []
+        },
+        "lastIndex": 0
+      }
+    ]
+  },
+  {
     "pattern": "(?:💚)+",
     "flags": "",
     "input": "a💚💚b",
@@ -1987,6 +2004,39 @@
         "lastIndex": 0
       }
     ]
+  },
+  {
+    "pattern": "a*",
+    "flags": "g",
+    "input": "😀a",
+    "op": "set-lastindex",
+    "setLastIndex": 1,
+    "expected": {
+      "result": "",
+      "lastIndex": 1
+    }
+  },
+  {
+    "pattern": "a*",
+    "flags": "g",
+    "input": "😀a",
+    "op": "set-lastindex",
+    "setLastIndex": 2,
+    "expected": {
+      "result": "a",
+      "lastIndex": 3
+    }
+  },
+  {
+    "pattern": "(?:)",
+    "flags": "g",
+    "input": "😀",
+    "op": "set-lastindex",
+    "setLastIndex": 1,
+    "expected": {
+      "result": "",
+      "lastIndex": 1
+    }
   },
   {
     "pattern": "[a-z]+",

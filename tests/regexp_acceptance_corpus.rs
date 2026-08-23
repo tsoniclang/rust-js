@@ -4,7 +4,7 @@
 //! the canonical JavaScript source profile. A valid normative construct is
 //! never recorded as an expected rejection.
 
-use tsonic_rust_js::regexp::JsRegExp;
+use tsonic_rust_js::{regexp::JsRegExp, JsString};
 use tsonic_rust_runtime::JsErrorKind;
 
 const VALID_PATTERNS: &[(&str, &str)] = &[
@@ -85,7 +85,7 @@ fn every_normative_grammar_case_is_accepted() {
     let failures = VALID_PATTERNS
         .iter()
         .filter_map(|(pattern, flags)| {
-            JsRegExp::new(*pattern, *flags)
+            JsRegExp::new(JsString::from_utf8(pattern), JsString::from_utf8(flags))
                 .err()
                 .map(|error| format!("/{pattern}/{flags}: {error:?}"))
         })
@@ -102,12 +102,14 @@ fn every_normative_grammar_case_is_accepted() {
 fn every_invalid_grammar_case_is_a_syntax_error() {
     let failures = INVALID_PATTERNS
         .iter()
-        .filter_map(|(pattern, flags)| match JsRegExp::new(*pattern, *flags) {
-            Err(error) if error.kind() == JsErrorKind::SyntaxError => None,
-            Err(error) => Some(format!(
-                "/{pattern}/{flags}: expected SyntaxError, got {error:?}",
-            )),
-            Ok(_) => Some(format!("/{pattern}/{flags}: unexpectedly accepted")),
+        .filter_map(|(pattern, flags)| {
+            match JsRegExp::new(JsString::from_utf8(pattern), JsString::from_utf8(flags)) {
+                Err(error) if error.kind() == JsErrorKind::SyntaxError => None,
+                Err(error) => Some(format!(
+                    "/{pattern}/{flags}: expected SyntaxError, got {error:?}",
+                )),
+                Ok(_) => Some(format!("/{pattern}/{flags}: unexpectedly accepted")),
+            }
         })
         .collect::<Vec<_>>();
     assert!(

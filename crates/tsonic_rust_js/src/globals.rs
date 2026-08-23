@@ -21,7 +21,9 @@ pub fn to_number(value: &JsValue) -> f64 {
         }
         JsValue::Number(value) => *value,
         JsValue::String(value) => {
-            let text = value.to_utf8_lossy();
+            let Ok(text) = value.to_utf8() else {
+                return f64::NAN;
+            };
             let trimmed = text.trim_matches(is_ecmascript_whitespace);
             if trimmed.is_empty() {
                 0.0

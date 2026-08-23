@@ -7,8 +7,6 @@ use num_bigint::{BigInt, BigUint};
 use num_traits::{One, ToPrimitive, Zero};
 use tsonic_rust_runtime::{JsError, JsErrorKind};
 
-use crate::JsString;
-
 pub const MAX_VALUE: f64 = f64::MAX;
 pub const MIN_VALUE: f64 = f64::from_bits(1);
 pub const EPSILON: f64 = f64::EPSILON;
@@ -94,22 +92,21 @@ impl JsNumberValue for f64 {
     }
 }
 
-pub fn to_string<T: JsNumberValue>(value: T) -> JsString {
-    value.to_js_decimal_string().into()
+pub fn to_string<T: JsNumberValue>(value: T) -> String {
+    value.to_js_decimal_string()
 }
 
 pub fn value_of<T: JsNumberValue>(value: T) -> T {
     value
 }
 
-pub fn to_string_radix<T: JsIntegerValue>(value: T, radix: f64) -> Result<JsString, JsError> {
+pub fn to_string_radix<T: JsIntegerValue>(value: T, radix: f64) -> Result<String, JsError> {
     let radix = integer_parameter(radix, 2, 36, "toString radix")?;
-    Ok(value.to_js_radix_string(u32::from(radix)).into())
+    Ok(value.to_js_radix_string(u32::from(radix)))
 }
 
-pub fn parse_int(text: &JsString, radix: Option<f64>) -> f64 {
-    let text = text.to_utf8_lossy();
-    let mut source = trim_ecmascript_start(&text);
+pub fn parse_int(text: &str, radix: Option<f64>) -> f64 {
+    let mut source = trim_ecmascript_start(text);
     if source.is_empty() {
         return f64::NAN;
     }
@@ -168,17 +165,16 @@ pub fn parse_int(text: &JsString, radix: Option<f64>) -> f64 {
     }
 }
 
-pub fn parse_int_default(text: &JsString) -> f64 {
+pub fn parse_int_default(text: &str) -> f64 {
     parse_int(text, None)
 }
 
-pub fn parse_int_radix(text: &JsString, radix: f64) -> f64 {
+pub fn parse_int_radix(text: &str, radix: f64) -> f64 {
     parse_int(text, Some(radix))
 }
 
-pub fn parse_float(text: &JsString) -> f64 {
-    let text = text.to_utf8_lossy();
-    let source = trim_ecmascript_start(&text);
+pub fn parse_float(text: &str) -> f64 {
+    let source = trim_ecmascript_start(text);
     if source.is_empty() {
         return f64::NAN;
     }
@@ -250,74 +246,61 @@ pub fn is_safe_integer(value: f64) -> bool {
     is_integer(value) && (MIN_SAFE_INTEGER..=MAX_SAFE_INTEGER).contains(&value)
 }
 
-pub fn to_fixed<T: JsNumberValue>(value: T, digits: Option<f64>) -> Result<JsString, JsError> {
+pub fn to_fixed<T: JsNumberValue>(value: T, digits: Option<f64>) -> Result<String, JsError> {
     let digits = integer_parameter(digits.unwrap_or(0.0), 0, 100, "toFixed digits")?;
     Ok(ryu_js::Buffer::new()
         .format_to_fixed(value.to_js_f64(), digits)
-        .to_owned()
-        .into())
+        .to_owned())
 }
 
-pub fn to_fixed_default<T: JsNumberValue>(value: T) -> JsString {
+pub fn to_fixed_default<T: JsNumberValue>(value: T) -> String {
     ryu_js::Buffer::new()
         .format_to_fixed(value.to_js_f64(), 0)
         .to_owned()
-        .into()
 }
 
-pub fn to_fixed_digits<T: JsNumberValue>(value: T, digits: f64) -> Result<JsString, JsError> {
+pub fn to_fixed_digits<T: JsNumberValue>(value: T, digits: f64) -> Result<String, JsError> {
     to_fixed(value, Some(digits))
 }
 
-pub fn to_exponential<T: JsNumberValue>(
-    value: T,
-    digits: Option<f64>,
-) -> Result<JsString, JsError> {
+pub fn to_exponential<T: JsNumberValue>(value: T, digits: Option<f64>) -> Result<String, JsError> {
     let value = value.to_js_f64();
     let Some(digits) = digits else {
-        return Ok(shortest_exponential(value).into());
+        return Ok(shortest_exponential(value));
     };
     let fraction_digits = integer_parameter(digits, 0, 100, "toExponential digits")?;
     Ok(fixed_significant_string(
         value,
         usize::from(fraction_digits) + 1,
         SignificantFormat::Exponential,
-    )
-    .into())
+    ))
 }
 
-pub fn to_exponential_default<T: JsNumberValue>(value: T) -> JsString {
-    shortest_exponential(value.to_js_f64()).into()
+pub fn to_exponential_default<T: JsNumberValue>(value: T) -> String {
+    shortest_exponential(value.to_js_f64())
 }
 
-pub fn to_exponential_digits<T: JsNumberValue>(value: T, digits: f64) -> Result<JsString, JsError> {
+pub fn to_exponential_digits<T: JsNumberValue>(value: T, digits: f64) -> Result<String, JsError> {
     to_exponential(value, Some(digits))
 }
 
-pub fn to_precision<T: JsNumberValue>(
-    value: T,
-    precision: Option<f64>,
-) -> Result<JsString, JsError> {
+pub fn to_precision<T: JsNumberValue>(value: T, precision: Option<f64>) -> Result<String, JsError> {
     let Some(precision) = precision else {
-        return Ok(value.to_js_decimal_string().into());
+        return Ok(value.to_js_decimal_string());
     };
     let precision = integer_parameter(precision, 1, 100, "toPrecision precision")?;
     Ok(fixed_significant_string(
         value.to_js_f64(),
         usize::from(precision),
         SignificantFormat::Precision,
-    )
-    .into())
+    ))
 }
 
-pub fn to_precision_default<T: JsNumberValue>(value: T) -> JsString {
-    value.to_js_decimal_string().into()
+pub fn to_precision_default<T: JsNumberValue>(value: T) -> String {
+    value.to_js_decimal_string()
 }
 
-pub fn to_precision_digits<T: JsNumberValue>(
-    value: T,
-    precision: f64,
-) -> Result<JsString, JsError> {
+pub fn to_precision_digits<T: JsNumberValue>(value: T, precision: f64) -> Result<String, JsError> {
     to_precision(value, Some(precision))
 }
 

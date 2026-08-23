@@ -10,6 +10,7 @@ pub mod data_view;
 pub mod date;
 pub mod equality;
 pub mod errors;
+pub mod exact_string;
 pub mod globals;
 pub mod js_string;
 pub mod json;

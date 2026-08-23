@@ -21,9 +21,7 @@ pub use crate::console::{
 pub use crate::data_view::DataView;
 pub use crate::date::JsDate;
 pub use crate::globals::{is_finite, is_nan, to_number};
-pub use crate::js_string::{
-    from_utf8_string as js_string_from_utf8, to_utf8_string as js_string_to_utf8, JsString,
-};
+pub use crate::js_string::{from_utf8_string as js_string_from_utf8, JsString};
 pub use crate::json::{
     parse as json_parse, stringify as json_stringify,
     stringify_with_indent as json_stringify_with_indent,
@@ -51,12 +49,39 @@ pub use crate::number::{
 };
 pub use crate::object::{is as object_is, JsObject};
 pub use crate::regexp::{
-    regexp_exec_into_match_array, regexp_match_string, regexp_named_groups_get,
-    regexp_named_groups_set, regexp_named_indices_get, regexp_named_indices_set,
-    regexp_replacement_argument_rest, regexp_replacement_argument_string,
-    regexp_replacement_argument_value, regexp_search_string, JsRegExp, JsRegExpExecArray,
-    JsRegExpIndexPair, JsRegExpIndices, JsRegExpMatchArray, JsRegExpNamedGroups,
-    JsRegExpNamedIndices, JsRegExpStringIterator,
+    regexp_call_from_regexp_native, regexp_call_from_regexp_with_flags_native,
+    regexp_call_from_regexp_with_undefined_flags_native, regexp_construct_from_regexp_native,
+    regexp_construct_from_regexp_with_flags_native,
+    regexp_construct_from_regexp_with_undefined_flags_native, regexp_empty_native,
+    regexp_escape_exact_native, regexp_escape_native, regexp_exec_into_match_array,
+    regexp_exec_into_match_array_native, regexp_exec_native, regexp_flags_native,
+    regexp_from_exact, regexp_from_exact_with_flags, regexp_from_exact_with_undefined_flags,
+    regexp_from_string_native, regexp_from_string_with_flags_native,
+    regexp_from_string_with_undefined_flags_native, regexp_from_undefined_native,
+    regexp_from_undefined_with_flags_native, regexp_from_undefined_with_undefined_flags_native,
+    regexp_match_all_for_string_native, regexp_match_all_native, regexp_match_native,
+    regexp_match_string, regexp_match_string_native, regexp_named_groups_delete,
+    regexp_named_groups_delete_native, regexp_named_groups_get, regexp_named_groups_get_native,
+    regexp_named_groups_set, regexp_named_groups_set_native, regexp_named_indices_delete,
+    regexp_named_indices_delete_native, regexp_named_indices_get, regexp_named_indices_get_native,
+    regexp_named_indices_set, regexp_named_indices_set_native, regexp_new_native,
+    regexp_replace_all_for_string_native, regexp_replace_native, regexp_replacement_argument_rest,
+    regexp_replacement_argument_string, regexp_replacement_argument_string_native,
+    regexp_replacement_argument_value, regexp_search_native, regexp_search_string,
+    regexp_search_string_native, regexp_source_native, regexp_split_all_native,
+    regexp_split_native, regexp_split_with_limit_native, regexp_test_native,
+    regexp_to_string_native, regexp_try_replace_all_for_string_native_with,
+    regexp_try_replace_native_with, string_match_all_regexp, string_match_all_regexp_native,
+    string_match_regexp, string_match_regexp_native, string_replace_all_regexp,
+    string_replace_all_regexp_native, string_replace_all_regexp_with, string_replace_regexp,
+    string_replace_regexp_native, string_replace_regexp_with, string_search_regexp,
+    string_search_regexp_native, string_split_regexp, string_split_regexp_native,
+    string_split_regexp_with_limit, string_split_regexp_with_limit_native,
+    string_try_replace_all_regexp_native_with, string_try_replace_all_regexp_with,
+    string_try_replace_regexp_native_with, string_try_replace_regexp_with, JsRegExp,
+    JsRegExpExecArray, JsRegExpIndexPair, JsRegExpIndices, JsRegExpMatchArray, JsRegExpNamedGroups,
+    JsRegExpNamedIndices, JsRegExpStringIterator, RegExpExecArray, RegExpIndexPair, RegExpIndices,
+    RegExpMatchArray, RegExpNamedGroups, RegExpNamedIndices, RegExpStringIterator,
 };
 pub use crate::set::JsSet;
 pub use crate::string::{
@@ -83,7 +108,8 @@ pub use crate::typed_array::{
 };
 pub use crate::uri::{decode_uri, decode_uri_component, encode_uri, encode_uri_component};
 pub use crate::value::{
-    clone_value as clone_js_value, from_string as js_value_from_string, JsValue,
+    clone_value as clone_js_value, from_exact_string as js_value_from_exact_string,
+    from_string as js_value_from_string, JsValue,
 };
 pub use crate::web::{
     AbortController, AbortSignal, AddEventListenerOptions, Blob, BlobPart, Body, CustomEvent,

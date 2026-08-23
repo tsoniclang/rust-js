@@ -1,5 +1,5 @@
 use tsonic_rust_js::object;
-use tsonic_rust_js::{JsObject, JsValue};
+use tsonic_rust_js::{JsErrorKind, JsObject, JsString, JsValue};
 
 #[test]
 fn object_own_properties_preserve_order() {
@@ -12,9 +12,9 @@ fn object_own_properties_preserve_order() {
     assert_eq!(object.get_ref("b"), Some(&JsValue::Number(3.0)));
     assert_eq!(object.get("missing"), JsValue::Undefined);
     assert!(object.has_own_property("a"));
-    assert_eq!(object.keys(), vec!["b", "a"]);
+    assert_eq!(object.keys().unwrap(), vec!["b", "a"]);
     assert!(object.delete("a"));
-    assert_eq!(object.keys(), vec!["b"]);
+    assert_eq!(object.keys().unwrap(), vec!["b"]);
 }
 
 #[test]
@@ -24,7 +24,7 @@ fn object_assign_copies_left_to_right() {
     let second = JsObject::from_pairs([("y", JsValue::Bool(true))]);
     target.assign(&[first, second]);
 
-    assert_eq!(target.entries().len(), 2);
+    assert_eq!(target.entries().unwrap().len(), 2);
     assert_eq!(target.get("x"), JsValue::Number(2.0));
     assert_eq!(target.get("y"), JsValue::Bool(true));
 }
@@ -40,8 +40,24 @@ fn object_keys_follow_ecmascript_array_index_order() {
     ]);
 
     assert_eq!(
-        object.keys(),
+        object.keys().unwrap(),
         vec!["1", "2", "4294967294", "01", "4294967295"]
+    );
+}
+
+#[test]
+fn exact_object_keys_remain_utf16_and_native_projection_fails_closed() {
+    let key = JsString::from_units(vec![0xD800]);
+    let object = JsObject::from_exact_pairs([(key.clone(), JsValue::Number(1.0))]);
+
+    assert_eq!(object.get_exact(&key), JsValue::Number(1.0));
+    assert_eq!(object.keys_exact(), vec![key]);
+    assert_eq!(object.keys().unwrap_err().kind(), JsErrorKind::TypeError);
+    assert_eq!(object.entries().unwrap_err().kind(), JsErrorKind::TypeError);
+    assert_eq!(object.inspect(), r"{\ud800: 1}");
+    assert_eq!(
+        JsValue::String(JsString::from_units(vec![0xD800])).inspect(),
+        r#""\ud800""#,
     );
 }
 
@@ -53,8 +69,8 @@ fn object_is_uses_same_value_semantics() {
     ]));
     assert!(!object::is([JsValue::Number(0.0), JsValue::Number(-0.0),]));
     assert!(object::is([
-        JsValue::String("same".into()),
-        JsValue::String("same".into()),
+        JsValue::String(JsString::from_utf8("same")),
+        JsValue::String(JsString::from_utf8("same")),
     ]));
 
     let object = JsValue::object(JsObject::new());

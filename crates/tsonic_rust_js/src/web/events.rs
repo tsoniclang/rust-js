@@ -372,7 +372,7 @@ impl AbortSignal {
     }
 
     pub fn timeout(_milliseconds: u64) -> Self {
-        Self::abort(JsValue::String("TimeoutError".into()))
+        Self::abort(JsValue::String(crate::JsString::from_utf8("TimeoutError")))
     }
 
     pub fn any(signals: &[AbortSignal]) -> Self {

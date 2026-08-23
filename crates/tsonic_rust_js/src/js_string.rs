@@ -3,6 +3,8 @@ use std::hash::{Hash, Hasher};
 use std::ops::{Add, Range};
 use std::sync::Arc;
 
+use crate::errors::{type_error, JsResult};
+
 #[derive(Clone)]
 pub struct JsString {
     storage: Arc<[u16]>,
@@ -80,10 +82,29 @@ impl JsString {
         char::decode_utf16(self.units().iter().copied()).collect()
     }
 
-    pub fn to_utf8_lossy(&self) -> String {
+    pub(crate) fn to_utf8_lossy(&self) -> String {
         char::decode_utf16(self.units().iter().copied())
             .map(|value| value.unwrap_or(char::REPLACEMENT_CHARACTER))
             .collect()
+    }
+
+    pub(crate) fn to_utf8_escaped(&self) -> String {
+        let mut output = String::new();
+        for decoded in char::decode_utf16(self.units().iter().copied()) {
+            match decoded {
+                Ok(character) => output.extend(character.escape_debug()),
+                Err(error) => {
+                    use fmt::Write as _;
+                    write!(output, "\\u{:04x}", error.unpaired_surrogate())
+                        .expect("writing to a String cannot fail");
+                }
+            }
+        }
+        output
+    }
+
+    pub(crate) fn inspect_quoted(&self) -> String {
+        format!("\"{}\"", self.to_utf8_escaped())
     }
 
     pub fn concat(parts: &[Self]) -> Self {
@@ -104,6 +125,16 @@ impl JsString {
         Self::from_units(units)
     }
 
+    pub fn concat_values<const N: usize>(&self, values: [Self; N]) -> Self {
+        let length = self.len() + values.iter().map(Self::len).sum::<usize>();
+        let mut units = Vec::with_capacity(length);
+        units.extend_from_slice(self.units());
+        for value in values {
+            units.extend_from_slice(value.units());
+        }
+        Self::from_units(units)
+    }
+
     pub fn starts_with_at(&self, position: usize, value: &Self) -> bool {
         position <= self.len()
             && value.len() <= self.len() - position
@@ -112,34 +143,20 @@ impl JsString {
 }
 
 pub fn from_utf8_string(value: String) -> JsString {
-    JsString::from(value)
+    JsString::from_utf8(&value)
 }
 
-pub fn to_utf8_string(value: &JsString) -> String {
-    value.to_utf8_lossy()
+pub(crate) fn to_native_string(value: &JsString, context: &str) -> JsResult<String> {
+    value.to_utf8().map_err(|_| {
+        type_error(format!(
+            "{context} cannot be represented by the native Rust string carrier"
+        ))
+    })
 }
 
 impl Default for JsString {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl From<&str> for JsString {
-    fn from(value: &str) -> Self {
-        Self::from_utf8(value)
-    }
-}
-
-impl From<String> for JsString {
-    fn from(value: String) -> Self {
-        Self::from_utf8(&value)
-    }
-}
-
-impl From<&String> for JsString {
-    fn from(value: &String) -> Self {
-        Self::from_utf8(value)
     }
 }
 
@@ -183,16 +200,7 @@ impl Hash for JsString {
 
 impl fmt::Debug for JsString {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_tuple("JsString")
-            .field(&self.to_utf8_lossy())
-            .finish()
-    }
-}
-
-impl fmt::Display for JsString {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.to_utf8_lossy())
+        write!(formatter, "JsString({})", self.inspect_quoted())
     }
 }
 
@@ -225,29 +233,5 @@ impl Add<&JsString> for &JsString {
 
     fn add(self, rhs: &JsString) -> Self::Output {
         JsString::concat_strs(&[self, rhs])
-    }
-}
-
-impl PartialEq<str> for JsString {
-    fn eq(&self, other: &str) -> bool {
-        self.units().iter().copied().eq(other.encode_utf16())
-    }
-}
-
-impl PartialEq<&str> for JsString {
-    fn eq(&self, other: &&str) -> bool {
-        self == *other
-    }
-}
-
-impl PartialEq<JsString> for str {
-    fn eq(&self, other: &JsString) -> bool {
-        other == self
-    }
-}
-
-impl PartialEq<JsString> for &str {
-    fn eq(&self, other: &JsString) -> bool {
-        other == *self
     }
 }

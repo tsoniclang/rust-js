@@ -1,4 +1,3 @@
-use crate::js;
 use tsonic_rust_js::date::JsDate;
 
 #[test]
@@ -19,19 +18,19 @@ fn date_epoch_and_iso_roundtrip() {
     assert_eq!(date.value_of(), 0.0);
     assert_eq!(date.to_iso_string().unwrap(), "1970-01-01T00:00:00.000Z");
     assert_eq!(date.to_json(), "1970-01-01T00:00:00.000Z");
-    assert_eq!(JsDate::parse(&js("1970-01-01T00:00:00.000Z")), 0.0);
+    assert_eq!(JsDate::parse("1970-01-01T00:00:00.000Z"), 0.0);
 }
 
 #[test]
 fn date_string_constructor_uses_the_same_exact_parse_contract() {
-    let date = JsDate::from_string(&js("1970-01-02T00:00:00.000Z"));
+    let date = JsDate::from_string("1970-01-02T00:00:00.000Z");
     assert_eq!(date.get_time(), 86_400_000.0);
-    assert!(JsDate::from_string(&js("not-a-date")).get_time().is_nan());
+    assert!(JsDate::from_string("not-a-date").get_time().is_nan());
 }
 
 #[test]
 fn date_supports_common_utc_iso_values() {
-    let date = JsDate::from_millis(JsDate::parse(&js("2020-02-29T12:34:56.789Z")));
+    let date = JsDate::from_millis(JsDate::parse("2020-02-29T12:34:56.789Z"));
     assert_eq!(date.to_iso_string().unwrap(), "2020-02-29T12:34:56.789Z");
     assert_eq!(date.get_utc_full_year().unwrap(), 2020);
     assert_eq!(date.get_utc_month().unwrap(), 1);
@@ -45,30 +44,24 @@ fn date_supports_common_utc_iso_values() {
 #[test]
 fn date_parse_accepts_the_deterministic_iso_subset() {
     // Values checked against Node's Date.parse.
-    assert_eq!(JsDate::parse(&js("2020-01-02")), 1_577_923_200_000.0);
+    assert_eq!(JsDate::parse("2020-01-02"), 1_577_923_200_000.0);
+    assert_eq!(JsDate::parse("2020-01-02T03:04:05Z"), 1_577_934_245_000.0);
     assert_eq!(
-        JsDate::parse(&js("2020-01-02T03:04:05Z")),
-        1_577_934_245_000.0
-    );
-    assert_eq!(
-        JsDate::parse(&js("2020-01-02T03:04:05.678Z")),
+        JsDate::parse("2020-01-02T03:04:05.678Z"),
         1_577_934_245_678.0
     );
+    assert_eq!(JsDate::parse("2020-01-02T03:04:05.6Z"), 1_577_934_245_600.0);
     assert_eq!(
-        JsDate::parse(&js("2020-01-02T03:04:05.6Z")),
-        1_577_934_245_600.0
-    );
-    assert_eq!(
-        JsDate::parse(&js("2020-01-02T03:04:05+05:30")),
+        JsDate::parse("2020-01-02T03:04:05+05:30"),
         1_577_914_445_000.0
     );
     assert_eq!(
-        JsDate::parse(&js("2020-01-02T03:04:05-08:00")),
+        JsDate::parse("2020-01-02T03:04:05-08:00"),
         1_577_963_045_000.0
     );
-    assert_eq!(JsDate::parse(&js("0001-01-01")), -62_135_596_800_000.0);
+    assert_eq!(JsDate::parse("0001-01-01"), -62_135_596_800_000.0);
     assert_eq!(
-        JsDate::parse(&js("9999-12-31T23:59:59.999Z")),
+        JsDate::parse("9999-12-31T23:59:59.999Z"),
         253_402_300_799_999.0
     );
 }
@@ -105,7 +98,7 @@ fn date_parse_rejects_everything_else_with_nan() {
         "2020-01-01T00:00:00+0💚0",
     ] {
         assert!(
-            JsDate::parse(&js(rejected)).is_nan(),
+            JsDate::parse(rejected).is_nan(),
             "expected NaN for {rejected:?}"
         );
     }

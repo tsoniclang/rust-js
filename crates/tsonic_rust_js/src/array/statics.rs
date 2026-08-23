@@ -10,15 +10,8 @@ pub enum JsArrayConcatItem<T> {
 ///
 /// This keeps a closed behavior with no iterator callbacks.
 /// Code-point semantics are used (`.chars()`), not UTF-16 unit splitting.
-pub fn from_string(value: &crate::JsString) -> super::JsArray<crate::JsString> {
-    let mut elements = Vec::new();
-    let mut index = 0;
-    while index < value.len() {
-        let end = value.advance_index(index, true);
-        elements.push(value.slice(index..end));
-        index = end;
-    }
-    super::JsArray::from_dense(elements)
+pub fn from_string(value: &str) -> super::JsArray<String> {
+    super::JsArray::from_dense(value.chars().map(|ch| ch.to_string()).collect())
 }
 
 pub fn from_vec<T: Clone>(values: &Vec<T>) -> super::JsArray<T> {
