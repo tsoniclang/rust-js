@@ -11,6 +11,7 @@ use crate::equality::{
     JsSameValueZero, JsStrictEqual,
 };
 use crate::object::JsObject;
+use crate::JsString;
 
 #[derive(Clone, Debug)]
 pub enum JsValue {
@@ -18,7 +19,7 @@ pub enum JsValue {
     Null,
     Bool(bool),
     Number(f64),
-    String(String),
+    String(JsString),
     Object(Rc<RefCell<JsObject>>),
     Array(JsArray<JsValue>),
 }
@@ -101,7 +102,7 @@ impl InspectState {
             JsValue::Null => "null".to_string(),
             JsValue::Bool(value) => value.to_string(),
             JsValue::Number(value) => format_js_number(*value),
-            JsValue::String(value) => format!("{value:?}"),
+            JsValue::String(value) => format!("{:?}", value.to_utf8_lossy()),
             JsValue::Object(object) => self.render_object(object, depth),
             JsValue::Array(values) => self.render_array(values, depth),
         }
@@ -254,12 +255,18 @@ impl From<i32> for JsValue {
 
 impl From<String> for JsValue {
     fn from(value: String) -> Self {
+        Self::String(value.into())
+    }
+}
+
+impl From<JsString> for JsValue {
+    fn from(value: JsString) -> Self {
         Self::String(value)
     }
 }
 
-pub fn from_string(value: &str) -> JsValue {
-    JsValue::String(value.to_owned())
+pub fn from_string(value: &JsString) -> JsValue {
+    JsValue::String(value.clone())
 }
 
 pub fn clone_value(value: &JsValue) -> JsValue {

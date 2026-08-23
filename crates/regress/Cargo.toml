@@ -1,0 +1,23 @@
+[package]
+name = "regress"
+version = "0.11.1-tsonic.1"
+authors = ["ridiculousfish <corydoras@ridiculousfish.com>"]
+description = "Pinned ECMAScript regular-expression engine with deterministic execution accounting"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/ridiculousfish/regress"
+edition = "2024"
+publish = false
+
+[features]
+default = ["backend-pikevm", "std"]
+std = ["memchr/std"]
+alloc = ["dep:hashbrown", "memchr/alloc"]
+backend-pikevm = []
+index-positions = []
+prohibit-unsafe = []
+utf16 = []
+pattern = []
+
+[dependencies]
+hashbrown = { version = ">=0.16, <0.18", optional = true }
+memchr = { version = "2.4.0", default-features = false }

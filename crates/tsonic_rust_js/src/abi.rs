@@ -21,6 +21,9 @@ pub use crate::console::{
 pub use crate::data_view::DataView;
 pub use crate::date::JsDate;
 pub use crate::globals::{is_finite, is_nan, to_number};
+pub use crate::js_string::{
+    from_utf8_string as js_string_from_utf8, to_utf8_string as js_string_to_utf8, JsString,
+};
 pub use crate::json::{
     parse as json_parse, stringify as json_stringify,
     stringify_with_indent as json_stringify_with_indent,
@@ -47,7 +50,14 @@ pub use crate::number::{
     NEGATIVE_INFINITY as NUMBER_NEGATIVE_INFINITY, POSITIVE_INFINITY as NUMBER_POSITIVE_INFINITY,
 };
 pub use crate::object::{is as object_is, JsObject};
-pub use crate::regexp::{JsRegExp, JsRegExpMatch};
+pub use crate::regexp::{
+    regexp_exec_into_match_array, regexp_match_string, regexp_named_groups_get,
+    regexp_named_groups_set, regexp_named_indices_get, regexp_named_indices_set,
+    regexp_replacement_argument_rest, regexp_replacement_argument_string,
+    regexp_replacement_argument_value, regexp_search_string, JsRegExp, JsRegExpExecArray,
+    JsRegExpIndexPair, JsRegExpIndices, JsRegExpMatchArray, JsRegExpNamedGroups,
+    JsRegExpNamedIndices, JsRegExpStringIterator,
+};
 pub use crate::set::JsSet;
 pub use crate::string::{
     at as js_string_at, char_at as js_string_char_at, char_code_at as js_string_char_code_at,
@@ -58,11 +68,14 @@ pub use crate::string::{
     normalize_with_form as js_string_normalize_with_form, pad_end as js_string_pad_end,
     pad_end_with as js_string_pad_end_with, pad_start as js_string_pad_start,
     pad_start_with as js_string_pad_start_with, repeat as js_string_repeat,
-    replace as js_string_replace, replace_all as js_string_replace_all, split as js_string_split,
-    split_all as js_string_split_all, substr as js_string_substr,
+    replace as js_string_replace, replace_all as js_string_replace_all,
+    replace_all_with as js_string_replace_all_with, replace_with as js_string_replace_with,
+    split as js_string_split, split_all as js_string_split_all, substr as js_string_substr,
     substr_from as js_string_substr_from, substring as js_string_substring,
     substring_from as js_string_substring_from, to_well_formed as js_string_to_well_formed,
     trim_end as js_string_trim_end, trim_start as js_string_trim_start,
+    try_replace_all_with as js_string_try_replace_all_with,
+    try_replace_with as js_string_try_replace_with,
 };
 pub use crate::typed_array::{
     Float32Array, Float64Array, Int16Array, Int32Array, Int8Array, Uint16Array, Uint32Array,

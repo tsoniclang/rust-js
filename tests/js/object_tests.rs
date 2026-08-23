@@ -53,8 +53,8 @@ fn object_is_uses_same_value_semantics() {
     ]));
     assert!(!object::is([JsValue::Number(0.0), JsValue::Number(-0.0),]));
     assert!(object::is([
-        JsValue::String("same".to_string()),
-        JsValue::String("same".to_string()),
+        JsValue::String("same".into()),
+        JsValue::String("same".into()),
     ]));
 
     let object = JsValue::object(JsObject::new());

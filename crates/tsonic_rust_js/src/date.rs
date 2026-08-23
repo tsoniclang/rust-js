@@ -5,6 +5,7 @@ use std::rc::Rc;
 
 use crate::equality::{hash_identity, JsHash, JsSameValueZero, JsStrictEqual};
 use crate::errors::{range_error, JsResult};
+use crate::JsString;
 
 const MS_PER_DAY: i64 = 86_400_000;
 const MAX_TIME_MILLIS: f64 = 8_640_000_000_000_000.0;
@@ -59,7 +60,7 @@ impl JsDate {
         }
     }
 
-    pub fn from_string(value: &str) -> Self {
+    pub fn from_string(value: &JsString) -> Self {
         Self::from_millis(Self::parse(value))
     }
 
@@ -71,8 +72,8 @@ impl JsDate {
     /// without a timezone designator (Node treats those as local time),
     /// out-of-range fields (including days past the month's end), and every
     /// non-ISO legacy format.
-    pub fn parse(value: &str) -> f64 {
-        parse_timestamp(value).unwrap_or(f64::NAN)
+    pub fn parse(value: &JsString) -> f64 {
+        parse_timestamp(&value.to_utf8_lossy()).unwrap_or(f64::NAN)
     }
 
     /// Mirrors `Date.UTC(year, month, day, hours, minutes, seconds, ms)`:
@@ -107,7 +108,7 @@ impl JsDate {
         self.millis.get()
     }
 
-    pub fn to_iso_string(&self) -> JsResult<String> {
+    pub fn to_iso_string(&self) -> JsResult<JsString> {
         let millis = self.millis.get();
         if !millis.is_finite() {
             return Err(range_error("Invalid Date"));
@@ -123,14 +124,15 @@ impl JsDate {
         Ok(format!(
             "{}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.{milli:03}Z",
             iso_year(year),
-        ))
+        )
+        .into())
     }
 
     /// Mirrors `Date.prototype.toJSON`: the `to_iso_string` text, or the
     /// literal `"null"` for an invalid date (JSON.stringify serializes an
     /// invalid date as `null`).
-    pub fn to_json(&self) -> String {
-        self.to_iso_string().unwrap_or_else(|_| "null".to_string())
+    pub fn to_json(&self) -> JsString {
+        self.to_iso_string().unwrap_or_else(|_| "null".into())
     }
 
     pub fn get_utc_full_year(&self) -> JsResult<i32> {
@@ -323,9 +325,9 @@ impl JsDate {
         })
     }
 
-    pub fn to_utc_string(&self) -> String {
+    pub fn to_utc_string(&self) -> JsString {
         let Ok((year, month, day, hour, minute, second, _)) = self.utc_parts() else {
-            return "Invalid Date".to_string();
+            return "Invalid Date".into();
         };
         const WEEKDAYS: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
         const MONTHS: [&str; 12] = [
@@ -338,6 +340,7 @@ impl JsDate {
             MONTHS[month as usize - 1],
             utc_string_year(year),
         )
+        .into()
     }
 
     fn mutate_utc(&self, invalid_uses_epoch: bool, update: impl FnOnce(&mut [f64; 7])) -> f64 {

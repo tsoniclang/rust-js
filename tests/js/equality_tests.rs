@@ -7,7 +7,7 @@ fn sample_object() -> JsValue {
 }
 
 fn sample_array() -> JsValue {
-    JsValue::from(vec![JsValue::Number(1.0), JsValue::String("a".to_string())])
+    JsValue::from(vec![JsValue::Number(1.0), JsValue::String("a".into())])
 }
 
 #[test]
@@ -109,12 +109,12 @@ fn set_values_use_object_identity() {
 
 #[test]
 fn strings_compare_by_value() {
-    let left = JsValue::String("héllo".to_string());
-    let right = JsValue::String("héllo".to_string());
+    let left = JsValue::String("héllo".into());
+    let right = JsValue::String("héllo".into());
     assert!(left.strict_equal(&right));
     assert!(left.same_value_zero(&right));
     assert_eq!(left, right);
-    assert_ne!(left, JsValue::String("other".to_string()));
+    assert_ne!(left, JsValue::String("other".into()));
 }
 
 #[test]

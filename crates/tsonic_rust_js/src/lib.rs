@@ -11,6 +11,7 @@ pub mod date;
 pub mod equality;
 pub mod errors;
 pub mod globals;
+pub mod js_string;
 pub mod json;
 pub mod map;
 pub mod math;
@@ -32,6 +33,7 @@ pub use errors::{
     aggregate_error, eval_error, range_error, reference_error, syntax_error, type_error,
     unsupported, uri_error, JsResult,
 };
+pub use js_string::JsString;
 pub use map::JsMap;
 pub use object::{JsObject, JsPropertyValue};
 pub use set::JsSet;

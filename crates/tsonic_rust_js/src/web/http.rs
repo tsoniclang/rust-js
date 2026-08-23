@@ -32,7 +32,7 @@ impl Body {
     }
 
     pub fn json(&self) -> JsResult<JsValue> {
-        json::parse(&self.text()?)
+        json::parse(&self.text()?.into())
     }
 }
 
@@ -150,7 +150,7 @@ impl Response {
             200,
             "OK",
             headers,
-            Body::Text(text),
+            Body::Text(text.to_string()),
         ))
     }
 

@@ -1,3 +1,4 @@
+use crate::js;
 use tsonic_rust_js::{abi, boolean, data_view::DataView, errors, wrappers, ArrayBuffer, JsValue};
 
 #[test]
@@ -11,25 +12,31 @@ fn boolean_primitive_methods_preserve_javascript_text_and_value() {
 #[test]
 fn coercive_number_globals_follow_closed_value_rules() {
     assert!(abi::is_nan(&JsValue::Undefined));
-    assert!(!abi::is_nan(&JsValue::String(" 42 ".to_string())));
+    assert!(!abi::is_nan(&JsValue::String(js(" 42 "))));
     assert!(abi::is_finite(&JsValue::Bool(true)));
     assert_eq!(abi::to_number(&JsValue::Null), 0.0);
 }
 
 #[test]
 fn uri_helpers_encode_and_decode_utf8() {
-    assert_eq!(abi::encode_uri_component("a b/😀"), "a%20b%2F%F0%9F%98%80");
-    assert_eq!(abi::encode_uri("https://x/a b"), "https://x/a%20b");
     assert_eq!(
-        abi::decode_uri_component("a%20b%2F%F0%9F%98%80").unwrap(),
+        abi::encode_uri_component(&js("a b/😀")).unwrap(),
+        "a%20b%2F%F0%9F%98%80"
+    );
+    assert_eq!(
+        abi::encode_uri(&js("https://x/a b")).unwrap(),
+        "https://x/a%20b"
+    );
+    assert_eq!(
+        abi::decode_uri_component(&js("a%20b%2F%F0%9F%98%80")).unwrap(),
         "a b/😀"
     );
     assert_eq!(
-        tsonic_rust_js::uri::decode_uri("https://x/a%20b").unwrap(),
+        tsonic_rust_js::uri::decode_uri(&js("https://x/a%20b")).unwrap(),
         "https://x/a b"
     );
     assert_eq!(
-        abi::decode_uri_component("%zz").unwrap_err().kind(),
+        abi::decode_uri_component(&js("%zz")).unwrap_err().kind(),
         tsonic_rust_runtime::JsErrorKind::URIError
     );
 }
@@ -68,7 +75,10 @@ fn js_error_subtypes_and_string_raw_are_available() {
         errors::unsupported("unsupported").kind(),
         tsonic_rust_runtime::JsErrorKind::Unsupported
     );
-    assert_eq!(tsonic_rust_js::string::raw(&["a", "c"], &["b"]), "abc");
+    assert_eq!(
+        tsonic_rust_js::string::raw(&[js("a"), js("c")], &[js("b")]),
+        "abc"
+    );
 }
 
 #[test]
@@ -110,6 +120,6 @@ fn array_buffer_mutable_bytes_are_visible_to_views() {
 #[test]
 fn primitive_wrapper_objects_are_closed_value_boxes() {
     assert!(wrappers::BooleanObject(true).value_of());
-    assert_eq!(wrappers::StringObject("x".to_string()).value_of(), "x");
+    assert_eq!(wrappers::StringObject(js("x")).value_of(), "x");
     assert_eq!(wrappers::NumberObject(1.5).value_of(), 1.5);
 }
