@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use tsonic_rust_js::regexp::JsRegExp;
 use tsonic_rust_js::{JsArray, JsString, JsValue};
-use tsonic_rust_runtime::{JsErrorKind, Undefined};
+use tsonic_rust_runtime::{JsError, JsErrorKind, TsonicError, Undefined};
 
 fn js(value: &str) -> JsString {
     JsString::from(value)
@@ -129,10 +129,29 @@ fn regexp_result_required_groups_and_replace_all_entry_points_are_exact() {
     );
     assert_eq!(
         global
-            .try_replace_all_for_string_with(&js("aba"), |_| Ok(js("z")))
+            .try_replace_all_for_string_with(&js("aba"), |_| Ok::<_, JsError>(js("z")))
             .unwrap(),
         js("zbz"),
     );
+}
+
+#[test]
+fn regexp_fallible_replacement_preserves_the_callers_error_domain() {
+    let expression = JsRegExp::new("a", "g").unwrap();
+    let callback_error = TsonicError::unsupported("callback failed");
+    let result = expression.try_replace_all_for_string_with(&js("aba"), |_| {
+        Err::<JsString, _>(callback_error.clone())
+    });
+    assert_eq!(result.unwrap_err(), callback_error);
+
+    let invalid_operation = JsRegExp::new("a", "").unwrap();
+    assert!(matches!(
+        invalid_operation.try_replace_all_for_string_with(
+            &js("aba"),
+            |_| Ok::<_, TsonicError>(js("unused")),
+        ),
+        Err(TsonicError::Js(error)) if error.kind() == JsErrorKind::TypeError
+    ));
 }
 
 #[test]

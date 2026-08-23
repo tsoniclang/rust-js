@@ -9,7 +9,7 @@ use tsonic_rust_runtime::Undefined;
 
 use crate::array::JsArray;
 use crate::equality::{hash_identity, JsHash, JsSameValueZero, JsStrictEqual};
-use crate::errors::{range_error, syntax_error, type_error, JsResult};
+use crate::errors::{range_error, syntax_error, type_error, JsError, JsResult};
 use crate::{JsObject, JsString, JsValue};
 
 pub type JsRegExpIndexPair = (f64, f64);
@@ -757,9 +757,10 @@ impl JsRegExp {
         })
     }
 
-    pub fn try_replace_with<F>(&self, input: &JsString, replacer: F) -> JsResult<JsString>
+    pub fn try_replace_with<E, F>(&self, input: &JsString, replacer: F) -> Result<JsString, E>
     where
-        F: Fn(JsArray<JsValue>) -> JsResult<JsString>,
+        E: From<JsError>,
+        F: Fn(JsArray<JsValue>) -> Result<JsString, E>,
     {
         replace_core(input, self, |matched| {
             replacer(regexp_replacement_arguments(matched, input))
@@ -795,18 +796,17 @@ impl JsRegExp {
         self.replace_with(input, replacer)
     }
 
-    pub fn try_replace_all_for_string_with<F>(
+    pub fn try_replace_all_for_string_with<E, F>(
         &self,
         input: &JsString,
         replacer: F,
-    ) -> JsResult<JsString>
+    ) -> Result<JsString, E>
     where
-        F: Fn(JsArray<JsValue>) -> JsResult<JsString>,
+        E: From<JsError>,
+        F: Fn(JsArray<JsValue>) -> Result<JsString, E>,
     {
         if !self.global() {
-            return Err(type_error(
-                "String.prototype.replaceAll requires a global RegExp",
-            ));
+            return Err(type_error("String.prototype.replaceAll requires a global RegExp").into());
         }
         self.try_replace_with(input, replacer)
     }
@@ -1119,15 +1119,16 @@ pub fn regexp_named_indices_set(
     groups.set(&JsString::from(name), value);
 }
 
-fn replace_core<F>(input: &JsString, expression: &JsRegExp, replacer: F) -> JsResult<JsString>
+fn replace_core<E, F>(input: &JsString, expression: &JsRegExp, replacer: F) -> Result<JsString, E>
 where
-    F: Fn(&JsRegExpExecArray) -> JsResult<JsString>,
+    E: From<JsError>,
+    F: Fn(&JsRegExpExecArray) -> Result<JsString, E>,
 {
     if expression.global() {
         expression.set_last_index(0.0);
     }
     let mut matches = Vec::new();
-    while let Some(found) = expression.exec(input)? {
+    while let Some(found) = expression.exec(input).map_err(E::from)? {
         let empty = found.text().is_empty();
         matches.push(found);
         if !expression.global() {
