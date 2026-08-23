@@ -225,9 +225,13 @@ where
     }
 }
 
-pub fn try_replace_with<F>(value: &JsString, search: &JsString, replacer: F) -> JsResult<JsString>
+pub fn try_replace_with<E, F>(
+    value: &JsString,
+    search: &JsString,
+    replacer: F,
+) -> Result<JsString, E>
 where
-    F: Fn(JsArray<JsValue>) -> JsResult<JsString>,
+    F: Fn(JsArray<JsValue>) -> Result<JsString, E>,
 {
     replace_with_core(value, search, false, replacer)
 }
@@ -265,13 +269,13 @@ where
     }
 }
 
-pub fn try_replace_all_with<F>(
+pub fn try_replace_all_with<E, F>(
     value: &JsString,
     search: &JsString,
     replacer: F,
-) -> JsResult<JsString>
+) -> Result<JsString, E>
 where
-    F: Fn(JsArray<JsValue>) -> JsResult<JsString>,
+    F: Fn(JsArray<JsValue>) -> Result<JsString, E>,
 {
     replace_with_core(value, search, true, replacer)
 }
