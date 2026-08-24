@@ -1,4 +1,5 @@
-use tsonic_rust_js::{json, JsErrorKind, JsObject, JsValue};
+use crate::js;
+use tsonic_rust_js::{json, JsErrorKind, JsObject, JsString, JsValue};
 
 fn stringify_text(value: &JsValue) -> String {
     json::stringify(value).unwrap().unwrap()
@@ -38,22 +39,22 @@ fn json_omits_undefined_object_fields_and_nulls_array_slots() {
 
 #[test]
 fn json_round_trips_non_ascii_strings() {
-    let text = "héllo — ünïcode ✓";
+    let text = js("héllo — ünïcode ✓");
     let parsed = json::parse("\"héllo — ünïcode ✓\"").unwrap();
-    assert_eq!(parsed, JsValue::String(text.to_string()));
+    assert_eq!(parsed, JsValue::String(text.clone()));
 
     let source = r#"{"msg":"héllo — ünïcode ✓"}"#;
     let value = json::parse(source).unwrap();
     assert_eq!(
         value.as_object().expect("object").borrow().get("msg"),
-        JsValue::String(text.to_string())
+        JsValue::String(text.clone())
     );
     let round_tripped = stringify_text(&value);
     assert_eq!(round_tripped, source);
     let reparsed = json::parse(&round_tripped).unwrap();
     assert_eq!(
         reparsed.as_object().expect("object").borrow().get("msg"),
-        JsValue::String(text.to_string())
+        JsValue::String(text)
     );
 }
 
@@ -71,11 +72,15 @@ fn json_stringify_with_indent_matches_node_output() {
             .unwrap();
 
     assert_eq!(
-        json::stringify_with_indent(&value, "  ").unwrap().unwrap(),
+        json::stringify_with_indent(&value, "  ")
+            .unwrap()
+            .unwrap(),
         "{\n  \"a\": 1,\n  \"b\": [\n    true,\n    null,\n    []\n  ],\n  \"c\": {\n    \"d\": \"x\",\n    \"e\": {}\n  },\n  \"f\": \"line\\n\\ttab \"\n}"
     );
     assert_eq!(
-        json::stringify_with_indent(&value, "\t").unwrap().unwrap(),
+        json::stringify_with_indent(&value, "\t")
+            .unwrap()
+            .unwrap(),
         "{\n\t\"a\": 1,\n\t\"b\": [\n\t\ttrue,\n\t\tnull,\n\t\t[]\n\t],\n\t\"c\": {\n\t\t\"d\": \"x\",\n\t\t\"e\": {}\n\t},\n\t\"f\": \"line\\n\\ttab \"\n}"
     );
     // Empty indent is exactly the compact form.
@@ -115,7 +120,7 @@ fn json_stringify_with_indent_nested_arrays_and_leaves() {
 
     // Scalars are unaffected by the indent.
     assert_eq!(
-        json::stringify_with_indent(&JsValue::String("plain".to_string()), "  ")
+        json::stringify_with_indent(&JsValue::String(js("plain")), "  ")
             .unwrap()
             .unwrap(),
         "\"plain\""
@@ -152,7 +157,7 @@ fn json_stringify_with_indent_keeps_undefined_member_rules() {
 
 #[test]
 fn json_quotes_control_characters_like_node() {
-    let value = JsValue::String("\u{1}\u{1f}\u{8}\u{c}\"\\".to_string());
+    let value = JsValue::String(js("\u{1}\u{1f}\u{8}\u{c}\"\\"));
     assert_eq!(stringify_text(&value), "\"\\u0001\\u001f\\b\\f\\\"\\\\\"");
 }
 
@@ -218,14 +223,14 @@ fn json_enforces_resource_limits() {
         JsErrorKind::RangeError
     );
     assert_eq!(
-        json::stringify_with_limits(&JsValue::String("\u{1}".to_string()), limits)
+        json::stringify_with_limits(&JsValue::String(js("\u{1}")), limits)
             .unwrap()
             .unwrap(),
         "\"\\u0001\""
     );
     assert_eq!(
         json::stringify_with_limits(
-            &JsValue::String("\u{1}".to_string()),
+            &JsValue::String(js("\u{1}")),
             json::JsonLimits {
                 max_output_bytes: 7,
                 ..limits
@@ -270,16 +275,18 @@ fn json_number_grammar_and_output_match_ecmascript() {
 fn json_utf16_escape_policy_is_explicit() {
     assert_eq!(
         json::parse(r#""\uD83D\uDE00""#).unwrap(),
-        JsValue::String("😀".to_string())
+        JsValue::String(js("😀"))
     );
     assert_eq!(
         json::parse(r#""\u12G4""#).unwrap_err().kind(),
         JsErrorKind::SyntaxError
     );
-    for value in [r#""\uD800""#, r#""\uDC00""#] {
-        assert_eq!(
-            json::parse(value).unwrap_err().kind(),
-            JsErrorKind::Unsupported
-        );
+    for (source, unit, serialized) in [
+        (r#""\uD800""#, 0xD800, r#""\ud800""#),
+        (r#""\uDC00""#, 0xDC00, r#""\udc00""#),
+    ] {
+        let value = json::parse(source).unwrap();
+        assert_eq!(value, JsValue::String(JsString::from_units(vec![unit])));
+        assert_eq!(stringify_text(&value), serialized);
     }
 }

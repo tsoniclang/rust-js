@@ -5,7 +5,7 @@ use tsonic_rust_js::web::{
     CustomEventInit, DomException, Event, EventInit, EventListenerObject, EventTarget, File,
     FormData, FormDataValue, Headers, ImportMeta, Navigator, Request, Response, Storage,
 };
-use tsonic_rust_js::{JsObject, JsValue};
+use tsonic_rust_js::{JsObject, JsString, JsValue};
 
 #[test]
 fn abort_controller_and_signal_record_reason() {
@@ -13,9 +13,12 @@ fn abort_controller_and_signal_record_reason() {
     let signal = controller.signal();
     assert!(!signal.aborted());
 
-    controller.abort(JsValue::String("stop".to_string()));
+    controller.abort(JsValue::String(JsString::from_utf8("stop")));
     assert!(signal.aborted());
-    assert_eq!(signal.reason(), JsValue::String("stop".to_string()));
+    assert_eq!(
+        signal.reason(),
+        JsValue::String(JsString::from_utf8("stop"))
+    );
     assert!(signal.throw_if_aborted().is_err());
 
     let already = AbortSignal::abort(JsValue::Number(1.0));
@@ -26,7 +29,7 @@ fn abort_controller_and_signal_record_reason() {
     assert!(timeout.aborted());
     assert_eq!(
         timeout.reason(),
-        JsValue::String("TimeoutError".to_string())
+        JsValue::String(JsString::from_utf8("TimeoutError"))
     );
 }
 

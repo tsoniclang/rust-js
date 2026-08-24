@@ -6,6 +6,9 @@ use unicode_normalization::UnicodeNormalization;
 use crate::array::JsArray;
 use crate::coercion::{absolute_index, relative_index, to_integer_or_infinity};
 use crate::errors::{type_error, JsResult};
+use crate::exact_string;
+use crate::js_string::to_native_string;
+use crate::{JsString, JsValue};
 
 /// JS-facing string value conversion contract used by dense array join and future array helpers.
 pub trait JsToString {
@@ -44,7 +47,7 @@ fn from_units(units: &[u16]) -> Result<String, JsError> {
 }
 
 pub fn js_len(value: &str) -> usize {
-    utf16_units(value).len()
+    value.encode_utf16().count()
 }
 
 pub fn char_at(value: &str, index: f64) -> Result<String, JsError> {
@@ -319,6 +322,48 @@ pub fn replace_all(value: &str, search: &str, replacement: &str) -> Result<Strin
     Ok(output)
 }
 
+pub fn replace_with<E, F>(value: &str, search: &str, replacer: F) -> Result<String, E>
+where
+    E: From<JsError>,
+    F: Fn(JsArray<JsValue>) -> Result<String, E>,
+{
+    let result = exact_string::try_replace_with(
+        &JsString::from_utf8(value),
+        &JsString::from_utf8(search),
+        |arguments| replacer(arguments).map(|replacement| JsString::from_utf8(&replacement)),
+    )?;
+    to_native_string(&result, "String.prototype.replace callback result").map_err(E::from)
+}
+
+pub fn try_replace_with<E, F>(value: &str, search: &str, replacer: F) -> Result<String, E>
+where
+    E: From<JsError>,
+    F: Fn(JsArray<JsValue>) -> Result<String, E>,
+{
+    replace_with(value, search, replacer)
+}
+
+pub fn replace_all_with<E, F>(value: &str, search: &str, replacer: F) -> Result<String, E>
+where
+    E: From<JsError>,
+    F: Fn(JsArray<JsValue>) -> Result<String, E>,
+{
+    let result = exact_string::try_replace_all_with(
+        &JsString::from_utf8(value),
+        &JsString::from_utf8(search),
+        |arguments| replacer(arguments).map(|replacement| JsString::from_utf8(&replacement)),
+    )?;
+    to_native_string(&result, "String.prototype.replaceAll callback result").map_err(E::from)
+}
+
+pub fn try_replace_all_with<E, F>(value: &str, search: &str, replacer: F) -> Result<String, E>
+where
+    E: From<JsError>,
+    F: Fn(JsArray<JsValue>) -> Result<String, E>,
+{
+    replace_all_with(value, search, replacer)
+}
+
 fn append_replacement(
     output: &mut String,
     replacement: &str,
@@ -507,13 +552,15 @@ fn to_length(value: f64) -> u64 {
 }
 
 pub fn trim(value: &str) -> String {
-    value.trim().to_string()
+    value.trim_matches(is_ecmascript_whitespace).to_string()
 }
 pub fn trim_start(value: &str) -> String {
-    value.trim_start().to_string()
+    value
+        .trim_start_matches(is_ecmascript_whitespace)
+        .to_string()
 }
 pub fn trim_end(value: &str) -> String {
-    value.trim_end().to_string()
+    value.trim_end_matches(is_ecmascript_whitespace).to_string()
 }
 
 pub fn to_lower_case(value: &str) -> String {
@@ -570,29 +617,24 @@ pub fn from_char_code(code_units: &[f64]) -> Result<String, JsError> {
 }
 
 pub fn from_code_point(code_points: &[f64]) -> Result<String, JsError> {
-    let mut out = String::new();
+    let mut units = Vec::new();
     for value in code_points {
-        if !value.is_finite()
-            || value.fract() != 0.0
-            || *value < 0.0
-            || *value > 0x10FFFF as f64
-            || (0xD800 as f64..=0xDFFF as f64).contains(value)
-        {
+        if !value.is_finite() || value.fract() != 0.0 || *value < 0.0 || *value > 0x10FFFF as f64 {
             return Err(JsError::new(
                 JsErrorKind::RangeError,
-                "fromCodePoint expects a value between 0 and 0x10FFFF excluding surrogate code points",
+                "fromCodePoint expects an integer between 0 and 0x10FFFF",
             ));
         }
-        if let Some(ch) = std::char::from_u32(*value as u32) {
-            out.push(ch);
+        let code_point = *value as u32;
+        if code_point <= 0xffff {
+            units.push(code_point as u16);
         } else {
-            return Err(JsError::new(
-                JsErrorKind::RangeError,
-                "invalid Unicode code point",
-            ));
+            let scalar = code_point - 0x1_0000;
+            units.push(0xd800 | ((scalar >> 10) as u16));
+            units.push(0xdc00 | ((scalar & 0x3ff) as u16));
         }
     }
-    Ok(out)
+    from_units(&units)
 }
 
 pub fn raw(raw_parts: &[&str], substitutions: &[&str]) -> String {
@@ -604,4 +646,21 @@ pub fn raw(raw_parts: &[&str], substitutions: &[&str]) -> String {
         }
     }
     out
+}
+
+fn is_ecmascript_whitespace(value: char) -> bool {
+    matches!(
+        value as u32,
+        0x0009..=0x000d
+            | 0x0020
+            | 0x00a0
+            | 0x1680
+            | 0x2000..=0x200a
+            | 0x2028
+            | 0x2029
+            | 0x202f
+            | 0x205f
+            | 0x3000
+            | 0xfeff
+    )
 }

@@ -253,7 +253,7 @@ fn array_static_factories_preserve_values_and_array_brand() {
     let text = statics::from_string("a😀");
     assert_eq!(
         text.values(),
-        vec![Some("a".to_string()), Some("😀".to_string())]
+        vec![Some("a".to_owned()), Some("😀".to_owned())]
     );
 
     assert!(statics::is_array(&values));

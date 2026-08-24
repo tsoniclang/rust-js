@@ -1,5 +1,9 @@
 use tsonic_rust_js as js;
 
+fn text(value: &str) -> String {
+    value.to_owned()
+}
+
 #[test]
 fn js_backend_legal_abi_paths_are_emit_ready() {
     let dense = js::abi::JsArray::from_dense(vec![1_i32, 2_i32]);
@@ -11,7 +15,7 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
     );
     assert!(dense.includes(&2, 0.0));
     assert_eq!(dense.index_of(&3, 0.0), 2);
-    assert_eq!(dense.join(","), "1,2,3");
+    assert_eq!(dense.join(&text(",")), "1,2,3");
     assert_eq!(dense.slice(1.0, None).values(), vec![Some(2), Some(3)]);
     assert_eq!(dense.slice_to(0.0, 2.0).values(), vec![Some(1), Some(2)]);
     assert!(js::abi::number_is_finite(1.0));
@@ -20,17 +24,21 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
     assert!(js::abi::number_is_safe_integer(1.0));
 
     let mut out = Vec::new();
-    js::abi::console_log_to(&mut out, &[js::abi::JsValue::String("ok".to_string())]).unwrap();
+    js::abi::console_log_to(
+        &mut out,
+        &[js::abi::JsValue::String(js::abi::JsString::from_utf8("ok"))],
+    )
+    .unwrap();
     assert_eq!(String::from_utf8(out).unwrap(), "ok\n");
-    let text = String::from("kept");
-    let converted = js::abi::js_value_from_string(&text);
+    let source_text = text("kept");
+    let converted = js::abi::js_value_from_string(&source_text);
     let cloned = js::abi::clone_js_value(&converted);
-    assert_eq!(text, "kept");
+    assert_eq!(source_text, "kept");
     assert_eq!(converted, cloned);
 
-    let parsed = js::abi::json_parse(r#"{"ok":true}"#).unwrap();
-    let text = js::abi::json_stringify(&parsed).unwrap().unwrap();
-    assert_eq!(text, r#"{"ok":true}"#);
+    let parsed = js::abi::json_parse(&text(r#"{"ok":true}"#)).unwrap();
+    let serialized = js::abi::json_stringify(&parsed).unwrap().unwrap();
+    assert_eq!(serialized, r#"{"ok":true}"#);
 
     let map = js::abi::JsMap::<f64, &str>::new();
     map.set(f64::NAN, "nan");
@@ -44,18 +52,26 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
         js::abi::JsDate::from_millis(0.0).to_iso_string().unwrap(),
         "1970-01-01T00:00:00.000Z"
     );
-    let re = js::abi::JsRegExp::new("a(b+)c", "g").unwrap();
-    assert!(re.test("xabbc").unwrap());
-    assert_eq!(re.find_first("xabbc").unwrap(), Some((1, 5)));
-    assert_eq!(re.replace("abc abbc", "[$1]").unwrap(), "[b] [bb]");
-    assert_eq!(re.search("xabc").unwrap(), 1);
+    let re = js::abi::regexp_new_native("a(b+)c", "g").unwrap();
+    assert!(js::abi::regexp_test_native(&re, "xabbc").unwrap());
+    re.set_last_index(0.0);
+    let first = js::abi::regexp_exec_native(&re, "xabbc").unwrap().unwrap();
     assert_eq!(
-        js::abi::JsRegExp::new(",", "")
+        (first.index(), first.index() + first.text().len() as f64),
+        (1.0, 5.0)
+    );
+    re.set_last_index(0.0);
+    assert_eq!(
+        js::abi::regexp_replace_native(&re, "abc abbc", "[$1]").unwrap(),
+        "[b] [bb]"
+    );
+    assert_eq!(js::abi::regexp_search_native(&re, "xabc").unwrap(), 1.0);
+    assert_eq!(
+        js::abi::regexp_split_native(&js::abi::regexp_new_native(",", "").unwrap(), "a,b", None,)
             .unwrap()
-            .split("a,b")
-            .unwrap()
-            .values(),
-        vec![Some("a".to_string()), Some("b".to_string())]
+            .iter_values()
+            .collect::<Vec<_>>(),
+        vec!["a".to_owned(), "b".to_owned()]
     );
 
     assert_eq!(dense.find_index(|x| x == 2), 1);
@@ -74,7 +90,7 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
     assert_eq!(algebra.union(&js::abi::JsSet::from_values([3])).len(), 3);
     assert!(algebra.is_superset_of(&js::abi::JsSet::from_values([1])));
 
-    assert_eq!(js::abi::JsDate::parse("1970-01-02"), 86_400_000.0);
+    assert_eq!(js::abi::JsDate::parse(&text("1970-01-02")), 86_400_000.0);
     assert_eq!(
         js::abi::JsDate::utc(1970.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0),
         86_400_000.0
@@ -84,50 +100,62 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
         "1970-01-01T00:00:00.000Z"
     );
 
-    let exec_re = js::abi::JsRegExp::new("(b+)", "g").unwrap();
-    let matched: js::abi::JsRegExpMatch = exec_re.exec("abbc").unwrap().unwrap();
+    let exec_re = js::abi::regexp_new_native("(b+)", "g").unwrap();
+    let matched: js::abi::RegExpExecArray = js::abi::regexp_exec_native(&exec_re, "abbc")
+        .unwrap()
+        .unwrap();
     assert_eq!(matched.text(), "bb");
-    assert_eq!(matched.index(), 1);
-    assert_eq!(matched.group(1), Some("bb".to_string()));
-    assert_eq!(exec_re.last_index(), 3);
+    assert_eq!(matched.index(), 1.0);
+    assert_eq!(matched.group(1), Some(text("bb")));
+    assert_eq!(exec_re.last_index(), 3.0);
 
     assert_eq!(
-        js::abi::js_string_pad_start_with("5", 3.0, "0").as_deref(),
-        Ok("005")
+        js::abi::js_string_pad_start_with(&text("5"), 3.0, &text("0")).unwrap(),
+        "005"
     );
     assert_eq!(
-        js::abi::js_string_pad_end_with("5", 3.0, "0").as_deref(),
-        Ok("500")
+        js::abi::js_string_pad_end_with(&text("5"), 3.0, &text("0")).unwrap(),
+        "500"
     );
-    assert_eq!(js::abi::js_string_repeat("ab", 2.0).unwrap(), "abab");
-    assert_eq!(js::abi::js_string_trim_start(" a "), "a ");
-    assert_eq!(js::abi::js_string_trim_end(" a "), " a");
+    assert_eq!(js::abi::js_string_repeat(&text("ab"), 2.0).unwrap(), "abab");
+    assert_eq!(js::abi::js_string_trim_start(&text(" a ")), "a ");
+    assert_eq!(js::abi::js_string_trim_end(&text(" a ")), " a");
     assert_eq!(
-        js::abi::js_string_at("abc", -1.0).unwrap().as_deref(),
-        Some("c")
+        js::abi::js_string_at(&text("abc"), -1.0).unwrap(),
+        Some(text("c"))
     );
-    assert_eq!(js::abi::js_string_char_at("abc", 1.0).as_deref(), Ok("b"));
-    assert_eq!(js::abi::js_string_char_code_at("abc", 1.0), 98.0);
+    assert_eq!(js::abi::js_string_char_at(&text("abc"), 1.0).unwrap(), "b");
+    assert_eq!(js::abi::js_string_char_code_at(&text("abc"), 1.0), 98.0);
     assert_eq!(
-        js::abi::js_string_code_point_at("😀", 0.0),
+        js::abi::js_string_code_point_at(&text("😀"), 0.0),
         Some(0x1F600 as f64)
     );
-    assert_eq!(js::abi::js_string_last_index_of("abc", "b", 2.0), 1);
     assert_eq!(
-        js::abi::js_string_substring("abc", 2.0, 0.0).as_deref(),
-        Ok("ab")
+        js::abi::js_string_last_index_of(&text("abc"), &text("b"), 2.0),
+        1
     );
     assert_eq!(
-        js::abi::js_string_substr("abc", 1.0, 1.0).as_deref(),
-        Ok("b")
+        js::abi::js_string_substring(&text("abc"), 2.0, 0.0).unwrap(),
+        "ab"
     );
     assert_eq!(
-        js::abi::js_string_replace_all("aba", "a", "x").as_deref(),
-        Ok("xbx")
+        js::abi::js_string_substr(&text("abc"), 1.0, 1.0).unwrap(),
+        "b"
     );
     assert_eq!(
-        js::abi::js_string_from_char_code(&[65.0, 66.0]).as_deref(),
-        Ok("AB")
+        js::abi::js_string_replace_all(&text("aba"), &text("a"), &text("x")).unwrap(),
+        "xbx"
+    );
+    assert_eq!(
+        js::abi::js_string_from_char_code(&[65.0, 66.0]).unwrap(),
+        "AB"
+    );
+
+    let exact = js::abi::js_string_from_utf8("😀".to_owned());
+    assert_eq!(exact.units(), &[0xD83D, 0xDE00]);
+    assert_eq!(
+        js::abi::js_value_from_exact_string(&exact),
+        js::abi::JsValue::String(exact)
     );
 
     let buffer = js::abi::ArrayBuffer::new(4);

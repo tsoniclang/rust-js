@@ -1,216 +1,254 @@
-use tsonic_rust_js::string;
+use crate::js;
+use tsonic_rust_js::{exact_string as string, string as native_string, JsArray, JsString};
 use tsonic_rust_runtime::JsErrorKind;
 
 #[test]
 fn utf16_length_and_indexes() {
-    assert_eq!(string::js_len("abc"), 3);
-    assert_eq!(string::js_len("😀"), 2);
-    assert_eq!(string::char_at("abc", 5.0).as_deref(), Ok(""));
-    assert_eq!(string::at("abc", 1.0).unwrap().as_deref(), Some("b"));
-    assert_eq!(string::at("abc", -1.0).unwrap().as_deref(), Some("c"));
-    assert_eq!(string::at("abc", 9.0), Ok(None));
-    assert_eq!(string::at("abc", 1.9).unwrap().as_deref(), Some("b"));
-    assert_eq!(string::at("abc", f64::NAN).unwrap().as_deref(), Some("a"));
-    assert_eq!(string::at("abc", f64::INFINITY), Ok(None));
+    let value = js("abc");
+    let emoji = js("😀");
+
+    assert_eq!(string::js_len(&value), 3);
+    assert_eq!(string::js_len(&emoji), 2);
+    assert_eq!(string::char_at(&value, 5.0), js(""));
+    assert_eq!(string::at(&value, 1.0), Some(js("b")));
+    assert_eq!(string::at(&value, -1.0), Some(js("c")));
+    assert_eq!(string::at(&value, 9.0), None);
+    assert_eq!(string::at(&value, 1.9), Some(js("b")));
+    assert_eq!(string::at(&value, f64::NAN), Some(js("a")));
+    assert_eq!(string::at(&value, f64::INFINITY), None);
+}
+
+#[test]
+fn native_strings_remain_default_and_exact_utf16_requires_the_explicit_carrier() {
+    assert_eq!(native_string::js_len("A😀"), 3);
+    assert_eq!(native_string::char_at("plain", 1.0).unwrap(), "l");
+    assert_eq!(
+        native_string::char_at("😀", 0.0).unwrap_err().kind(),
+        JsErrorKind::Unsupported
+    );
+
+    let exact = JsString::from_utf8("😀");
+    assert_eq!(string::char_at(&exact, 0.0).units(), &[0xD83D]);
 }
 
 #[test]
 fn utf16_code_units_and_points() {
-    assert_eq!(string::char_code_at("😀", 0.0), 0xD83D as f64);
-    assert_eq!(string::char_code_at("😀", 1.0), 0xDE00 as f64);
-    assert_eq!(string::code_point_at("😀", 0.0), Some(0x1F600 as f64));
-    assert_eq!(string::code_point_at("😀", 1.0), Some(0xDE00 as f64));
-    assert_eq!(string::code_point_at("😀", -1.0), None);
-    assert_eq!(string::char_at("abc", -1.0).as_deref(), Ok(""));
-    assert!(string::char_code_at("abc", -1.0).is_nan());
-    assert_eq!(
-        string::char_at("😀", 0.0).unwrap_err().kind(),
-        JsErrorKind::Unsupported
-    );
+    let value = js("abc");
+    let emoji = js("😀");
+
+    assert_eq!(string::char_code_at(&emoji, 0.0), 0xD83D as f64);
+    assert_eq!(string::char_code_at(&emoji, 1.0), 0xDE00 as f64);
+    assert_eq!(string::code_point_at(&emoji, 0.0), Some(0x1F600 as f64));
+    assert_eq!(string::code_point_at(&emoji, 1.0), Some(0xDE00 as f64));
+    assert_eq!(string::code_point_at(&emoji, -1.0), None);
+    assert_eq!(string::char_at(&value, -1.0), js(""));
+    assert!(string::char_code_at(&value, -1.0).is_nan());
+    assert_eq!(string::char_at(&emoji, 0.0).units(), &[0xD83D]);
+    assert_eq!(string::at(&emoji, 1.0).unwrap().units(), &[0xDE00]);
 }
 
 #[test]
 fn slice_and_substring_behavior() {
+    let javascript = js("javascript");
+    let abc = js("abc");
+
+    assert_eq!(string::slice(&javascript, 1.0, Some(3.0)), js("av"));
+    assert_eq!(string::slice(&javascript, -3.0, None), js("ipt"));
+    assert_eq!(string::substring(&abc, 2.9, 0.0), js("ab"));
+    assert_eq!(string::slice(&abc, 2.0, Some(1.0)), js(""));
     assert_eq!(
-        string::slice("javascript", 1.0, Some(3.0)).as_deref(),
-        Ok("av")
+        string::slice(&abc, f64::NAN, Some(f64::INFINITY)),
+        js("abc")
     );
-    assert_eq!(
-        string::slice("javascript", -3.0, None).as_deref(),
-        Ok("ipt")
-    );
-    assert_eq!(string::substring("abc", 2.9, 0.0).as_deref(), Ok("ab"));
-    assert_eq!(string::slice("abc", 2.0, Some(1.0)).as_deref(), Ok(""));
-    assert_eq!(
-        string::slice("abc", f64::NAN, Some(f64::INFINITY)).as_deref(),
-        Ok("abc")
-    );
-    assert_eq!(
-        string::substr("javascript", 4.9, 6.9).as_deref(),
-        Ok("script")
-    );
-    assert_eq!(
-        string::substr("javascript", -6.9, 3.9).as_deref(),
-        Ok("scr")
-    );
+    assert_eq!(string::substr(&javascript, 4.9, 6.9), js("script"));
+    assert_eq!(string::substr(&javascript, -6.9, 3.9), js("scr"));
 }
 
 #[test]
 fn search_and_replace() {
-    assert!(string::includes("array", "ra", 0.0));
-    assert!(!string::includes("array", "RA", 0.0));
-    assert!(string::starts_with("array", "ar", 0.0));
-    assert!(string::starts_with_from_start("array", "ar"));
-    assert!(string::starts_with("array", "ar", -5.0));
-    assert!(string::starts_with("array", "", 30.0));
-    assert!(string::ends_with_at_end("array", "ay"));
+    let array = js("array");
+
+    assert!(string::includes(&array, &js("ra"), 0.0));
+    assert!(!string::includes(&array, &js("RA"), 0.0));
+    assert!(string::starts_with(&array, &js("ar"), 0.0));
+    assert!(string::starts_with_from_start(&array, &js("ar")));
+    assert!(string::starts_with(&array, &js("ar"), -5.0));
+    assert!(string::starts_with(&array, &js(""), 30.0));
+    assert!(string::ends_with_at_end(&array, &js("ay")));
     assert_eq!(
-        string::replace("hello", "ll", "[$&][$`][$']"),
-        "he[ll][he][o]o"
+        string::replace(&js("hello"), &js("ll"), &js("[$&][$`][$']")),
+        js("he[ll][he][o]o")
     );
     assert_eq!(
-        string::replace_all("banana", "a", "$&$&").as_deref(),
-        Ok("baanaanaa")
+        string::replace_all(&js("banana"), &js("a"), &js("$&$&")),
+        js("baanaanaa")
     );
-    assert_eq!(string::replace_all("ab", "", "-").as_deref(), Ok("-a-b-"));
+    assert_eq!(
+        string::replace_all(&js("ab"), &js(""), &js("-")),
+        js("-a-b-")
+    );
 }
 
 #[test]
 fn split_and_repeat_and_trim() {
     assert_eq!(
-        dense(string::split_all("a,b,c", ",").unwrap()),
-        vec!["a", "b", "c"]
+        dense(string::split_all(&js("a,b,c"), &js(","))),
+        vec![js("a"), js("b"), js("c")]
     );
     assert_eq!(
-        dense(string::split("abc", "", 2.9).unwrap()),
-        vec!["a", "b"]
+        dense(string::split(&js("abc"), &js(""), 2.9)),
+        vec![js("a"), js("b")]
     );
     assert_eq!(
-        dense(string::split_all("a,,c", ",").unwrap()),
-        vec!["a", "", "c"]
+        dense(string::split_all(&js("a,,c"), &js(","))),
+        vec![js("a"), js(""), js("c")]
     );
-    assert!(dense(string::split("a,b", ",", f64::NAN).unwrap()).is_empty());
-    assert_eq!(string::repeat("x", 3.9).as_deref(), Ok("xxx"));
-    assert_eq!(string::repeat("x", f64::NAN).as_deref(), Ok(""));
+    assert!(dense(string::split(&js("a,b"), &js(","), f64::NAN)).is_empty());
+    assert_eq!(string::repeat(&js("x"), 3.9).unwrap(), js("xxx"));
+    assert_eq!(string::repeat(&js("x"), f64::NAN).unwrap(), js(""));
     assert_eq!(
-        string::repeat("x", -1.0).unwrap_err().kind(),
+        string::repeat(&js("x"), -1.0).unwrap_err().kind(),
         JsErrorKind::RangeError
     );
     assert_eq!(
-        string::repeat("x", f64::INFINITY).unwrap_err().kind(),
+        string::repeat(&js("x"), f64::INFINITY).unwrap_err().kind(),
         JsErrorKind::RangeError
     );
     assert_eq!(
-        string::repeat("ab", 8_388_609.0).unwrap_err().kind(),
+        string::repeat(&js("ab"), 8_388_609.0).unwrap_err().kind(),
         JsErrorKind::RangeError
     );
-    assert_eq!(string::trim("  hi  "), "hi");
-    assert_eq!(string::trim_start("  hi  "), "hi  ");
-    assert_eq!(string::trim_end("  hi  "), "  hi");
+    assert_eq!(string::trim(&js("  hi  ")), js("hi"));
+    assert_eq!(string::trim_start(&js("  hi  ")), js("hi  "));
+    assert_eq!(string::trim_end(&js("  hi  ")), js("  hi"));
 }
 
 #[test]
 fn pad_helpers_and_case() {
-    assert_eq!(string::pad_start_with("5", 3.0, "0").as_deref(), Ok("005"));
-    assert_eq!(string::pad_end_with("5", 3.0, "0").as_deref(), Ok("500"));
     assert_eq!(
-        string::pad_start_with("x", 4.0, "ab").as_deref(),
-        Ok("abax")
-    );
-    assert_eq!(string::pad_end_with("x", 4.0, "ab").as_deref(), Ok("xaba"));
-    assert_eq!(string::pad_start("x", 3.0).as_deref(), Ok("  x"));
-    assert_eq!(string::pad_end("x", 3.0).as_deref(), Ok("x  "));
-    assert_eq!(string::pad_start_with("x", -3.9, "0").as_deref(), Ok("x"));
-    assert_eq!(
-        string::pad_start_with("x", f64::NAN, "0").as_deref(),
-        Ok("x")
-    );
-    assert_eq!(string::pad_start_with("x", 3.9, "0").as_deref(), Ok("00x"));
-    assert_eq!(
-        string::pad_start_with("x", f64::INFINITY, "").as_deref(),
-        Ok("x")
+        string::pad_start_with(&js("5"), 3.0, &js("0")).unwrap(),
+        js("005")
     );
     assert_eq!(
-        string::pad_start("x", f64::INFINITY).unwrap_err().kind(),
+        string::pad_end_with(&js("5"), 3.0, &js("0")).unwrap(),
+        js("500")
+    );
+    assert_eq!(
+        string::pad_start_with(&js("x"), 4.0, &js("ab")).unwrap(),
+        js("abax")
+    );
+    assert_eq!(
+        string::pad_end_with(&js("x"), 4.0, &js("ab")).unwrap(),
+        js("xaba")
+    );
+    assert_eq!(string::pad_start(&js("x"), 3.0).unwrap(), js("  x"));
+    assert_eq!(string::pad_end(&js("x"), 3.0).unwrap(), js("x  "));
+    assert_eq!(
+        string::pad_start_with(&js("x"), -3.9, &js("0")).unwrap(),
+        js("x")
+    );
+    assert_eq!(
+        string::pad_start_with(&js("x"), f64::NAN, &js("0")).unwrap(),
+        js("x")
+    );
+    assert_eq!(
+        string::pad_start_with(&js("x"), 3.9, &js("0")).unwrap(),
+        js("00x")
+    );
+    assert_eq!(
+        string::pad_start_with(&js("x"), f64::INFINITY, &js("")).unwrap(),
+        js("x")
+    );
+    assert_eq!(
+        string::pad_start(&js("x"), f64::INFINITY)
+            .unwrap_err()
+            .kind(),
         JsErrorKind::RangeError
     );
     assert_eq!(
-        string::pad_start_with("x", 2.0, "😀").unwrap_err().kind(),
-        JsErrorKind::Unsupported
+        string::pad_start_with(&js("x"), 2.0, &js("😀"))
+            .unwrap()
+            .units(),
+        &[0xD83D, b'x' as u16]
     );
-    assert_eq!(string::to_lower_case("AbC"), "abc");
-    assert_eq!(string::to_upper_case("AbC"), "ABC");
+    assert_eq!(string::to_lower_case(&js("AbC")), js("abc"));
+    assert_eq!(string::to_upper_case(&js("AbC")), js("ABC"));
 }
 
 #[test]
 fn constructors() {
-    assert_eq!(string::from_char_code(&[65.9, 66.0]).as_deref(), Ok("AB"));
+    assert_eq!(string::from_char_code(&[65.9, 66.0]), js("AB"));
     assert_eq!(
-        string::from_code_point(&[0x1f600 as f64]).as_deref(),
-        Ok("😀")
+        string::from_code_point(&[0x1f600 as f64]).unwrap(),
+        js("😀")
     );
     assert_eq!(
-        string::from_code_point(&[0xD800 as f64])
+        string::from_code_point(&[0xD800 as f64]).unwrap().units(),
+        &[0xD800]
+    );
+    assert_eq!(
+        string::from_code_point(&[0x11_0000 as f64])
             .unwrap_err()
             .kind(),
         JsErrorKind::RangeError
     );
-    assert_eq!(
-        string::from_char_code(&[0xD800 as f64]).unwrap_err().kind(),
-        JsErrorKind::Unsupported
-    );
+    assert_eq!(string::from_char_code(&[0xD800 as f64]).units(), &[0xD800]);
 }
 
 #[test]
 fn search_edge_cases() {
-    assert_eq!(string::index_of("abc", "", 10.0), 3);
-    assert_eq!(string::index_of("abc", "z", -10.0), -1);
-    assert_eq!(string::last_index_of("banana", "ana", -1.0), -1);
-    assert_eq!(string::last_index_of("banana", "ana", -10.0), -1);
-    assert_eq!(string::last_index_of("abc", "", 1.9), 1);
-    assert!(string::includes("", "", 0.0));
-    assert!(!string::includes("a", "a", 1.0));
+    assert_eq!(string::index_of(&js("abc"), &js(""), 10.0), 3);
+    assert_eq!(string::index_of(&js("abc"), &js("z"), -10.0), -1);
+    assert_eq!(string::last_index_of(&js("banana"), &js("ana"), -1.0), -1);
+    assert_eq!(string::last_index_of(&js("banana"), &js("ana"), -10.0), -1);
+    assert_eq!(string::last_index_of(&js("abc"), &js(""), 1.9), 1);
+    assert!(string::includes(&js(""), &js(""), 0.0));
+    assert!(!string::includes(&js("a"), &js("a"), 1.0));
 }
 
 #[test]
 fn conversion_helpers() {
-    assert_eq!(string::to_lower_case("HELLO"), "hello");
-    assert_eq!(string::to_upper_case("hello"), "HELLO");
-    assert_eq!(string::char_at("😀", 5.0).as_deref(), Ok(""));
-    assert_eq!(
-        string::at("😀", 1.0).unwrap_err().kind(),
-        JsErrorKind::Unsupported
-    );
-    assert_eq!(string::code_point_at("😀", 0.0), Some(0x1f600 as f64));
-    assert_eq!(string::code_point_at("😀", 1.0), Some(0xDE00 as f64));
-    assert_eq!(string::identity("hello"), "hello");
-    assert_eq!(string::concat("a", &["b", "c"]), "abc");
+    assert_eq!(string::to_lower_case(&js("HELLO")), js("hello"));
+    assert_eq!(string::to_upper_case(&js("hello")), js("HELLO"));
+    assert_eq!(string::char_at(&js("😀"), 5.0), js(""));
+    assert_eq!(string::at(&js("😀"), 1.0).unwrap().units(), &[0xDE00]);
+    assert_eq!(string::code_point_at(&js("😀"), 0.0), Some(0x1f600 as f64));
+    assert_eq!(string::code_point_at(&js("😀"), 1.0), Some(0xDE00 as f64));
+    assert_eq!(string::identity(&js("hello")), js("hello"));
+
+    let b = js("b");
+    let c = js("c");
+    assert_eq!(string::concat(&js("a"), &[&b, &c]), js("abc"));
+    assert_eq!(js("a").concat_values([b, c]), js("abc"));
 }
 
 #[test]
 fn unicode_normalization_and_well_formed_contracts_are_exact() {
-    assert_eq!(string::normalize("A\u{030a}"), "\u{00c5}");
+    assert_eq!(string::normalize(&js("A\u{030a}")), js("\u{00c5}"));
     assert_eq!(
-        string::normalize_with_form("\u{00c5}", "NFD").as_deref(),
-        Ok("A\u{030a}")
+        string::normalize_with_form(&js("\u{00c5}"), "NFD").unwrap(),
+        js("A\u{030a}")
     );
     assert_eq!(
-        string::normalize_with_form("\u{fb03}", "NFKC").as_deref(),
-        Ok("ffi")
+        string::normalize_with_form(&js("\u{fb03}"), "NFKC").unwrap(),
+        js("ffi")
     );
     assert_eq!(
-        string::normalize_with_form("value", "invalid")
+        string::normalize_with_form(&js("value"), "invalid")
             .unwrap_err()
             .kind(),
         JsErrorKind::TypeError
     );
-    assert!(string::is_well_formed("scalar \u{1f600}"));
-    assert_eq!(
-        string::to_well_formed("scalar \u{1f600}"),
-        "scalar \u{1f600}"
-    );
+
+    let scalar = js("scalar \u{1f600}");
+    assert!(string::is_well_formed(&scalar));
+    assert_eq!(string::to_well_formed(&scalar), "scalar \u{1f600}");
+
+    let lone_surrogate = JsString::from_units(vec![0xD800]);
+    assert!(!string::is_well_formed(&lone_surrogate));
+    assert_eq!(string::to_well_formed(&lone_surrogate), "\u{FFFD}");
 }
 
-fn dense(array: tsonic_rust_js::JsArray<String>) -> Vec<String> {
+fn dense(array: JsArray<JsString>) -> Vec<JsString> {
     array.iter_values().collect()
 }

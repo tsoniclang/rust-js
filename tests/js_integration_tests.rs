@@ -1,3 +1,9 @@
+use tsonic_rust_js::JsString;
+
+fn js(value: impl AsRef<str>) -> JsString {
+    JsString::from_utf8(value.as_ref())
+}
+
 #[path = "js/array_buffer_tests.rs"]
 mod array_buffer_tests;
 #[path = "js/console_tests.rs"]

@@ -1,3 +1,4 @@
+use crate::js;
 use tsonic_rust_js::{abi, boolean, data_view::DataView, errors, wrappers, ArrayBuffer, JsValue};
 
 #[test]
@@ -11,7 +12,7 @@ fn boolean_primitive_methods_preserve_javascript_text_and_value() {
 #[test]
 fn coercive_number_globals_follow_closed_value_rules() {
     assert!(abi::is_nan(&JsValue::Undefined));
-    assert!(!abi::is_nan(&JsValue::String(" 42 ".to_string())));
+    assert!(!abi::is_nan(&JsValue::String(js(" 42 "))));
     assert!(abi::is_finite(&JsValue::Bool(true)));
     assert_eq!(abi::to_number(&JsValue::Null), 0.0);
 }
@@ -110,6 +111,6 @@ fn array_buffer_mutable_bytes_are_visible_to_views() {
 #[test]
 fn primitive_wrapper_objects_are_closed_value_boxes() {
     assert!(wrappers::BooleanObject(true).value_of());
-    assert_eq!(wrappers::StringObject("x".to_string()).value_of(), "x");
+    assert_eq!(wrappers::StringObject(js("x")).value_of(), &js("x"));
     assert_eq!(wrappers::NumberObject(1.5).value_of(), 1.5);
 }

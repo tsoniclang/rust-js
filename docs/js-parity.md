@@ -112,52 +112,21 @@ are requires-timezone-contract: the closed runtime has no IANA tzdata source.
 
 ## RegExp
 
-`regexp::JsRegExp` implements a closed, oracle-proven subset (see the module
-docs in `crates/tsonic_rust_js/src/regexp/mod.rs` and the Node-generated
-vectors in `tests/oracle/regexp-vectors.json`):
+`regexp::JsRegExp` uses the vendored ECMAScript parser and matcher over the
+runtime's exact UTF-16 `JsString` carrier. Construction accepts runtime pattern
+and flag values, validates `d g i m s u v y`, and caches only immutable compiled
+programs; every `JsRegExp` retains independent identity and `lastIndex` state.
 
-- implemented: literals, positive character classes with ranges capped at
-  U+D7FF, class escapes `\d \w \s`, identity/control/hex escapes, greedy
-  `* + ? {n} {n,} {n,m}`, `^ $`, alternation, capturing and non-capturing
-  groups; flags `i g m`; operations `test`, `find_first`, `replace` (with
-  `$$ $& $` $' $1..$99` substitution), `split`, `search`, `exec` (stateful
-  `lastIndex` contract under `g`: UTF-16 code-unit progression, reset to 0 on
-  no match; `last_index`/`set_last_index` accessors — writable `lastIndex`
-  is exact for non-nullable patterns, including values that land between the
-  two code units of a surrogate pair: no accepted atom can match a lone
-  surrogate, so scanning from a mid-pair position is equivalent to scanning
-  from the next char boundary, proven by the `set-lastindex` oracle
-  vectors. Nullable patterns — ones that can match the empty string — reject
-  manual `lastIndex` assignment with a deterministic `Unsupported` error:
-  Node can match empty *at* a mid-pair position (`/a*/g` with
-  `lastIndex = 1` on `"💚"` matches `""` at UTF-16 index 1), which no Rust
-  `String` can express. Exec-driven `lastIndex` values always land on char
-  boundaries, so the natural exec flow stays exact for nullable patterns
-  too, proven by the nullable-over-astral `exec` oracle vector),
-  `match_first`,
-  `match_strings`, `match_all` (`TypeError` without `g`), and the flag
-  getters `global`/`ignore_case`/`multiline`. Match results are carried by
-  `JsRegExpMatch` (`text`, UTF-16 `index`, `input`, 1-based `group`,
-  `group_count`). Matching operations are fallible and enforce a deterministic
-  VM step budget derived from program and input size. Exhaustion reports a
-  `RangeError` rather than returning a false no-match result or allowing
-  adversarial backtracking to run without a bound.
-- rejected-by-architecture (deterministic `SyntaxError` at construction):
-  lazy quantifiers, backreferences, lookaround, named groups, `\b`/`\B`,
-  `\p`/`\P`, `\c`, `\k`, `\u{...}`, flags `d s u v y`, quantifier bounds
-  above 1000, and `split` over patterns with capturing groups (JS splices
-  captures into the result; use `(?:...)`).
-- also rejected at construction (code-unit-sensitive constructs): `.`,
-  negated classes (`[^...]` and `\D \W \S`, inside or outside classes),
-  class ranges reaching past U+D7FF, astral chars inside classes, and
-  quantifiers on a bare astral literal. Their non-`u` semantics are defined
-  over UTF-16 code units, not scalar values: Node's `/./.exec("😀")` yields
-  a *lone high surrogate* — a string a Rust `String` cannot represent —
-  negated/surrogate-range classes likewise match lone surrogates, and a
-  quantifier after an astral literal binds to its trailing low surrogate
-  only. Rejecting the constructs at construction is fail-closed and
-  independent of the input searched (unlike a per-call guard). Positive BMP
-  classes (ranges up to U+D7FF, singles up to U+FFFF), unquantified astral
-  literals, and grouped-and-quantified astral literals (`(?:😀)+`, which
-  repeat the whole surrogate pair) remain exact, proven by the oracle
-  vectors.
+The engine covers greedy and lazy quantifiers, backreferences, lookaround,
+named captures, Unicode properties, Unicode-set operations, inline modifiers,
+legacy code-unit mode, and `u`/`v` code-point behavior. Match results preserve
+optional captures, named groups, `index`, `input`, and `d`-flag indices without
+converting through Rust UTF-8 strings.
+
+`exec`, `test`, `match`, lazy `matchAll`, `replace`, `replaceAll`, `search`, and
+`split` share the same stateful matcher. Replacement strings and callbacks
+receive the ECMAScript capture, offset, input, and named-group contract.
+Execution uses checked finite accounting; exhaustion is a `RangeError`, never
+a successful no-match result. The committed Node differential vectors and
+direct runtime banks cover grammar, UTF-16, state, results, protocols,
+resource limits, and immutable-program cache isolation.

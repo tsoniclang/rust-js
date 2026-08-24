@@ -21,7 +21,10 @@ pub fn to_number(value: &JsValue) -> f64 {
         }
         JsValue::Number(value) => *value,
         JsValue::String(value) => {
-            let trimmed = value.trim();
+            let Ok(text) = value.to_utf8() else {
+                return f64::NAN;
+            };
+            let trimmed = text.trim_matches(is_ecmascript_whitespace);
             if trimmed.is_empty() {
                 0.0
             } else {
@@ -30,4 +33,26 @@ pub fn to_number(value: &JsValue) -> f64 {
         }
         JsValue::Object(_) | JsValue::Array(_) => f64::NAN,
     }
+}
+
+fn is_ecmascript_whitespace(value: char) -> bool {
+    matches!(
+        value,
+        '\u{0009}'
+            | '\u{000A}'
+            | '\u{000B}'
+            | '\u{000C}'
+            | '\u{000D}'
+            | '\u{0020}'
+            | '\u{00A0}'
+            | '\u{1680}'
+            | '\u{2000}'
+            ..='\u{200A}'
+                | '\u{2028}'
+                | '\u{2029}'
+                | '\u{202F}'
+                | '\u{205F}'
+                | '\u{3000}'
+                | '\u{FEFF}'
+    )
 }

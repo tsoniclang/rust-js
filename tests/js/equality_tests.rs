@@ -1,5 +1,5 @@
 use tsonic_rust_js::equality::{JsSameValueZero, JsStrictEqual};
-use tsonic_rust_js::{JsMap, JsObject, JsSet, JsValue};
+use tsonic_rust_js::{JsMap, JsObject, JsSet, JsString, JsValue};
 use tsonic_rust_runtime::{BigInt, Undefined};
 
 fn sample_object() -> JsValue {
@@ -7,7 +7,10 @@ fn sample_object() -> JsValue {
 }
 
 fn sample_array() -> JsValue {
-    JsValue::from(vec![JsValue::Number(1.0), JsValue::String("a".to_string())])
+    JsValue::from(vec![
+        JsValue::Number(1.0),
+        JsValue::String(JsString::from_utf8("a")),
+    ])
 }
 
 #[test]
@@ -109,12 +112,12 @@ fn set_values_use_object_identity() {
 
 #[test]
 fn strings_compare_by_value() {
-    let left = JsValue::String("héllo".to_string());
-    let right = JsValue::String("héllo".to_string());
+    let left = JsValue::String(JsString::from_utf8("héllo"));
+    let right = JsValue::String(JsString::from_utf8("héllo"));
     assert!(left.strict_equal(&right));
     assert!(left.same_value_zero(&right));
     assert_eq!(left, right);
-    assert_ne!(left, JsValue::String("other".to_string()));
+    assert_ne!(left, JsValue::String(JsString::from_utf8("other")));
 }
 
 #[test]

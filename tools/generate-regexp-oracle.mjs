@@ -17,33 +17,16 @@
 //   {text, index, groups} object (no g flag).
 // - set-lastindex: `setLastIndex` is written to re.lastIndex, then one
 //   re.exec() runs; expected is {result, lastIndex} where result is the
-//   match text or null. These vectors prove that a writable lastIndex is
-//   exact for non-nullable patterns even when it lands between the two
-//   code units of a surrogate pair: no atom in the accepted subset can
-//   match a lone surrogate, so a mid-pair start is equivalent to the next
-//   char boundary. Nullable patterns must not appear here — they can match
-//   empty AT a mid-pair position (Node: /a*/g with lastIndex 1 on "💚"
-//   matches "" at index 1), so the Rust engine rejects the lastIndex write
-//   itself for nullable patterns.
+//   match text or null.
 // - matchAll: an array of {text, index, groups}, or {throws: "TypeError"}
 //   when the regexp lacks the g flag.
 // Group values are null for unmatched optional groups; `index`/`lastIndex`
 // are UTF-16 code-unit offsets.
 //
-// Constraints kept in sync with the Rust engine subset
-// (crates/tsonic_rust_js/src/regexp/):
-// - only constructs from the supported subset appear here;
-// - no `.`, negated classes (`[^...]`, `\D \W \S`), astral chars inside
-//   classes, or class ranges reaching past U+D7FF: their non-`u` semantics
-//   are defined over UTF-16 code units (Node's /./.exec("😀") yields a lone
-//   high surrogate), so the Rust engine rejects them at construction;
-// - split vectors never use capturing groups (the Rust engine rejects them
-//   because JS splices capture values into split output);
-// - empty-match advancement vectors stay within the BMP: the Rust engine
-//   fails closed (Unsupported) when a nullable pattern iterates over astral
-//   input, because JS advances one UTF-16 code unit past an empty match,
-//   which can split a surrogate pair. Astral inputs appear here only with
-//   non-nullable patterns, where behavior is exact.
+// The corpus intentionally spans legacy UTF-16 mode, `u`, `v`, modern
+// grammar, captures in split output, and empty-match advancement over
+// astral input. Valid normative behavior is never represented as an
+// expected rejection.
 
 import { writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -263,11 +246,10 @@ match("b*", "g", "abc");
 matchAll("x?", "g", "ab");
 matchAll("b{0,2}", "g", "abcb");
 
-// --- non-nullable patterns over astral input (exact vs Node) ------------------
-// Astral literals stay unquantified: without the `u` flag Node reads 💚 as
-// two code units, so a quantifier would bind to the trailing surrogate only
-// (the Rust engine rejects a directly quantified astral literal for that
-// reason). A grouped astral literal repeats the whole pair and is exact.
+// --- patterns over astral input (exact vs Node) -------------------------------
+// Without the `u` flag, a quantifier on an authored astral literal applies to
+// its trailing UTF-16 code unit. Grouping the literal quantifies the pair.
+exec("💚+", "", "a💚💚b", 1);
 test("(?:💚)+", "", "a💚💚b");
 replace("(?:💚)+", "g", "a💚💚b💚", "x");
 test("💚", "", "a💚b");
@@ -279,14 +261,13 @@ match("\\d+", "g", "💚1💚22");
 match("💚", "", "a💚b");
 matchAll("💚|\\d", "g", "a💚💚b1");
 exec("💚", "g", "a💚b💚", 3);
-// Nullable pattern over astral input: natural-flow exec stays on char
-// boundaries (the empty match at 0 leaves lastIndex at 0 on every call), so
-// it is exact even though manual lastIndex writes are rejected for /a*/.
+// Nullable patterns retain exact UTF-16 lastIndex behavior over astral input.
 exec("a*", "g", "💚a", 3);
 
 // --- writable lastIndex landing inside/around surrogate pairs ------------------
-// Non-nullable patterns only: the Rust engine rejects manual lastIndex
-// writes on nullable patterns (see the set-lastindex note above).
+setLastIndex("a*", "g", "😀a", 1);
+setLastIndex("a*", "g", "😀a", 2);
+setLastIndex("(?:)", "g", "😀", 1);
 // "ab😀cd😀x": a=0 b=1 😀=2..3 c=4 d=5 😀=6..7 x=8 (length 9).
 setLastIndex("[a-z]+", "g", "ab😀cd😀x", 2); // at a high surrogate (pair start)
 setLastIndex("[a-z]+", "g", "ab😀cd😀x", 3); // at the low surrogate (mid-pair)
@@ -337,6 +318,22 @@ matchAll("\\d", "g", "你1好2");
 matchAll("\\d+", "", "a1");
 matchAll("(a+)(b*)", "g", "aabab");
 matchAll("^[a-z]", "gm", "ab\ncd");
+
+// --- modern grammar and UTF-16 modes -----------------------------------------
+test("a+?", "", "aaaa");
+test("(a)\\1", "", "zaaz");
+test("a(?=b)", "", "zab");
+test("(?<=a)b", "", "zab");
+test("\\p{Script=Greek}+", "u", "aαβz");
+test("[\\p{ASCII}&&\\p{Letter}]+", "v", "éAb9");
+test("(?i:a)b", "", "Ab");
+exec("(?<word>[a-z]+)(?<digits>\\d+)?", "d", "abc 42", 2);
+exec(".", "du", "😀", 1);
+exec(".", "d", "😀", 1);
+match("(?:)", "gu", "😀");
+matchAll("(?:)", "gu", "😀");
+replace("(?<digit>\\d)(x)?", "g", "a1b2x", "<$<digit>>");
+split("(\\d+)", "", "a1b22c");
 
 const matchRecord = (m) => ({
   text: m[0],

@@ -1,5 +1,7 @@
 //! Equality helpers for JS-compatible comparison behavior.
 
+use crate::js_string::JsString;
+
 /// JS SameValueZero comparison.
 pub trait JsSameValueZero<Rhs: ?Sized = Self> {
     fn same_value_zero(&self, other: &Rhs) -> bool;
@@ -218,6 +220,16 @@ impl JsHash for &str {
     }
 }
 
+impl JsHash for JsString {
+    fn js_hash(&self) -> u64 {
+        self.units().iter().fold(FNV_OFFSET_BASIS, |hash, unit| {
+            unit.to_le_bytes().iter().fold(hash, |hash, byte| {
+                (hash ^ u64::from(*byte)).wrapping_mul(FNV_PRIME)
+            })
+        })
+    }
+}
+
 macro_rules! impl_js_primitive_equality {
     ($($t:ty),* $(,)?) => {
         $(
@@ -269,6 +281,7 @@ impl JsHash for char {
 impl_js_integer_hash!(i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize);
 
 impl_js_primitive_equality!(
-    bool, i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize, char, String, &str
+    bool, i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize, char, String, &str,
+    JsString
 );
 use tsonic_rust_runtime::{BigInt, Undefined};
