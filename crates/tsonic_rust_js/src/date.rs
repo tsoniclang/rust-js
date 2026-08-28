@@ -5,6 +5,7 @@ use std::rc::Rc;
 
 use crate::equality::{hash_identity, JsHash, JsSameValueZero, JsStrictEqual};
 use crate::errors::{range_error, JsResult};
+use tsonic_rust_runtime::{ObjectIdentity, ObjectIdentityCarrier};
 
 const MS_PER_DAY: i64 = 86_400_000;
 const MAX_TIME_MILLIS: f64 = 8_640_000_000_000_000.0;
@@ -12,6 +13,7 @@ const MAX_TIME_MILLIS: f64 = 8_640_000_000_000_000.0;
 #[derive(Debug, Clone)]
 pub struct JsDate {
     millis: Rc<Cell<f64>>,
+    identity: ObjectIdentity,
 }
 
 impl PartialEq for JsDate {
@@ -56,6 +58,7 @@ impl JsDate {
     pub fn from_millis(millis: f64) -> Self {
         Self {
             millis: Rc::new(Cell::new(time_clip(millis))),
+            identity: ObjectIdentity::new(),
         }
     }
 
@@ -376,6 +379,12 @@ impl JsDate {
         let second = (ms_in_day % 60_000) / 1_000;
         let milli = ms_in_day % 1_000;
         Ok((year, month, day, hour, minute, second, milli))
+    }
+}
+
+impl ObjectIdentityCarrier for JsDate {
+    fn object_identity(&self) -> &ObjectIdentity {
+        &self.identity
     }
 }
 

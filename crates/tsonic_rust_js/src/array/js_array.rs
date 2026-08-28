@@ -7,7 +7,7 @@ use super::slot::JsSlot;
 use super::statics::JsArrayConcatItem;
 use crate::coercion::{normalize_slice_index, relative_index, to_integer_or_infinity};
 use crate::equality::{hash_identity, JsHash, JsSameValueZero, JsStrictEqual};
-use tsonic_rust_runtime::{JsError, JsErrorKind};
+use tsonic_rust_runtime::{JsError, JsErrorKind, ObjectIdentity, ObjectIdentityCarrier};
 
 #[derive(Debug)]
 struct JsArrayState<T> {
@@ -18,6 +18,7 @@ struct JsArrayState<T> {
 #[derive(Debug)]
 pub struct JsArray<T> {
     state: Rc<RefCell<JsArrayState<T>>>,
+    identity: ObjectIdentity,
 }
 
 pub struct JsArrayIterator<T> {
@@ -29,6 +30,7 @@ impl<T> Clone for JsArray<T> {
     fn clone(&self) -> Self {
         Self {
             state: Rc::clone(&self.state),
+            identity: self.identity.clone(),
         }
     }
 }
@@ -92,6 +94,7 @@ impl<T> JsArray<T> {
                 slots,
                 numeric_properties: Vec::new(),
             })),
+            identity: ObjectIdentity::new(),
         }
     }
 
@@ -1211,6 +1214,12 @@ fn canonical_array_index(value: f64) -> Option<usize> {
     const MAX_ARRAY_INDEX: f64 = 4_294_967_294.0;
     (value.is_finite() && value >= 0.0 && value <= MAX_ARRAY_INDEX && value.trunc() == value)
         .then(|| value as usize)
+}
+
+impl<T> ObjectIdentityCarrier for JsArray<T> {
+    fn object_identity(&self) -> &ObjectIdentity {
+        &self.identity
+    }
 }
 
 impl<T> Default for JsArray<T> {

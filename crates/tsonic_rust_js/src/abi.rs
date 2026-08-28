@@ -11,20 +11,46 @@ pub use crate::array::{
 pub use crate::array_buffer::ArrayBuffer;
 pub use crate::boolean::{to_string as boolean_to_string, value_of as boolean_value_of};
 pub use crate::console::{
-    debug as console_debug, debug_to as console_debug_to, dir_to as console_dir_to,
-    dirxml_to as console_dirxml_to, error as console_error, error_to as console_error_to,
+    assert as console_assert, assert_default as console_assert_default, clear as console_clear,
+    count as console_count, count_label as console_count_label,
+    count_reset as console_count_reset, count_reset_label as console_count_reset_label,
+    debug as console_debug, debug_to as console_debug_to, dir as console_dir,
+    dir_to as console_dir_to, dir_with_options as console_dir_with_options,
+    dirxml as console_dirxml, dirxml_to as console_dirxml_to, error as console_error,
+    error_to as console_error_to, group as console_group,
+    group_collapsed as console_group_collapsed, group_end as console_group_end,
     format_args as console_format_args, info as console_info, info_to as console_info_to,
     log as console_log, log_to as console_log_to, table_to as console_table_to,
-    trace_to as console_trace_to, warn as console_warn, warn_to as console_warn_to, Console,
-    ConsoleColorMode, ConsoleOptions,
+    table as console_table, time as console_time, time_end as console_time_end,
+    time_end_label as console_time_end_label, time_label as console_time_label,
+    time_log as console_time_log, time_log_label as console_time_log_label,
+    time_stamp as console_time_stamp, time_stamp_label as console_time_stamp_label,
+    trace as console_trace, trace_to as console_trace_to, warn as console_warn,
+    warn_to as console_warn_to, Console, ConsoleColorMode, ConsoleOptions,
 };
 pub use crate::data_view::DataView;
 pub use crate::date::JsDate;
 pub use crate::globals::{is_finite, is_nan, to_number};
+pub use crate::intl::{
+    IntlCollator, IntlDateTimeFormat, IntlDateTimeFormatPart, IntlNumberFormat,
+    IntlNumberFormatPart, IntlResolvedCollatorOptions, IntlResolvedDateTimeFormatOptions,
+    IntlResolvedNumberFormatOptions,
+};
 pub use crate::js_string::{from_utf8_string as js_string_from_utf8, JsString};
 pub use crate::json::{
     parse as json_parse, stringify as json_stringify,
     stringify_with_indent as json_stringify_with_indent,
+    stringify_with_property_list as json_stringify_with_property_list,
+    stringify_with_property_list_and_space_number as json_stringify_with_property_list_and_space_number,
+    stringify_with_property_list_and_space_string as json_stringify_with_property_list_and_space_string,
+    stringify_with_replacer as json_stringify_with_replacer,
+    stringify_with_replacer_and_space_number as json_stringify_with_replacer_and_space_number,
+    stringify_with_replacer_and_space_string as json_stringify_with_replacer_and_space_string,
+    stringify_with_space_number as json_stringify_with_space_number,
+    stringify_with_space_string as json_stringify_with_space_string,
+    try_stringify_with_replacer as json_try_stringify_with_replacer,
+    try_stringify_with_replacer_and_space_number as json_try_stringify_with_replacer_and_space_number,
+    try_stringify_with_replacer_and_space_string as json_try_stringify_with_replacer_and_space_string,
 };
 pub use crate::map::JsMap;
 pub use crate::math::{
@@ -48,6 +74,10 @@ pub use crate::number::{
     NEGATIVE_INFINITY as NUMBER_NEGATIVE_INFINITY, POSITIVE_INFINITY as NUMBER_POSITIVE_INFINITY,
 };
 pub use crate::object::{is as object_is, JsObject};
+pub use crate::promise::{
+    promise_all_settled, promise_any, promise_race, JsPromise, PromiseFulfilledResult,
+    PromiseRejectedResult, PromiseSettledResult,
+};
 pub use crate::regexp::{
     regexp_call_from_regexp_native, regexp_call_from_regexp_with_flags_native,
     regexp_call_from_regexp_with_undefined_flags_native, regexp_construct_from_regexp_native,
@@ -84,6 +114,10 @@ pub use crate::regexp::{
     RegExpMatchArray, RegExpNamedGroups, RegExpNamedIndices, RegExpStringIterator,
 };
 pub use crate::set::JsSet;
+pub use crate::symbol::JsSymbol;
+pub use crate::timers::{
+    clear_interval, clear_timeout, run_timers, set_interval_callable, set_timeout_callable,
+};
 pub use crate::string::{
     at as js_string_at, char_at as js_string_char_at, char_code_at as js_string_char_code_at,
     code_point_at as js_string_code_point_at, from_char_code as js_string_from_char_code,
@@ -109,10 +143,12 @@ pub use crate::typed_array::{
 pub use crate::uri::{decode_uri, decode_uri_component, encode_uri, encode_uri_component};
 pub use crate::value::{
     clone_value as clone_js_value, from_exact_string as js_value_from_exact_string,
-    from_string as js_value_from_string, JsValue,
+    from_string as js_value_from_string, js_value_from_array,
+    js_value_from_json_projection, js_value_from_optional_pairs, JsValue,
 };
 pub use crate::web::{
     AbortController, AbortSignal, AddEventListenerOptions, Blob, BlobPart, Body, CustomEvent,
     DomException, Event, EventInit, EventListenerOptions, EventTarget, File, FormData,
     FormDataValue, Headers, ImportMeta, Navigator, Request, Response, Storage,
 };
+pub use crate::weak_collections::{JsWeakMap, JsWeakSet};

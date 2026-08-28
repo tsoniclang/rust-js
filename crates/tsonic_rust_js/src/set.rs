@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use tsonic_rust_runtime::TsonicResult;
+use tsonic_rust_runtime::{ObjectIdentity, ObjectIdentityCarrier, TsonicResult};
 
 use crate::equality::{hash_identity, JsHash, JsSameValueZero, JsStrictEqual};
 
@@ -22,12 +22,14 @@ struct JsSetState<T> {
 #[derive(Debug)]
 pub struct JsSet<T> {
     state: Rc<RefCell<JsSetState<T>>>,
+    identity: ObjectIdentity,
 }
 
 impl<T> Clone for JsSet<T> {
     fn clone(&self) -> Self {
         Self {
             state: Rc::clone(&self.state),
+            identity: self.identity.clone(),
         }
     }
 }
@@ -66,6 +68,7 @@ impl<T> JsSet<T> {
                 indices_by_hash: HashMap::new(),
                 size: 0,
             })),
+            identity: ObjectIdentity::new(),
         }
     }
 
@@ -431,6 +434,12 @@ fn remove_hash_index(indices_by_hash: &mut HashMap<u64, Vec<usize>>, hash: u64, 
     };
     if remove_bucket {
         indices_by_hash.remove(&hash);
+    }
+}
+
+impl<T> ObjectIdentityCarrier for JsSet<T> {
+    fn object_identity(&self) -> &ObjectIdentity {
+        &self.identity
     }
 }
 
