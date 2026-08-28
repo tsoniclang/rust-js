@@ -97,7 +97,7 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
     );
     assert_eq!(
         js::abi::JsDate::from_millis(0.0).to_json(),
-        "1970-01-01T00:00:00.000Z"
+        Some("1970-01-01T00:00:00.000Z".to_string())
     );
 
     let exec_re = js::abi::regexp_new_native("(b+)", "g").unwrap();

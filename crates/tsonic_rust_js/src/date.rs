@@ -129,11 +129,10 @@ impl JsDate {
         ))
     }
 
-    /// Mirrors `Date.prototype.toJSON`: the `to_iso_string` text, or the
-    /// literal `"null"` for an invalid date (JSON.stringify serializes an
-    /// invalid date as `null`).
-    pub fn to_json(&self) -> String {
-        self.to_iso_string().unwrap_or_else(|_| "null".to_string())
+    /// Mirrors `Date.prototype.toJSON`: the `to_iso_string` text, or
+    /// `None` for an invalid date.
+    pub fn to_json(&self) -> Option<String> {
+        self.to_iso_string().ok()
     }
 
     pub fn get_utc_full_year(&self) -> JsResult<i32> {
