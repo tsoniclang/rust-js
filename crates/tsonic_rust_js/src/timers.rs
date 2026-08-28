@@ -21,28 +21,22 @@ thread_local! {
     static TIMERS: RefCell<BTreeMap<u64, TimerEntry>> = RefCell::new(BTreeMap::new());
 }
 
-pub fn set_timeout_callable<E>(
-    callback: Callable<(), Result<(), E>>,
-    delay_ms: f64,
-) -> f64
+pub fn set_timeout_callable<E>(callback: Callable<(), Result<(), E>>, delay_ms: f64) -> f64
 where
     E: std::fmt::Display + 'static,
 {
     schedule_callback(callback, normalized_delay(delay_ms), false)
 }
 
-pub fn set_interval_callable<E>(
-    callback: Callable<(), Result<(), E>>,
-    delay_ms: f64,
-) -> f64
+pub fn set_interval_callable<E>(callback: Callable<(), Result<(), E>>, delay_ms: f64) -> f64
 where
     E: std::fmt::Display + 'static,
 {
     schedule_callback(callback, normalized_delay(delay_ms).max(1), true)
 }
 
-pub fn clear_timeout(timer_id: f64) {
-    if let Some(timer_id) = timer_id(timer_id) {
+pub fn clear_timeout(value: f64) {
+    if let Some(timer_id) = timer_id(value) {
         TIMERS.with_borrow_mut(|timers| {
             timers.remove(&timer_id);
         });
@@ -80,11 +74,7 @@ pub fn next_timer_delay() -> Option<Duration> {
     })
 }
 
-fn schedule_callback<E>(
-    callback: Callable<(), Result<(), E>>,
-    delay_ms: u64,
-    interval: bool,
-) -> f64
+fn schedule_callback<E>(callback: Callable<(), Result<(), E>>, delay_ms: u64, interval: bool) -> f64
 where
     E: std::fmt::Display + 'static,
 {

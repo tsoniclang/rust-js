@@ -10,9 +10,45 @@ use crate::equality::{
     hash_identity, same_value_f64, same_value_zero_f64, strict_equal_f64, JsHash, JsSameValue,
     JsSameValueZero, JsStrictEqual,
 };
-use crate::object::JsObject;
 use crate::errors::JsResult;
+use crate::object::JsObject;
 use crate::{JsString, JsSymbol};
+
+pub trait JsClosedValueCarrier: fmt::Debug {
+    fn identity_key(&self) -> usize;
+    fn inspect_value(&self) -> String;
+    fn project_json(&self) -> JsResult<JsValue>;
+}
+
+#[derive(Clone)]
+pub struct JsClosedValue(Rc<dyn JsClosedValueCarrier>);
+
+impl fmt::Debug for JsClosedValue {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.inspect())
+    }
+}
+
+impl JsClosedValue {
+    pub fn new<T>(value: T) -> Self
+    where
+        T: JsClosedValueCarrier + 'static,
+    {
+        Self(Rc::new(value))
+    }
+
+    pub fn identity_key(&self) -> usize {
+        self.0.identity_key()
+    }
+
+    pub fn inspect(&self) -> String {
+        self.0.inspect_value()
+    }
+
+    pub fn project_json(&self) -> JsResult<JsValue> {
+        self.0.project_json()
+    }
+}
 
 #[derive(Clone)]
 pub struct JsonProjection(Rc<JsonProjectionInner>);
@@ -61,6 +97,7 @@ pub enum JsValue {
     Symbol(JsSymbol),
     Object(Rc<RefCell<JsObject>>),
     Array(JsArray<JsValue>),
+    Closed(JsClosedValue),
     JsonProjection(JsonProjection),
 }
 
@@ -85,6 +122,13 @@ impl JsValue {
 
     pub fn symbol(value: JsSymbol) -> Self {
         Self::Symbol(value)
+    }
+
+    pub fn closed<T>(value: T) -> Self
+    where
+        T: JsClosedValueCarrier + 'static,
+    {
+        Self::Closed(JsClosedValue::new(value))
     }
 
     pub fn as_symbol(&self) -> Option<&JsSymbol> {
@@ -114,6 +158,7 @@ impl JsValue {
         match self {
             Self::Object(value) => Some(Rc::as_ptr(value) as usize),
             Self::Array(value) => Some(value.identity()),
+            Self::Closed(value) => Some(value.identity_key()),
             Self::JsonProjection(value) => Some(value.identity()),
             _ => None,
         }
@@ -155,9 +200,7 @@ where
     JsValue::array(JsArray::from_sparse(length, converted))
 }
 
-pub fn js_value_from_optional_pairs<K>(
-    pairs: Vec<Option<(K, JsValue)>>,
-) -> JsValue
+pub fn js_value_from_optional_pairs<K>(pairs: Vec<Option<(K, JsValue)>>) -> JsValue
 where
     K: AsRef<str>,
 {
@@ -197,6 +240,7 @@ impl InspectState {
             JsValue::Symbol(value) => format!("{value:?}"),
             JsValue::Object(object) => self.render_object(object, depth),
             JsValue::Array(values) => self.render_array(values, depth),
+            JsValue::Closed(value) => value.inspect(),
             JsValue::JsonProjection(_) => "[JSON projection]".to_string(),
         }
     }
@@ -282,6 +326,9 @@ impl JsSameValue for JsValue {
             (Self::Symbol(left), Self::Symbol(right)) => left == right,
             (Self::Object(left), Self::Object(right)) => Rc::ptr_eq(left, right),
             (Self::Array(left), Self::Array(right)) => left.ptr_eq(right),
+            (Self::Closed(left), Self::Closed(right)) => {
+                left.identity_key() == right.identity_key()
+            }
             (Self::JsonProjection(left), Self::JsonProjection(right)) => left.ptr_eq(right),
             _ => false,
         }
@@ -298,6 +345,9 @@ impl JsSameValueZero for JsValue {
             (Self::Symbol(left), Self::Symbol(right)) => left == right,
             (Self::Object(left), Self::Object(right)) => Rc::ptr_eq(left, right),
             (Self::Array(left), Self::Array(right)) => left.ptr_eq(right),
+            (Self::Closed(left), Self::Closed(right)) => {
+                left.identity_key() == right.identity_key()
+            }
             (Self::JsonProjection(left), Self::JsonProjection(right)) => left.ptr_eq(right),
             _ => false,
         }
@@ -315,6 +365,7 @@ impl JsHash for JsValue {
             Self::Symbol(value) => value.js_hash(),
             Self::Object(value) => hash_identity(Rc::as_ptr(value) as usize),
             Self::Array(value) => value.js_hash(),
+            Self::Closed(value) => hash_identity(value.identity_key()),
             Self::JsonProjection(value) => hash_identity(value.identity()),
         }
     }
@@ -330,6 +381,9 @@ impl JsStrictEqual for JsValue {
             (Self::Symbol(left), Self::Symbol(right)) => left == right,
             (Self::Object(left), Self::Object(right)) => Rc::ptr_eq(left, right),
             (Self::Array(left), Self::Array(right)) => left.ptr_eq(right),
+            (Self::Closed(left), Self::Closed(right)) => {
+                left.identity_key() == right.identity_key()
+            }
             (Self::JsonProjection(left), Self::JsonProjection(right)) => left.ptr_eq(right),
             _ => false,
         }
@@ -388,6 +442,13 @@ pub fn from_exact_string(value: &JsString) -> JsValue {
 
 pub fn clone_value(value: &JsValue) -> JsValue {
     value.clone()
+}
+
+pub fn from_closed<T>(value: &T) -> JsValue
+where
+    T: JsClosedValueCarrier + Clone + 'static,
+{
+    JsValue::closed(value.clone())
 }
 
 impl fmt::Display for JsValue {

@@ -3,9 +3,9 @@
 use tsonic_rust_runtime::{ObjectIdentity, ObjectIdentityCarrier};
 
 use crate::array::JsArray;
+use crate::date::JsDate;
 use crate::errors::{range_error, type_error, JsResult};
 use crate::value::JsValue;
-use crate::JsDate;
 
 const DEFAULT_LOCALE: &str = "en-US";
 const DEFAULT_TIME_ZONE: &str = "UTC";
@@ -243,7 +243,8 @@ impl IntlDateTimeFormat {
     fn build(locale: &str, options: &JsValue) -> JsResult<Self> {
         let locale = canonical_locale(locale)?;
         validate_locale_matcher(options)?;
-        let time_zone = string_option(options, "timeZone")?.unwrap_or_else(|| DEFAULT_TIME_ZONE.to_owned());
+        let time_zone =
+            string_option(options, "timeZone")?.unwrap_or_else(|| DEFAULT_TIME_ZONE.to_owned());
         if time_zone != DEFAULT_TIME_ZONE {
             return Err(range_error(format!(
                 "Intl.DateTimeFormat supports only the deterministic '{DEFAULT_TIME_ZONE}' time zone"
@@ -253,7 +254,11 @@ impl IntlDateTimeFormat {
             weekday: enum_option(options, "weekday", &["long", "short", "narrow"])?,
             era: enum_option(options, "era", &["long", "short", "narrow"])?,
             year: enum_option(options, "year", &["numeric", "2-digit"])?,
-            month: enum_option(options, "month", &["numeric", "2-digit", "long", "short", "narrow"])?,
+            month: enum_option(
+                options,
+                "month",
+                &["numeric", "2-digit", "long", "short", "narrow"],
+            )?,
             day: enum_option(options, "day", &["numeric", "2-digit"])?,
             hour: enum_option(options, "hour", &["numeric", "2-digit"])?,
             minute: enum_option(options, "minute", &["numeric", "2-digit"])?,
@@ -261,9 +266,15 @@ impl IntlDateTimeFormat {
             time_zone_name: enum_option(options, "timeZoneName", &["long", "short"])?,
             hour12: boolean_option(options, "hour12")?.unwrap_or(true),
         };
-        if fields.weekday.is_none() && fields.era.is_none() && fields.year.is_none() && fields.month.is_none() &&
-            fields.day.is_none() && fields.hour.is_none() && fields.minute.is_none() &&
-            fields.second.is_none() && fields.time_zone_name.is_none()
+        if fields.weekday.is_none()
+            && fields.era.is_none()
+            && fields.year.is_none()
+            && fields.month.is_none()
+            && fields.day.is_none()
+            && fields.hour.is_none()
+            && fields.minute.is_none()
+            && fields.second.is_none()
+            && fields.time_zone_name.is_none()
         {
             fields.year = Some("numeric".to_owned());
             fields.month = Some("numeric".to_owned());
@@ -279,7 +290,10 @@ impl IntlDateTimeFormat {
 
     fn parts(&self, milliseconds: f64) -> JsArray<IntlDateTimeFormatPart> {
         if !milliseconds.is_finite() {
-            return JsArray::from_dense(vec![IntlDateTimeFormatPart::new("literal", "Invalid Date")]);
+            return JsArray::from_dense(vec![IntlDateTimeFormatPart::new(
+                "literal",
+                "Invalid Date",
+            )]);
         }
         let components = utc_components(milliseconds);
         let mut parts = Vec::new();
@@ -360,7 +374,11 @@ impl IntlDateTimeFormat {
             }
             parts.push(IntlDateTimeFormatPart::new(
                 "timeZoneName",
-                if style == "long" { "Coordinated Universal Time" } else { "UTC" },
+                if style == "long" {
+                    "Coordinated Universal Time"
+                } else {
+                    "UTC"
+                },
             ));
         }
         JsArray::from_dense(parts)
@@ -435,13 +453,21 @@ impl IntlNumberFormat {
             parts.push(IntlNumberFormatPart::new("infinity", "∞"));
             return JsArray::from_dense(parts);
         }
-        let scaled = if self.style == "percent" { value * 100.0 } else { value };
+        let scaled = if self.style == "percent" {
+            value * 100.0
+        } else {
+            value
+        };
         let negative = scaled.is_sign_negative() && scaled != 0.0;
         let absolute = scaled.abs();
         let rendered = format!("{:.*}", usize::from(self.maximum_fraction_digits), absolute);
         let (integer, fraction) = rendered.split_once('.').unwrap_or((&rendered, ""));
         let integer = integer_with_minimum(integer, usize::from(self.minimum_integer_digits));
-        let groups = if self.use_grouping { group_integer(&integer) } else { vec![integer] };
+        let groups = if self.use_grouping {
+            group_integer(&integer)
+        } else {
+            vec![integer]
+        };
         let mut parts = Vec::new();
         if negative {
             parts.push(IntlNumberFormatPart::new("minusSign", "-"));
@@ -495,16 +521,21 @@ impl IntlNumberFormat {
             options,
             "currencyDisplay",
             &["symbol", "narrowSymbol", "code", "name"],
-        )?.unwrap_or_else(|| "symbol".to_owned());
+        )?
+        .unwrap_or_else(|| "symbol".to_owned());
         if style == "currency" && currency.as_deref().is_none_or(str::is_empty) {
-            return Err(type_error("Intl.NumberFormat currency style requires a currency code"));
+            return Err(type_error(
+                "Intl.NumberFormat currency style requires a currency code",
+            ));
         }
         let currency_label = currency
             .as_deref()
             .map(|value| currency_value(value, &currency_display))
             .transpose()?;
-        let minimum_integer_digits = integer_option(options, "minimumIntegerDigits", 1, 21)?.unwrap_or(1);
-        let minimum_fraction_digits = integer_option(options, "minimumFractionDigits", 0, 20)?.unwrap_or(0);
+        let minimum_integer_digits =
+            integer_option(options, "minimumIntegerDigits", 1, 21)?.unwrap_or(1);
+        let minimum_fraction_digits =
+            integer_option(options, "minimumFractionDigits", 0, 20)?.unwrap_or(0);
         let default_maximum = if style == "currency" { 2 } else { 3 };
         let maximum_fraction_digits = integer_option(
             options,
@@ -570,7 +601,10 @@ impl IntlCollator {
     pub fn compare(&self, left: &str, right: &str) -> f64 {
         let normalize = |value: &str| {
             let filtered = if self.options.ignore_punctuation {
-                value.chars().filter(|character| character.is_alphanumeric() || character.is_whitespace()).collect()
+                value
+                    .chars()
+                    .filter(|character| character.is_alphanumeric() || character.is_whitespace())
+                    .collect()
             } else {
                 value.to_owned()
             };
@@ -586,9 +620,9 @@ impl IntlCollator {
         } else {
             left_key.cmp(&right_key)
         };
-        if ordering == std::cmp::Ordering::Equal &&
-            self.options.case_first != "false" &&
-            left != right
+        if ordering == std::cmp::Ordering::Equal
+            && self.options.case_first != "false"
+            && left != right
         {
             ordering = if self.options.case_first == "upper" {
                 left.cmp(right)
@@ -612,8 +646,12 @@ impl IntlCollator {
         validate_locale_matcher(options)?;
         let usage = enum_option(options, "usage", &["sort", "search"])?
             .unwrap_or_else(|| "sort".to_owned());
-        let sensitivity = enum_option(options, "sensitivity", &["base", "accent", "case", "variant"])?
-            .unwrap_or_else(|| "variant".to_owned());
+        let sensitivity = enum_option(
+            options,
+            "sensitivity",
+            &["base", "accent", "case", "variant"],
+        )?
+        .unwrap_or_else(|| "variant".to_owned());
         let case_first = enum_option(options, "caseFirst", &["upper", "lower", "false"])?
             .unwrap_or_else(|| "false".to_owned());
         Ok(Self {
@@ -675,8 +713,7 @@ fn options_object(options: &JsValue) -> JsResult<Option<std::cell::Ref<'_, crate
 }
 
 fn option_value(options: &JsValue, name: &str) -> JsResult<JsValue> {
-    Ok(options_object(options)?
-        .map_or(JsValue::Undefined, |object| object.get(name)))
+    Ok(options_object(options)?.map_or(JsValue::Undefined, |object| object.get(name)))
 }
 
 fn string_option(options: &JsValue, name: &str) -> JsResult<Option<String>> {
@@ -692,8 +729,13 @@ fn string_option(options: &JsValue, name: &str) -> JsResult<Option<String>> {
 
 fn enum_option(options: &JsValue, name: &str, accepted: &[&str]) -> JsResult<Option<String>> {
     let value = string_option(options, name)?;
-    if value.as_deref().is_some_and(|candidate| !accepted.contains(&candidate)) {
-        return Err(range_error(format!("Intl option '{name}' has an unsupported value")));
+    if value
+        .as_deref()
+        .is_some_and(|candidate| !accepted.contains(&candidate))
+    {
+        return Err(range_error(format!(
+            "Intl option '{name}' has an unsupported value"
+        )));
     }
     Ok(value)
 }
@@ -710,9 +752,16 @@ fn integer_option(options: &JsValue, name: &str, minimum: u8, maximum: u8) -> Js
     match option_value(options, name)? {
         JsValue::Undefined => Ok(None),
         JsValue::Number(value)
-            if value.is_finite() && value.fract() == 0.0 &&
-                value >= f64::from(minimum) && value <= f64::from(maximum) => Ok(Some(value as u8)),
-        _ => Err(range_error(format!("Intl option '{name}' is outside its supported range"))),
+            if value.is_finite()
+                && value.fract() == 0.0
+                && value >= f64::from(minimum)
+                && value <= f64::from(maximum) =>
+        {
+            Ok(Some(value as u8))
+        }
+        _ => Err(range_error(format!(
+            "Intl option '{name}' is outside its supported range"
+        ))),
     }
 }
 
@@ -760,7 +809,8 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
     let days = days + 719_468;
     let era = if days >= 0 { days } else { days - 146_096 } / 146_097;
     let day_of_era = days - era * 146_097;
-    let year_of_era = (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
     let mut year = year_of_era + era * 400;
     let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
     let month_prime = (5 * day_of_year + 2) / 153;
@@ -780,8 +830,23 @@ fn number_value(value: impl std::fmt::Display, style: &str) -> String {
 }
 
 fn month_value(month: u32, style: &str) -> String {
-    const LONG: [&str; 12] = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-    const SHORT: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const LONG: [&str; 12] = [
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+    ];
+    const SHORT: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
     match style {
         "long" => LONG[(month - 1) as usize].to_owned(),
         "short" => SHORT[(month - 1) as usize].to_owned(),
@@ -791,7 +856,15 @@ fn month_value(month: u32, style: &str) -> String {
 }
 
 fn weekday_name(weekday: u32, style: &str) -> String {
-    const LONG: [&str; 7] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const LONG: [&str; 7] = [
+        "Sunday",
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+    ];
     const SHORT: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     match style {
         "long" => LONG[weekday as usize].to_owned(),
@@ -861,8 +934,52 @@ fn group_integer(value: &str) -> Vec<String> {
 }
 
 fn numeric_string_compare(left: &str, right: &str) -> std::cmp::Ordering {
-    match (left.parse::<u128>(), right.parse::<u128>()) {
-        (Ok(left), Ok(right)) => left.cmp(&right),
-        _ => left.cmp(right),
+    let left = left.as_bytes();
+    let right = right.as_bytes();
+    let mut left_index = 0;
+    let mut right_index = 0;
+
+    while left_index < left.len() && right_index < right.len() {
+        if left[left_index].is_ascii_digit() && right[right_index].is_ascii_digit() {
+            let left_end = digit_run_end(left, left_index);
+            let right_end = digit_run_end(right, right_index);
+            let left_significant = trim_numeric_leading_zeroes(&left[left_index..left_end]);
+            let right_significant = trim_numeric_leading_zeroes(&right[right_index..right_end]);
+            let ordering = left_significant
+                .len()
+                .cmp(&right_significant.len())
+                .then_with(|| left_significant.cmp(right_significant));
+            if ordering != std::cmp::Ordering::Equal {
+                return ordering;
+            }
+            left_index = left_end;
+            right_index = right_end;
+            continue;
+        }
+
+        let ordering = left[left_index].cmp(&right[right_index]);
+        if ordering != std::cmp::Ordering::Equal {
+            return ordering;
+        }
+        left_index += 1;
+        right_index += 1;
     }
+
+    (left.len() - left_index).cmp(&(right.len() - right_index))
+}
+
+fn digit_run_end(value: &[u8], start: usize) -> usize {
+    let mut end = start;
+    while end < value.len() && value[end].is_ascii_digit() {
+        end += 1;
+    }
+    end
+}
+
+fn trim_numeric_leading_zeroes(value: &[u8]) -> &[u8] {
+    let first_significant = value
+        .iter()
+        .position(|digit| *digit != b'0')
+        .unwrap_or(value.len());
+    &value[first_significant..]
 }

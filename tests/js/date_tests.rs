@@ -17,10 +17,7 @@ fn date_epoch_and_iso_roundtrip() {
     assert_eq!(date.get_time(), 0.0);
     assert_eq!(date.value_of(), 0.0);
     assert_eq!(date.to_iso_string().unwrap(), "1970-01-01T00:00:00.000Z");
-    assert_eq!(
-        date.to_json(),
-        Some("1970-01-01T00:00:00.000Z".to_string())
-    );
+    assert_eq!(date.to_json(), Some("1970-01-01T00:00:00.000Z".to_string()));
     assert_eq!(JsDate::parse("1970-01-01T00:00:00.000Z"), 0.0);
 }
 

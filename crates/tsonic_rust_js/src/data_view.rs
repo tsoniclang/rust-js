@@ -71,7 +71,10 @@ impl DataView {
             Some(value) => to_index(value)?,
             None => buffer_length - byte_offset,
         };
-        if byte_offset.checked_add(byte_length).is_none_or(|end| end > buffer_length) {
+        if byte_offset
+            .checked_add(byte_length)
+            .is_none_or(|end| end > buffer_length)
+        {
             return Err(range_error("DataView byte length out of bounds"));
         }
         Ok(Self {
@@ -105,35 +108,71 @@ impl DataView {
     }
 
     pub fn get_int16(&self, offset: f64, little_endian: bool) -> JsResult<f64> {
-        Ok(read_number(self.read::<2>(offset)?, little_endian, i16::from_le_bytes, i16::from_be_bytes) as f64)
+        Ok(read_number(
+            self.read::<2>(offset)?,
+            little_endian,
+            i16::from_le_bytes,
+            i16::from_be_bytes,
+        ) as f64)
     }
 
     pub fn get_uint16(&self, offset: f64, little_endian: bool) -> JsResult<f64> {
-        Ok(read_number(self.read::<2>(offset)?, little_endian, u16::from_le_bytes, u16::from_be_bytes) as f64)
+        Ok(read_number(
+            self.read::<2>(offset)?,
+            little_endian,
+            u16::from_le_bytes,
+            u16::from_be_bytes,
+        ) as f64)
     }
 
     pub fn get_int32(&self, offset: f64, little_endian: bool) -> JsResult<f64> {
-        Ok(read_number(self.read::<4>(offset)?, little_endian, i32::from_le_bytes, i32::from_be_bytes) as f64)
+        Ok(read_number(
+            self.read::<4>(offset)?,
+            little_endian,
+            i32::from_le_bytes,
+            i32::from_be_bytes,
+        ) as f64)
     }
 
     pub fn get_uint32(&self, offset: f64, little_endian: bool) -> JsResult<f64> {
-        Ok(read_number(self.read::<4>(offset)?, little_endian, u32::from_le_bytes, u32::from_be_bytes) as f64)
+        Ok(read_number(
+            self.read::<4>(offset)?,
+            little_endian,
+            u32::from_le_bytes,
+            u32::from_be_bytes,
+        ) as f64)
     }
 
     pub fn get_float32(&self, offset: f64, little_endian: bool) -> JsResult<f64> {
-        Ok(read_number(self.read::<4>(offset)?, little_endian, f32::from_le_bytes, f32::from_be_bytes) as f64)
+        Ok(read_number(
+            self.read::<4>(offset)?,
+            little_endian,
+            f32::from_le_bytes,
+            f32::from_be_bytes,
+        ) as f64)
     }
 
     pub fn get_float64(&self, offset: f64, little_endian: bool) -> JsResult<f64> {
-        Ok(read_number(self.read::<8>(offset)?, little_endian, f64::from_le_bytes, f64::from_be_bytes))
+        Ok(read_number(
+            self.read::<8>(offset)?,
+            little_endian,
+            f64::from_le_bytes,
+            f64::from_be_bytes,
+        ))
     }
 
     pub fn set_int8(&self, offset: f64, value: f64) -> JsResult<()> {
-        self.write(offset, &(integer_number(value, 8, true) as i8).to_ne_bytes())
+        self.write(
+            offset,
+            &(integer_number(value, 8, true) as i8).to_ne_bytes(),
+        )
     }
 
     pub fn set_uint8(&self, offset: f64, value: f64) -> JsResult<()> {
-        self.write(offset, &(integer_number(value, 8, false) as u8).to_ne_bytes())
+        self.write(
+            offset,
+            &(integer_number(value, 8, false) as u8).to_ne_bytes(),
+        )
     }
 
     pub fn set_int16(&self, offset: f64, value: f64, little_endian: bool) -> JsResult<()> {
@@ -177,11 +216,23 @@ impl DataView {
     }
 
     pub fn set_float32(&self, offset: f64, value: f64, little_endian: bool) -> JsResult<()> {
-        self.write_endian(offset, value as f32, little_endian, f32::to_le_bytes, f32::to_be_bytes)
+        self.write_endian(
+            offset,
+            value as f32,
+            little_endian,
+            f32::to_le_bytes,
+            f32::to_be_bytes,
+        )
     }
 
     pub fn set_float64(&self, offset: f64, value: f64, little_endian: bool) -> JsResult<()> {
-        self.write_endian(offset, value, little_endian, f64::to_le_bytes, f64::to_be_bytes)
+        self.write_endian(
+            offset,
+            value,
+            little_endian,
+            f64::to_le_bytes,
+            f64::to_be_bytes,
+        )
     }
 
     fn read<const LENGTH: usize>(&self, offset: f64) -> JsResult<[u8; LENGTH]> {
@@ -229,7 +280,14 @@ impl DataView {
         little: impl FnOnce(T) -> [u8; LENGTH],
         big: impl FnOnce(T) -> [u8; LENGTH],
     ) -> JsResult<()> {
-        self.write(offset, &if little_endian { little(value) } else { big(value) })
+        self.write(
+            offset,
+            &if little_endian {
+                little(value)
+            } else {
+                big(value)
+            },
+        )
     }
 }
 
@@ -245,5 +303,9 @@ fn read_number<T, const LENGTH: usize>(
     little: impl FnOnce([u8; LENGTH]) -> T,
     big: impl FnOnce([u8; LENGTH]) -> T,
 ) -> T {
-    if little_endian { little(bytes) } else { big(bytes) }
+    if little_endian {
+        little(bytes)
+    } else {
+        big(bytes)
+    }
 }

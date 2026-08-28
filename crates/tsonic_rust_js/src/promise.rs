@@ -70,14 +70,17 @@ impl<'a, T> JsPromise<'a, T> {
     }
 }
 
-impl<'a, T: Clone> JsPromise<'a, T> {
+impl<'a, T: Clone + 'a> JsPromise<'a, T> {
     fn poll_result(&self, context: &mut Context<'_>) -> Poll<TsonicResult<T>> {
         let future = {
             let mut state = self.state.borrow_mut();
             match &mut *state {
                 PromiseState::Settled(result) => return Poll::Ready(result.clone()),
                 PromiseState::Pending { future, waiters } => {
-                    if !waiters.iter().any(|waiter| waiter.will_wake(context.waker())) {
+                    if !waiters
+                        .iter()
+                        .any(|waiter| waiter.will_wake(context.waker()))
+                    {
                         waiters.push(context.waker().clone());
                     }
                     match future.take() {
@@ -189,9 +192,7 @@ impl<T> PromiseSettledResult<T> {
     }
 }
 
-pub fn promise_race<'a, T: Clone + 'a>(
-    values: &JsArray<JsPromise<'a, T>>,
-) -> JsPromise<'a, T> {
+pub fn promise_race<'a, T: Clone + 'a>(values: &JsArray<JsPromise<'a, T>>) -> JsPromise<'a, T> {
     let values = values.values();
     JsPromise::from_fallible_factory(move || async move {
         poll_fn(move |context| {
@@ -211,9 +212,7 @@ pub fn promise_race<'a, T: Clone + 'a>(
     })
 }
 
-pub fn promise_any<'a, T: Clone + 'a>(
-    values: &JsArray<JsPromise<'a, T>>,
-) -> JsPromise<'a, T> {
+pub fn promise_any<'a, T: Clone + 'a>(values: &JsArray<JsPromise<'a, T>>) -> JsPromise<'a, T> {
     let values = values.values();
     JsPromise::from_fallible_factory(move || async move {
         if values.is_empty() {
@@ -264,24 +263,26 @@ pub fn promise_all_settled<'a, T: Clone + 'a>(
                 settled[index] = match value {
                     None => Some(PromiseSettledResult::Rejected(PromiseRejectedResult {
                         status: "rejected".to_string(),
-                        reason: JsValue::String(crate::JsString::from(
+                        reason: JsValue::String(crate::JsString::from_utf8(
                             "Promise.allSettled received a sparse Promise array",
                         )),
                     })),
                     Some(value) => match value.poll_result(context) {
                         Poll::Pending => None,
-                        Poll::Ready(Ok(value)) => Some(PromiseSettledResult::Fulfilled(
-                            PromiseFulfilledResult {
+                        Poll::Ready(Ok(value)) => {
+                            Some(PromiseSettledResult::Fulfilled(PromiseFulfilledResult {
                                 status: "fulfilled".to_string(),
                                 value,
-                            },
-                        )),
-                        Poll::Ready(Err(error)) => Some(PromiseSettledResult::Rejected(
-                            PromiseRejectedResult {
+                            }))
+                        }
+                        Poll::Ready(Err(error)) => {
+                            Some(PromiseSettledResult::Rejected(PromiseRejectedResult {
                                 status: "rejected".to_string(),
-                                reason: JsValue::String(crate::JsString::from(error.to_string())),
-                            },
-                        )),
+                                reason: JsValue::String(crate::JsString::from_utf8(
+                                    &error.to_string(),
+                                )),
+                            }))
+                        }
                     },
                 };
             }

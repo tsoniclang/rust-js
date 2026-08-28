@@ -82,13 +82,7 @@ pub fn stringify_with_indent_and_limits(
     indent: &str,
     limits: JsonLimits,
 ) -> JsResult<Option<String>> {
-    stringify_with_options::<tsonic_rust_runtime::JsError>(
-        value,
-        indent,
-        limits,
-        None,
-        None,
-    )
+    stringify_with_options::<tsonic_rust_runtime::JsError>(value, indent, limits, None, None)
 }
 
 pub fn stringify_with_space_number(value: &JsValue, space: f64) -> JsResult<Option<String>> {
@@ -150,13 +144,7 @@ pub fn stringify_with_replacer(
     mut replacer: impl FnMut(String, JsValue) -> JsValue,
 ) -> JsResult<Option<String>> {
     let mut replacer = |key: String, value: JsValue| Ok(replacer(key, value));
-    stringify_with_options(
-        value,
-        "",
-        JsonLimits::default(),
-        Some(&mut replacer),
-        None,
-    )
+    stringify_with_options(value, "", JsonLimits::default(), Some(&mut replacer), None)
 }
 
 pub fn stringify_with_replacer_and_space_number(
@@ -194,13 +182,7 @@ pub fn try_stringify_with_replacer(
     value: &JsValue,
     mut replacer: impl FnMut(String, JsValue) -> TsonicResult<JsValue>,
 ) -> TsonicResult<Option<String>> {
-    stringify_with_options(
-        value,
-        "",
-        JsonLimits::default(),
-        Some(&mut replacer),
-        None,
-    )
+    stringify_with_options(value, "", JsonLimits::default(), Some(&mut replacer), None)
 }
 
 pub fn try_stringify_with_replacer_and_space_number(
@@ -232,12 +214,12 @@ pub fn try_stringify_with_replacer_and_space_string(
     )
 }
 
-fn stringify_with_options<E>(
+fn stringify_with_options<'a, E>(
     value: &JsValue,
     indent: &str,
     limits: JsonLimits,
-    replacer: Option<&mut dyn FnMut(String, JsValue) -> Result<JsValue, E>>,
-    property_list: Option<&[JsString]>,
+    replacer: Option<&'a mut dyn FnMut(String, JsValue) -> Result<JsValue, E>>,
+    property_list: Option<&'a [JsString]>,
 ) -> Result<Option<String>, E>
 where
     E: From<tsonic_rust_runtime::JsError>,
@@ -246,12 +228,16 @@ where
     if indent.len() > 10 {
         return Err(type_error(
             "JSON indentation must be pre-resolved to at most 10 UTF-16 code units",
-        ).into());
+        )
+        .into());
     }
     let mut serializer = Serializer::new(indent, limits, replacer, property_list);
     if serializer.serialize_property(&JsString::from_utf8(""), value, 0)? {
-        let output = String::from_utf16(&serializer.output)
-            .map_err(|_| E::from(type_error("JSON serialization produced an invalid native Rust string")))?;
+        let output = String::from_utf16(&serializer.output).map_err(|_| {
+            E::from(type_error(
+                "JSON serialization produced an invalid native Rust string",
+            ))
+        })?;
         Ok(Some(output))
     } else {
         Ok(None)
@@ -264,14 +250,11 @@ fn number_indent(space: f64) -> String {
 
 fn string_indent(space: &str) -> JsResult<String> {
     let units = space.encode_utf16().take(10).collect::<Vec<_>>();
-    String::from_utf16(&units).map_err(|_| {
-        type_error("JSON indentation truncated through a Unicode scalar boundary")
-    })
+    String::from_utf16(&units)
+        .map_err(|_| type_error("JSON indentation truncated through a Unicode scalar boundary"))
 }
 
-fn normalize_property_list(
-    values: &JsValue,
-) -> JsResult<Vec<JsString>> {
+fn normalize_property_list(values: &JsValue) -> JsResult<Vec<JsString>> {
     let values = values.as_array().ok_or_else(|| {
         type_error("JSON property-list replacer requires an exact JavaScript array value")
     })?;
@@ -293,6 +276,7 @@ fn normalize_property_list(
 enum ContainerId {
     Object(usize),
     Array(usize),
+    Closed(usize),
     Projection(usize),
 }
 
@@ -338,6 +322,7 @@ where
         depth: usize,
     ) -> Result<bool, E> {
         let projection = match value {
+            JsValue::Closed(value) => Some(ContainerId::Closed(value.identity_key())),
             JsValue::JsonProjection(projection) => {
                 Some(ContainerId::Projection(projection.identity()))
             }
@@ -357,12 +342,9 @@ where
         result
     }
 
-    fn replaced_value(
-        &mut self,
-        key: &JsString,
-        value: &JsValue,
-    ) -> Result<JsValue, E> {
+    fn replaced_value(&mut self, key: &JsString, value: &JsValue) -> Result<JsValue, E> {
         let value = match value {
+            JsValue::Closed(value) => value.project_json().map_err(E::from)?,
             JsValue::JsonProjection(projection) => {
                 let key = key.to_utf8().map_err(|_| {
                     E::from(type_error(
@@ -430,14 +412,19 @@ where
             JsValue::Object(object) => {
                 let id = ContainerId::Object(Rc::as_ptr(object) as usize);
                 self.with_container(id, |serializer| {
-                    let entries = object.try_borrow().map_err(|_| {
-                        type_error("JSON.stringify cannot read a mutably borrowed object")
-                    })?.entries_exact();
+                    let entries = object
+                        .try_borrow()
+                        .map_err(|_| {
+                            type_error("JSON.stringify cannot read a mutably borrowed object")
+                        })?
+                        .entries_exact();
                     serializer.push_char('{')?;
                     let mut first = true;
                     for (key, value) in entries {
-                        if serializer.property_list.is_some_and(|properties|
-                            !properties.contains(&key)) {
+                        if serializer
+                            .property_list
+                            .is_some_and(|properties| !properties.contains(&key))
+                        {
                             continue;
                         }
                         let value = serializer.replaced_value(&key, &value)?;
@@ -455,16 +442,22 @@ where
                         if !serializer.serialize_value(&value, depth + 1)? {
                             return Err(type_error(
                                 "JSON object member unexpectedly had no serialized value",
-                            ).into());
+                            )
+                            .into());
                         }
                     }
                     serializer.container_suffix('}', depth, first)?;
                     Ok(true)
                 })
             }
+            JsValue::Closed(_) => Err(type_error(
+                "A closed extension value returned another unresolved extension value from its JSON projection",
+            )
+            .into()),
             JsValue::JsonProjection(_) => Err(type_error(
                 "A selected toJSON projection returned another unresolved JSON projection",
-            ).into()),
+            )
+            .into()),
         }
     }
 
@@ -483,9 +476,7 @@ where
 
     fn count_node(&mut self, depth: usize) -> Result<(), E> {
         if depth > self.limits.max_depth {
-            return Err(range_error(
-                "JSON nesting exceeds the configured depth limit",
-            ).into());
+            return Err(range_error("JSON nesting exceeds the configured depth limit").into());
         }
         self.nodes = self
             .nodes
@@ -503,9 +494,7 @@ where
             .checked_add(1)
             .ok_or_else(|| range_error("JSON member count overflow"))?;
         if self.members > self.limits.max_members {
-            return Err(range_error(
-                "JSON value exceeds the configured member limit",
-            ).into());
+            return Err(range_error("JSON value exceeds the configured member limit").into());
         }
         Ok(())
     }

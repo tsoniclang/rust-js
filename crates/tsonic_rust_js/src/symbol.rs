@@ -1,7 +1,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
-use std::rc::Rc;
 use std::hash::{Hash, Hasher};
+use std::rc::Rc;
 
 use crate::equality::{hash_identity, JsHash, JsSameValueZero, JsStrictEqual};
 
@@ -59,7 +59,11 @@ impl JsSymbol {
     fn with_description(description: Option<String>) -> Self {
         let id = NEXT_SYMBOL_ID.with(|next| {
             let current = next.get();
-            next.set(current.checked_add(1).expect("JavaScript symbol identity exhausted"));
+            next.set(
+                current
+                    .checked_add(1)
+                    .expect("JavaScript symbol identity exhausted"),
+            );
             current
         });
         Self {

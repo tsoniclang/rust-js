@@ -285,7 +285,8 @@ impl<T: TypedElement> TypedArray<T> {
         if normalized < 0.0 || normalized >= self.view.length as f64 {
             None
         } else {
-            self.get_usize(normalized as usize).map(TypedElement::to_number)
+            self.get_usize(normalized as usize)
+                .map(TypedElement::to_number)
         }
     }
 
@@ -338,7 +339,10 @@ impl<T: TypedElement> TypedArray<T> {
     pub fn index_of(&self, search: f64, from_index: f64) -> f64 {
         let start = normalize_index(from_index, self.view.length);
         (start..self.view.length)
-            .find(|index| self.get_usize(*index).is_some_and(|value| value.to_number() == search))
+            .find(|index| {
+                self.get_usize(*index)
+                    .is_some_and(|value| value.to_number() == search)
+            })
             .map_or(-1.0, |index| index as f64)
     }
 
@@ -511,11 +515,7 @@ impl<T: TypedElement> TypedArray<T> {
         value.write_bytes(&mut self.view.buffer.as_mut_bytes()[start..end]);
     }
 
-    fn set_from_numbers(
-        &self,
-        source: impl IntoIterator<Item = f64>,
-        offset: f64,
-    ) -> JsResult<()> {
+    fn set_from_numbers(&self, source: impl IntoIterator<Item = f64>, offset: f64) -> JsResult<()> {
         let offset = to_index(offset)?;
         let values: Vec<f64> = source.into_iter().collect();
         if offset

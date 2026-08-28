@@ -2,10 +2,10 @@ use std::future::Future;
 use std::pin::pin;
 use std::task::{Context, Poll, Waker};
 
+use tsonic_rust_js::abi::{promise_all_settled, promise_any, promise_race};
 use tsonic_rust_js::{
-    json, promise_all_settled, promise_any, promise_race, ArrayBuffer, IntlCollator,
-    IntlDateTimeFormat, IntlNumberFormat, JsArray, JsObject, JsPromise, JsString, JsSymbol,
-    JsValue, JsWeakMap, JsWeakSet, PromiseSettledResult,
+    json, ArrayBuffer, IntlCollator, IntlDateTimeFormat, IntlNumberFormat, JsArray, JsObject,
+    JsPromise, JsString, JsSymbol, JsValue, JsWeakMap, JsWeakSet, PromiseSettledResult,
 };
 use tsonic_rust_runtime::{Callable, TsonicError};
 
@@ -49,8 +49,14 @@ fn promise_combinators_preserve_settlement_and_finally_behavior() {
     assert_eq!(block_on(promise_any(&values).await_result()).unwrap(), 7);
 
     let settled = block_on(promise_all_settled(&values).await_value());
-    assert!(matches!(settled[0], PromiseSettledResult::Rejected(_)));
-    assert!(matches!(settled[1], PromiseSettledResult::Fulfilled(ref value) if value.value == 7));
+    assert!(matches!(
+        settled.get(0),
+        Some(PromiseSettledResult::Rejected(_))
+    ));
+    assert!(matches!(
+        settled.get(1),
+        Some(PromiseSettledResult::Fulfilled(value)) if value.value == 7
+    ));
 
     let finalizer_runs = std::rc::Rc::new(std::cell::Cell::new(0));
     let count = std::rc::Rc::clone(&finalizer_runs);
@@ -79,7 +85,8 @@ fn intl_is_deterministic_and_rejects_unapproved_locale_data() {
     let number = IntlNumberFormat::with_locale_options("en-US", &number_options).unwrap();
     assert_eq!(number.format(0.125), "12.5%");
 
-    let collator_options = JsValue::object(JsObject::from_pairs([("numeric", JsValue::Bool(true))]));
+    let collator_options =
+        JsValue::object(JsObject::from_pairs([("numeric", JsValue::Bool(true))]));
     let collator = IntlCollator::with_locale_options("en-US", &collator_options).unwrap();
     assert!(collator.compare("item2", "item10") < 0.0);
 }
@@ -91,14 +98,18 @@ fn json_replacer_and_property_list_traverse_only_closed_values() {
         ("drop", JsValue::Number(2.0)),
     ]));
     let replaced = json::stringify_with_replacer(&source, |key, value| {
-        if key == "drop" { JsValue::Undefined } else { value }
+        if key == "drop" {
+            JsValue::Undefined
+        } else {
+            value
+        }
     })
     .unwrap();
     assert_eq!(replaced.as_deref(), Some("{\"keep\":1}"));
 
     let properties = JsValue::array(JsArray::from_dense(vec![string_value("drop")]));
-    let selected = json::stringify_with_property_list_and_space_number(&source, &properties, 2.0)
-        .unwrap();
+    let selected =
+        json::stringify_with_property_list_and_space_number(&source, &properties, 2.0).unwrap();
     assert_eq!(selected.as_deref(), Some("{\n  \"drop\": 2\n}"));
 }
 

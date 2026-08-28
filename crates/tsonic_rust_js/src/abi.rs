@@ -12,21 +12,21 @@ pub use crate::array_buffer::ArrayBuffer;
 pub use crate::boolean::{to_string as boolean_to_string, value_of as boolean_value_of};
 pub use crate::console::{
     assert as console_assert, assert_default as console_assert_default, clear as console_clear,
-    count as console_count, count_label as console_count_label,
-    count_reset as console_count_reset, count_reset_label as console_count_reset_label,
-    debug as console_debug, debug_to as console_debug_to, dir as console_dir,
-    dir_to as console_dir_to, dir_with_options as console_dir_with_options,
-    dirxml as console_dirxml, dirxml_to as console_dirxml_to, error as console_error,
-    error_to as console_error_to, group as console_group,
+    count as console_count, count_label as console_count_label, count_reset as console_count_reset,
+    count_reset_label as console_count_reset_label, debug as console_debug,
+    debug_to as console_debug_to, dir as console_dir, dir_to as console_dir_to,
+    dir_with_options as console_dir_with_options, dirxml as console_dirxml,
+    dirxml_to as console_dirxml_to, error as console_error, error_to as console_error_to,
+    format_args as console_format_args, group as console_group,
     group_collapsed as console_group_collapsed, group_end as console_group_end,
-    format_args as console_format_args, info as console_info, info_to as console_info_to,
-    log as console_log, log_to as console_log_to, table_to as console_table_to,
-    table as console_table, time as console_time, time_end as console_time_end,
-    time_end_label as console_time_end_label, time_label as console_time_label,
-    time_log as console_time_log, time_log_label as console_time_log_label,
-    time_stamp as console_time_stamp, time_stamp_label as console_time_stamp_label,
-    trace as console_trace, trace_to as console_trace_to, warn as console_warn,
-    warn_to as console_warn_to, Console, ConsoleColorMode, ConsoleOptions,
+    info as console_info, info_to as console_info_to, log as console_log, log_to as console_log_to,
+    table as console_table, table_to as console_table_to, time as console_time,
+    time_end as console_time_end, time_end_label as console_time_end_label,
+    time_label as console_time_label, time_log as console_time_log,
+    time_log_label as console_time_log_label, time_stamp as console_time_stamp,
+    time_stamp_label as console_time_stamp_label, trace as console_trace,
+    trace_to as console_trace_to, warn as console_warn, warn_to as console_warn_to, Console,
+    ConsoleColorMode, ConsoleOptions,
 };
 pub use crate::data_view::DataView;
 pub use crate::date::JsDate;
@@ -114,10 +114,6 @@ pub use crate::regexp::{
     RegExpMatchArray, RegExpNamedGroups, RegExpNamedIndices, RegExpStringIterator,
 };
 pub use crate::set::JsSet;
-pub use crate::symbol::JsSymbol;
-pub use crate::timers::{
-    clear_interval, clear_timeout, run_timers, set_interval_callable, set_timeout_callable,
-};
 pub use crate::string::{
     at as js_string_at, char_at as js_string_char_at, char_code_at as js_string_char_code_at,
     code_point_at as js_string_code_point_at, from_char_code as js_string_from_char_code,
@@ -136,19 +132,24 @@ pub use crate::string::{
     try_replace_all_with as js_string_try_replace_all_with,
     try_replace_with as js_string_try_replace_with,
 };
+pub use crate::symbol::JsSymbol;
+pub use crate::timers::{
+    clear_interval, clear_timeout, run_timers, set_interval_callable, set_timeout_callable,
+};
 pub use crate::typed_array::{
     Float32Array, Float64Array, Int16Array, Int32Array, Int8Array, Uint16Array, Uint32Array,
     Uint8Array, Uint8ClampedArray,
 };
 pub use crate::uri::{decode_uri, decode_uri_component, encode_uri, encode_uri_component};
 pub use crate::value::{
-    clone_value as clone_js_value, from_exact_string as js_value_from_exact_string,
-    from_string as js_value_from_string, js_value_from_array,
-    js_value_from_json_projection, js_value_from_optional_pairs, JsValue,
+    clone_value as clone_js_value, from_closed as js_value_from_closed,
+    from_exact_string as js_value_from_exact_string, from_string as js_value_from_string,
+    js_value_from_array, js_value_from_json_projection, js_value_from_optional_pairs,
+    JsClosedValueCarrier, JsValue,
 };
+pub use crate::weak_collections::{JsWeakMap, JsWeakSet};
 pub use crate::web::{
     AbortController, AbortSignal, AddEventListenerOptions, Blob, BlobPart, Body, CustomEvent,
     DomException, Event, EventInit, EventListenerOptions, EventTarget, File, FormData,
     FormDataValue, Headers, ImportMeta, Navigator, Request, Response, Storage,
 };
-pub use crate::weak_collections::{JsWeakMap, JsWeakSet};

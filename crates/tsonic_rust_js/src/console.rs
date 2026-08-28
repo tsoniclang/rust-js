@@ -1,5 +1,5 @@
-use std::collections::BTreeMap;
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::io::{self, Write};
 use std::time::Instant;
 

@@ -104,7 +104,9 @@ impl ObjectIdentityCarrier for ArrayBuffer {
 
 pub(crate) fn to_index(value: f64) -> JsResult<usize> {
     if !value.is_finite() || value < 0.0 || value.trunc() > usize::MAX as f64 {
-        return Err(range_error("ArrayBuffer index is outside the supported range"));
+        return Err(range_error(
+            "ArrayBuffer index is outside the supported range",
+        ));
     }
     Ok(value.trunc() as usize)
 }
