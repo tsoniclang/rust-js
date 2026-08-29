@@ -84,6 +84,14 @@ impl<K, V> JsMap<K, V> {
         map
     }
 
+    pub fn from_array(entries: &crate::array::JsArray<(K, V)>) -> Self
+    where
+        K: Clone + JsHash + JsSameValueZero,
+        V: Clone,
+    {
+        Self::from_entries(entries.iter_values())
+    }
+
     pub fn ptr_eq(&self, other: &Self) -> bool {
         Rc::ptr_eq(&self.state, &other.state)
     }

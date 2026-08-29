@@ -102,6 +102,18 @@ fn map_iterable_constructor_and_for_each_are_closed() {
 }
 
 #[test]
+fn map_can_be_created_from_a_javascript_entry_array() {
+    let entries = tsonic_rust_js::JsArray::from_dense(vec![
+        ("first".to_string(), 1),
+        ("second".to_string(), 2),
+    ]);
+    let map = JsMap::from_array(&entries);
+
+    assert_eq!(map.get("first"), Some(1));
+    assert_eq!(map.get("second"), Some(2));
+}
+
+#[test]
 fn map_aliases_share_state_and_iteration_observes_live_mutation() {
     let map = JsMap::from_entries([(1, "a")]);
     let alias = map.clone();

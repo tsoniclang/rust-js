@@ -13,6 +13,7 @@ use crate::equality::{
 use crate::errors::JsResult;
 use crate::object::JsObject;
 use crate::{JsString, JsSymbol};
+use tsonic_rust_runtime::{Null, Undefined};
 
 pub trait JsClosedValueCarrier: fmt::Debug {
     fn identity_key(&self) -> usize;
@@ -414,6 +415,12 @@ impl From<i32> for JsValue {
     }
 }
 
+impl From<Null> for JsValue {
+    fn from(_: Null) -> Self {
+        Self::Null
+    }
+}
+
 impl From<String> for JsValue {
     fn from(value: String) -> Self {
         Self::String(JsString::from_utf8(&value))
@@ -429,6 +436,12 @@ impl From<JsString> for JsValue {
 impl From<JsSymbol> for JsValue {
     fn from(value: JsSymbol) -> Self {
         Self::Symbol(value)
+    }
+}
+
+impl From<Undefined> for JsValue {
+    fn from(_: Undefined) -> Self {
+        Self::Undefined
     }
 }
 

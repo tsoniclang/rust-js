@@ -60,4 +60,35 @@ fn typed_array_set_accepts_exact_js_array_sources() {
         .set_from_array(&JsArray::from_dense(vec![1.0, 2.0, 3.0]), 3.0)
         .is_err());
     assert!(values.set_from_array(&source, f64::INFINITY).is_err());
+
+    values
+        .set_from_array_default(&JsArray::from_dense(vec![7.0, 6.0]))
+        .unwrap();
+    values.set_from_fixed_array(&[5.0, 4.0], 1.0).unwrap();
+    let typed_source = Int16Array::from_vec(vec![3.0, 2.0]).unwrap();
+    values.set_from_typed_array(&typed_source, 2.0).unwrap();
+    assert_eq!(values.get_number(0.0), Some(7.0));
+    assert_eq!(values.get_number(1.0), Some(5.0));
+    assert_eq!(values.get_number(2.0), Some(3.0));
+    assert_eq!(values.get_number(3.0), Some(2.0));
+}
+
+#[test]
+fn typed_array_view_constructors_subarrays_and_sorts_are_closed() {
+    let buffer = tsonic_rust_js::ArrayBuffer::new(8.0).unwrap();
+    let offset = Uint8Array::from_buffer_offset(buffer.clone(), 2.0).unwrap();
+    assert_eq!(offset.byte_offset(), 2.0);
+    assert_eq!(offset.bytes_per_element(), 1.0);
+    let bounded = Uint8Array::from_buffer_length(buffer, 2.0, 4.0).unwrap();
+    bounded
+        .set_from_fixed_array(&[4.0, 1.0, 3.0, 2.0], 0.0)
+        .unwrap();
+
+    assert_eq!(bounded.subarray_all().length(), 4.0);
+    assert_eq!(bounded.subarray_from(1.0).length(), 3.0);
+    assert_eq!(bounded.subarray_to(1.0, 3.0).length(), 2.0);
+    bounded.sort_default();
+    assert_eq!(bounded.get_number(0.0), Some(1.0));
+    bounded.try_sort_by(|left, right| Ok(right - left)).unwrap();
+    assert_eq!(bounded.get_number(0.0), Some(4.0));
 }

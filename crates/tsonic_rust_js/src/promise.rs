@@ -140,26 +140,17 @@ impl<'a, T: Clone + 'a> JsPromise<'a, T> {
         self.finally_callback(None)
     }
 
-    pub fn finally(&self, callback: Callable<(), ()>) -> Self {
+    pub fn finally(&self, callback: Callable<(), TsonicResult<()>>) -> Self {
         self.finally_callback(Some(callback))
     }
 
-    fn finally_callback(&self, callback: Option<Callable<(), ()>>) -> Self {
+    fn finally_callback(&self, callback: Option<Callable<(), TsonicResult<()>>>) -> Self {
         let source = self.clone();
         Self::from_fallible_factory(move || async move {
             let result = source.await_result().await;
             if let Some(callback) = callback {
-                callback.call(());
+                callback.call(())?;
             }
-            result
-        })
-    }
-
-    pub fn try_finally(&self, callback: Callable<(), TsonicResult<()>>) -> Self {
-        let source = self.clone();
-        Self::from_fallible_factory(move || async move {
-            let result = source.await_result().await;
-            callback.call(())?;
             result
         })
     }
