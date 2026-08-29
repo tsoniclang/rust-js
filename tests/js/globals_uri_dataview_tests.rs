@@ -74,36 +74,52 @@ fn js_error_subtypes_and_string_raw_are_available() {
 
 #[test]
 fn dataview_reads_and_writes_endian_values() {
-    let buffer = abi::ArrayBuffer::new(16);
-    let mut view = DataView::new(buffer.clone());
-    view.set_uint8(0, 255).unwrap();
-    assert_eq!(view.get_uint8(0).unwrap(), 255);
-    view.set_int32(1, 0x01020304, false).unwrap();
-    assert_eq!(view.get_int32(1, false).unwrap(), 0x01020304);
-    assert_eq!(view.get_int32(1, true).unwrap(), 0x04030201);
-    view.set_float64(8, 1.5, true).unwrap();
-    assert_eq!(view.get_float64(8, true).unwrap(), 1.5);
-    assert!(view.get_uint8(100).is_err());
-    assert!(view.get_float64(usize::MAX, true).is_err());
+    let buffer = abi::ArrayBuffer::new(16.0).unwrap();
+    let view = DataView::from_buffer(buffer.clone()).unwrap();
+    view.set_uint8(0.0, 255.0).unwrap();
+    assert_eq!(view.get_uint8(0.0).unwrap(), 255.0);
+    view.set_int32(1.0, 0x01020304 as f64, false).unwrap();
+    assert_eq!(view.get_int32(1.0, false).unwrap(), 0x01020304 as f64);
+    assert_eq!(view.get_int32(1.0, true).unwrap(), 0x04030201 as f64);
+    view.set_float64(8.0, 1.5, true).unwrap();
+    assert_eq!(view.get_float64(8.0, true).unwrap(), 1.5);
+    assert!(view.get_uint8(100.0).is_err());
+    assert!(view.get_float64(f64::MAX, true).is_err());
     assert_eq!(buffer.as_bytes()[0], 255);
+
+    view.set_int8(0.0, -2.0).unwrap();
+    assert_eq!(view.get_int8(0.0).unwrap(), -2.0);
+    view.set_int16(0.0, -258.0, true).unwrap();
+    assert_eq!(view.get_int16(0.0, true).unwrap(), -258.0);
+    view.set_uint16(2.0, 0x1234 as f64, false).unwrap();
+    assert_eq!(view.get_uint16(2.0, false).unwrap(), 0x1234 as f64);
+    view.set_uint32(4.0, 0x01020304 as f64, true).unwrap();
+    assert_eq!(view.get_uint32(4.0, true).unwrap(), 0x01020304 as f64);
+    view.set_float32(8.0, 1.25, false).unwrap();
+    assert_eq!(view.get_float32(8.0, false).unwrap(), 1.25);
+
+    let offset = DataView::from_buffer_offset(buffer.clone(), 4.0).unwrap();
+    assert_eq!(offset.byte_offset(), 4.0);
+    let bounded = DataView::from_buffer_length(buffer, 4.0, 4.0).unwrap();
+    assert_eq!(bounded.byte_length(), 4.0);
 }
 
 #[test]
 fn dataview_clone_preserves_identity_while_new_views_only_share_storage() {
-    let buffer = ArrayBuffer::new(2);
-    let mut first = DataView::new(buffer.clone());
+    let buffer = ArrayBuffer::new(2.0).unwrap();
+    let first = DataView::from_buffer(buffer.clone()).unwrap();
     let alias = first.clone();
-    let second = DataView::new(buffer);
+    let second = DataView::from_buffer(buffer).unwrap();
 
     assert_eq!(first, alias);
     assert_ne!(first, second);
-    first.set_uint8(0, 7).unwrap();
-    assert_eq!(second.get_uint8(0).unwrap(), 7);
+    first.set_uint8(0.0, 7.0).unwrap();
+    assert_eq!(second.get_uint8(0.0).unwrap(), 7.0);
 }
 
 #[test]
 fn array_buffer_mutable_bytes_are_visible_to_views() {
-    let buffer = ArrayBuffer::new(3);
+    let buffer = ArrayBuffer::new(3.0).unwrap();
     buffer.as_mut_bytes().copy_from_slice(&[1, 2, 3]);
     assert_eq!(&*buffer.as_bytes(), &[1, 2, 3]);
 }

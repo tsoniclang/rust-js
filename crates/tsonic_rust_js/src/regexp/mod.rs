@@ -5,7 +5,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use regress::{Flags, Match, Regex};
-use tsonic_rust_runtime::Undefined;
+use tsonic_rust_runtime::{ObjectIdentity, ObjectIdentityCarrier, Undefined};
 
 use crate::array::JsArray;
 use crate::equality::{hash_identity, JsHash, JsSameValueZero, JsStrictEqual};
@@ -501,6 +501,7 @@ thread_local! {
 struct JsRegExpState {
     compiled: Arc<CompiledRegExp>,
     last_index: Cell<f64>,
+    identity: ObjectIdentity,
 }
 
 #[derive(Debug, Clone)]
@@ -574,6 +575,7 @@ impl JsRegExp {
             state: Rc::new(JsRegExpState {
                 compiled,
                 last_index: Cell::new(last_index),
+                identity: ObjectIdentity::new(),
             }),
         }
     }
@@ -1003,6 +1005,12 @@ impl JsRegExp {
             values: array_from_optional(values),
             end,
         }
+    }
+}
+
+impl ObjectIdentityCarrier for JsRegExp {
+    fn object_identity(&self) -> &ObjectIdentity {
+        &self.state.identity
     }
 }
 

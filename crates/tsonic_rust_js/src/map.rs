@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use tsonic_rust_runtime::TsonicResult;
+use tsonic_rust_runtime::{ObjectIdentity, ObjectIdentityCarrier, TsonicResult};
 
 use crate::equality::{hash_identity, JsHash, JsSameValueZero, JsStrictEqual};
 
@@ -23,12 +23,14 @@ struct JsMapState<K, V> {
 #[derive(Debug)]
 pub struct JsMap<K, V> {
     state: Rc<RefCell<JsMapState<K, V>>>,
+    identity: ObjectIdentity,
 }
 
 impl<K, V> Clone for JsMap<K, V> {
     fn clone(&self) -> Self {
         Self {
             state: Rc::clone(&self.state),
+            identity: self.identity.clone(),
         }
     }
 }
@@ -67,6 +69,7 @@ impl<K, V> JsMap<K, V> {
                 indices_by_hash: HashMap::new(),
                 size: 0,
             })),
+            identity: ObjectIdentity::new(),
         }
     }
 
@@ -79,6 +82,14 @@ impl<K, V> JsMap<K, V> {
             map.set(key, value);
         }
         map
+    }
+
+    pub fn from_array(entries: &crate::array::JsArray<(K, V)>) -> Self
+    where
+        K: Clone + JsHash + JsSameValueZero,
+        V: Clone,
+    {
+        Self::from_entries(entries.iter_values())
     }
 
     pub fn ptr_eq(&self, other: &Self) -> bool {
@@ -417,6 +428,12 @@ fn remove_hash_index(indices_by_hash: &mut HashMap<u64, Vec<usize>>, hash: u64, 
     };
     if remove_bucket {
         indices_by_hash.remove(&hash);
+    }
+}
+
+impl<K, V> ObjectIdentityCarrier for JsMap<K, V> {
+    fn object_identity(&self) -> &ObjectIdentity {
+        &self.identity
     }
 }
 

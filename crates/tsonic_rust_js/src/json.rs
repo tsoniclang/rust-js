@@ -7,6 +7,7 @@ use crate::errors::{range_error, syntax_error, type_error, JsResult};
 use crate::object::JsObject;
 use crate::value::JsValue;
 use crate::JsString;
+use tsonic_rust_runtime::{TsonicError, TsonicResult};
 
 pub const JSON_MAX_INPUT_BYTES: usize = 16 * 1024 * 1024;
 pub const JSON_MAX_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
@@ -55,7 +56,13 @@ pub fn parse_with_limits(text: &str, limits: JsonLimits) -> JsResult<JsValue> {
 }
 
 pub fn stringify(value: &JsValue) -> JsResult<Option<String>> {
-    stringify_with_indent_and_limits(value, "", JsonLimits::default())
+    stringify_with_options::<tsonic_rust_runtime::JsError>(
+        value,
+        "",
+        JsonLimits::default(),
+        None,
+        None,
+    )
 }
 
 pub fn stringify_pretty(value: &JsValue) -> JsResult<Option<String>> {
@@ -75,29 +82,205 @@ pub fn stringify_with_indent_and_limits(
     indent: &str,
     limits: JsonLimits,
 ) -> JsResult<Option<String>> {
+    stringify_with_options::<tsonic_rust_runtime::JsError>(value, indent, limits, None, None)
+}
+
+pub fn stringify_with_space_number(value: &JsValue, space: f64) -> JsResult<Option<String>> {
+    stringify_with_indent(value, &number_indent(space))
+}
+
+pub fn stringify_with_space_string(value: &JsValue, space: &str) -> JsResult<Option<String>> {
+    let indent = string_indent(space)?;
+    stringify_with_indent(value, &indent)
+}
+
+pub fn stringify_with_property_list(
+    value: &JsValue,
+    property_list: &JsValue,
+) -> JsResult<Option<String>> {
+    let properties = normalize_property_list(property_list)?;
+    stringify_with_options::<tsonic_rust_runtime::JsError>(
+        value,
+        "",
+        JsonLimits::default(),
+        None,
+        Some(&properties),
+    )
+}
+
+pub fn stringify_with_property_list_and_space_number(
+    value: &JsValue,
+    property_list: &JsValue,
+    space: f64,
+) -> JsResult<Option<String>> {
+    let properties = normalize_property_list(property_list)?;
+    stringify_with_options::<tsonic_rust_runtime::JsError>(
+        value,
+        &number_indent(space),
+        JsonLimits::default(),
+        None,
+        Some(&properties),
+    )
+}
+
+pub fn stringify_with_property_list_and_space_string(
+    value: &JsValue,
+    property_list: &JsValue,
+    space: &str,
+) -> JsResult<Option<String>> {
+    let properties = normalize_property_list(property_list)?;
+    let indent = string_indent(space)?;
+    stringify_with_options::<tsonic_rust_runtime::JsError>(
+        value,
+        &indent,
+        JsonLimits::default(),
+        None,
+        Some(&properties),
+    )
+}
+
+pub fn stringify_with_replacer(
+    value: &JsValue,
+    mut replacer: impl FnMut(String, JsValue) -> JsValue,
+) -> JsResult<Option<String>> {
+    let mut replacer = |key: String, value: JsValue| Ok(replacer(key, value));
+    stringify_with_options(value, "", JsonLimits::default(), Some(&mut replacer), None)
+}
+
+pub fn stringify_with_replacer_and_space_number(
+    value: &JsValue,
+    mut replacer: impl FnMut(String, JsValue) -> JsValue,
+    space: f64,
+) -> JsResult<Option<String>> {
+    let mut replacer = |key: String, value: JsValue| Ok(replacer(key, value));
+    stringify_with_options(
+        value,
+        &number_indent(space),
+        JsonLimits::default(),
+        Some(&mut replacer),
+        None,
+    )
+}
+
+pub fn stringify_with_replacer_and_space_string(
+    value: &JsValue,
+    mut replacer: impl FnMut(String, JsValue) -> JsValue,
+    space: &str,
+) -> JsResult<Option<String>> {
+    let indent = string_indent(space)?;
+    let mut replacer = |key: String, value: JsValue| Ok(replacer(key, value));
+    stringify_with_options(
+        value,
+        &indent,
+        JsonLimits::default(),
+        Some(&mut replacer),
+        None,
+    )
+}
+
+pub fn try_stringify_with_replacer(
+    value: &JsValue,
+    mut replacer: impl FnMut(String, JsValue) -> TsonicResult<JsValue>,
+) -> TsonicResult<Option<String>> {
+    stringify_with_options(value, "", JsonLimits::default(), Some(&mut replacer), None)
+}
+
+pub fn try_stringify_with_replacer_and_space_number(
+    value: &JsValue,
+    mut replacer: impl FnMut(String, JsValue) -> TsonicResult<JsValue>,
+    space: f64,
+) -> TsonicResult<Option<String>> {
+    stringify_with_options(
+        value,
+        &number_indent(space),
+        JsonLimits::default(),
+        Some(&mut replacer),
+        None,
+    )
+}
+
+pub fn try_stringify_with_replacer_and_space_string(
+    value: &JsValue,
+    mut replacer: impl FnMut(String, JsValue) -> TsonicResult<JsValue>,
+    space: &str,
+) -> TsonicResult<Option<String>> {
+    let indent = string_indent(space).map_err(TsonicError::from)?;
+    stringify_with_options(
+        value,
+        &indent,
+        JsonLimits::default(),
+        Some(&mut replacer),
+        None,
+    )
+}
+
+fn stringify_with_options<'a, E>(
+    value: &JsValue,
+    indent: &str,
+    limits: JsonLimits,
+    replacer: Option<&'a mut dyn FnMut(String, JsValue) -> Result<JsValue, E>>,
+    property_list: Option<&'a [JsString]>,
+) -> Result<Option<String>, E>
+where
+    E: From<tsonic_rust_runtime::JsError>,
+{
     let indent = JsString::from_utf8(indent);
     if indent.len() > 10 {
         return Err(type_error(
             "JSON indentation must be pre-resolved to at most 10 UTF-16 code units",
-        ));
+        )
+        .into());
     }
-    let mut serializer = Serializer::new(indent, limits);
-    if serializer.serialize_value(value, 0)? {
-        let output = String::from_utf16(&serializer.output)
-            .map_err(|_| type_error("JSON serialization produced an invalid native Rust string"))?;
+    let mut serializer = Serializer::new(indent, limits, replacer, property_list);
+    if serializer.serialize_property(&JsString::from_utf8(""), value, 0)? {
+        let output = String::from_utf16(&serializer.output).map_err(|_| {
+            E::from(type_error(
+                "JSON serialization produced an invalid native Rust string",
+            ))
+        })?;
         Ok(Some(output))
     } else {
         Ok(None)
     }
 }
 
+fn number_indent(space: f64) -> String {
+    " ".repeat(space.trunc().clamp(0.0, 10.0) as usize)
+}
+
+fn string_indent(space: &str) -> JsResult<String> {
+    let units = space.encode_utf16().take(10).collect::<Vec<_>>();
+    String::from_utf16(&units)
+        .map_err(|_| type_error("JSON indentation truncated through a Unicode scalar boundary"))
+}
+
+fn normalize_property_list(values: &JsValue) -> JsResult<Vec<JsString>> {
+    let values = values.as_array().ok_or_else(|| {
+        type_error("JSON property-list replacer requires an exact JavaScript array value")
+    })?;
+    let mut properties = Vec::new();
+    for value in values.values().into_iter().flatten() {
+        let key = match value {
+            JsValue::String(value) => value,
+            JsValue::Number(value) => JsString::from_utf8(&crate::number::to_string(value)),
+            _ => continue,
+        };
+        if !properties.contains(&key) {
+            properties.push(key);
+        }
+    }
+    Ok(properties)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum ContainerId {
     Object(usize),
     Array(usize),
+    Closed(usize),
+    Projection(usize),
 }
 
-struct Serializer {
+struct Serializer<'a, E> {
     indent: JsString,
     limits: JsonLimits,
     output: Vec<u16>,
@@ -105,10 +288,20 @@ struct Serializer {
     active: HashSet<ContainerId>,
     nodes: usize,
     members: usize,
+    replacer: Option<&'a mut dyn FnMut(String, JsValue) -> Result<JsValue, E>>,
+    property_list: Option<&'a [JsString]>,
 }
 
-impl Serializer {
-    fn new(indent: JsString, limits: JsonLimits) -> Self {
+impl<'a, E> Serializer<'a, E>
+where
+    E: From<tsonic_rust_runtime::JsError>,
+{
+    fn new(
+        indent: JsString,
+        limits: JsonLimits,
+        replacer: Option<&'a mut dyn FnMut(String, JsValue) -> Result<JsValue, E>>,
+        property_list: Option<&'a [JsString]>,
+    ) -> Self {
         Self {
             indent,
             limits,
@@ -117,13 +310,68 @@ impl Serializer {
             active: HashSet::new(),
             nodes: 0,
             members: 0,
+            replacer,
+            property_list,
         }
     }
 
-    fn serialize_value(&mut self, value: &JsValue, depth: usize) -> JsResult<bool> {
+    fn serialize_property(
+        &mut self,
+        key: &JsString,
+        value: &JsValue,
+        depth: usize,
+    ) -> Result<bool, E> {
+        let projection = match value {
+            JsValue::Closed(value) => Some(ContainerId::Closed(value.identity_key())),
+            JsValue::JsonProjection(projection) => {
+                Some(ContainerId::Projection(projection.identity()))
+            }
+            _ => None,
+        };
+        if let Some(id) = projection {
+            if !self.active.insert(id) {
+                return Err(type_error("Converting circular structure to JSON").into());
+            }
+        }
+        let result = self
+            .replaced_value(key, value)
+            .and_then(|value| self.serialize_value(&value, depth));
+        if let Some(id) = projection {
+            self.active.remove(&id);
+        }
+        result
+    }
+
+    fn replaced_value(&mut self, key: &JsString, value: &JsValue) -> Result<JsValue, E> {
+        let value = match value {
+            JsValue::Closed(value) => value.project_json().map_err(E::from)?,
+            JsValue::JsonProjection(projection) => {
+                let key = key.to_utf8().map_err(|_| {
+                    E::from(type_error(
+                        "JSON projection key cannot be represented by the native Rust string carrier",
+                    ))
+                })?;
+                projection.project(key).map_err(E::from)?
+            }
+            _ => value.clone(),
+        };
+        Ok(match self.replacer.as_mut() {
+            Some(replacer) => {
+                let key = key.to_utf8().map_err(|_| {
+                    E::from(type_error(
+                        "JSON replacer key cannot be represented by the native Rust string carrier",
+                    ))
+                })?;
+                replacer(key, value)?
+            }
+            None => value,
+        })
+    }
+
+    fn serialize_value(&mut self, value: &JsValue, depth: usize) -> Result<bool, E> {
         self.count_node(depth)?;
         match value {
-            JsValue::Undefined => Ok(false),
+            JsValue::Undefined | JsValue::Symbol(_) => Ok(false),
             JsValue::Null => {
                 self.push_str("null")?;
                 Ok(true)
@@ -145,12 +393,16 @@ impl Serializer {
                 self.with_container(id, |serializer| {
                     serializer.push_char('[')?;
                     let mut first = true;
-                    for value in values.values() {
+                    for (index, value) in values.values().into_iter().enumerate() {
                         serializer.count_member()?;
                         serializer.member_prefix(depth, &mut first)?;
-                        match value {
-                            Some(value) if serializer.serialize_value(&value, depth + 1)? => {}
-                            _ => serializer.push_str("null")?,
+                        let value = value.unwrap_or(JsValue::Undefined);
+                        if !serializer.serialize_property(
+                            &JsString::from_utf8(&index.to_string()),
+                            &value,
+                            depth + 1,
+                        )? {
+                            serializer.push_str("null")?;
                         }
                     }
                     serializer.container_suffix(']', depth, first)?;
@@ -160,12 +412,22 @@ impl Serializer {
             JsValue::Object(object) => {
                 let id = ContainerId::Object(Rc::as_ptr(object) as usize);
                 self.with_container(id, |serializer| {
-                    let object = object.try_borrow().map_err(|_| {
-                        type_error("JSON.stringify cannot read a mutably borrowed object")
-                    })?;
+                    let entries = object
+                        .try_borrow()
+                        .map_err(|_| {
+                            type_error("JSON.stringify cannot read a mutably borrowed object")
+                        })?
+                        .entries_exact();
                     serializer.push_char('{')?;
                     let mut first = true;
-                    for (key, value) in object.entries_exact() {
+                    for (key, value) in entries {
+                        if serializer
+                            .property_list
+                            .is_some_and(|properties| !properties.contains(&key))
+                        {
+                            continue;
+                        }
+                        let value = serializer.replaced_value(&key, &value)?;
                         if matches!(value, JsValue::Undefined) {
                             continue;
                         }
@@ -180,59 +442,64 @@ impl Serializer {
                         if !serializer.serialize_value(&value, depth + 1)? {
                             return Err(type_error(
                                 "JSON object member unexpectedly had no serialized value",
-                            ));
+                            )
+                            .into());
                         }
                     }
                     serializer.container_suffix('}', depth, first)?;
                     Ok(true)
                 })
             }
+            JsValue::Closed(_) => Err(type_error(
+                "A closed extension value returned another unresolved extension value from its JSON projection",
+            )
+            .into()),
+            JsValue::JsonProjection(_) => Err(type_error(
+                "A selected toJSON projection returned another unresolved JSON projection",
+            )
+            .into()),
         }
     }
 
     fn with_container(
         &mut self,
         id: ContainerId,
-        serialize: impl FnOnce(&mut Self) -> JsResult<bool>,
-    ) -> JsResult<bool> {
+        serialize: impl FnOnce(&mut Self) -> Result<bool, E>,
+    ) -> Result<bool, E> {
         if !self.active.insert(id) {
-            return Err(type_error("Converting circular structure to JSON"));
+            return Err(type_error("Converting circular structure to JSON").into());
         }
         let result = serialize(self);
         self.active.remove(&id);
         result
     }
 
-    fn count_node(&mut self, depth: usize) -> JsResult<()> {
+    fn count_node(&mut self, depth: usize) -> Result<(), E> {
         if depth > self.limits.max_depth {
-            return Err(range_error(
-                "JSON nesting exceeds the configured depth limit",
-            ));
+            return Err(range_error("JSON nesting exceeds the configured depth limit").into());
         }
         self.nodes = self
             .nodes
             .checked_add(1)
             .ok_or_else(|| range_error("JSON node count overflow"))?;
         if self.nodes > self.limits.max_nodes {
-            return Err(range_error("JSON value exceeds the configured node limit"));
+            return Err(range_error("JSON value exceeds the configured node limit").into());
         }
         Ok(())
     }
 
-    fn count_member(&mut self) -> JsResult<()> {
+    fn count_member(&mut self) -> Result<(), E> {
         self.members = self
             .members
             .checked_add(1)
             .ok_or_else(|| range_error("JSON member count overflow"))?;
         if self.members > self.limits.max_members {
-            return Err(range_error(
-                "JSON value exceeds the configured member limit",
-            ));
+            return Err(range_error("JSON value exceeds the configured member limit").into());
         }
         Ok(())
     }
 
-    fn member_prefix(&mut self, depth: usize, first: &mut bool) -> JsResult<()> {
+    fn member_prefix(&mut self, depth: usize, first: &mut bool) -> Result<(), E> {
         if !*first {
             self.push_char(',')?;
         }
@@ -244,7 +511,7 @@ impl Serializer {
         Ok(())
     }
 
-    fn container_suffix(&mut self, close: char, depth: usize, empty: bool) -> JsResult<()> {
+    fn container_suffix(&mut self, close: char, depth: usize, empty: bool) -> Result<(), E> {
         if !empty && !self.indent.is_empty() {
             self.push_char('\n')?;
             self.push_indent(depth)?;
@@ -252,7 +519,7 @@ impl Serializer {
         self.push_char(close)
     }
 
-    fn push_indent(&mut self, depth: usize) -> JsResult<()> {
+    fn push_indent(&mut self, depth: usize) -> Result<(), E> {
         let indent = self.indent.clone();
         for _ in 0..depth {
             self.push_js_string(&indent)?;
@@ -260,7 +527,7 @@ impl Serializer {
         Ok(())
     }
 
-    fn push_quoted(&mut self, value: &JsString) -> JsResult<()> {
+    fn push_quoted(&mut self, value: &JsString) -> Result<(), E> {
         self.push_char('"')?;
         let units = value.units();
         let mut index = 0;
@@ -287,20 +554,20 @@ impl Serializer {
         self.push_char('"')
     }
 
-    fn push_char(&mut self, value: char) -> JsResult<()> {
+    fn push_char(&mut self, value: char) -> Result<(), E> {
         let mut encoded = [0_u16; 2];
         self.push_units(value.encode_utf16(&mut encoded))
     }
 
-    fn push_str(&mut self, value: &str) -> JsResult<()> {
+    fn push_str(&mut self, value: &str) -> Result<(), E> {
         self.push_units(&value.encode_utf16().collect::<Vec<_>>())
     }
 
-    fn push_js_string(&mut self, value: &JsString) -> JsResult<()> {
+    fn push_js_string(&mut self, value: &JsString) -> Result<(), E> {
         self.push_units(value.units())
     }
 
-    fn push_units(&mut self, value: &[u16]) -> JsResult<()> {
+    fn push_units(&mut self, value: &[u16]) -> Result<(), E> {
         let added_bytes = utf8_length(value)
             .ok_or_else(|| type_error("JSON serialization attempted to publish invalid UTF-16"))?;
         let next_bytes = self
@@ -308,7 +575,7 @@ impl Serializer {
             .checked_add(added_bytes)
             .ok_or_else(|| range_error("JSON output length overflow"))?;
         if next_bytes > self.limits.max_output_bytes {
-            return Err(range_error("JSON output exceeds the configured byte limit"));
+            return Err(range_error("JSON output exceeds the configured byte limit").into());
         }
         self.output
             .try_reserve(value.len())

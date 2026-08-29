@@ -1,8 +1,13 @@
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::io::{self, Write};
 use std::time::Instant;
 
 use crate::value::JsValue;
+
+thread_local! {
+    static GLOBAL_CONSOLE: RefCell<Console> = RefCell::new(Console::new());
+}
 
 #[derive(Debug)]
 pub struct Console {
@@ -265,6 +270,126 @@ pub fn info(args: &[JsValue]) {
 
 pub fn debug(args: &[JsValue]) {
     log(args);
+}
+
+pub fn assert(condition: bool, args: &[JsValue]) {
+    let mut out = io::stderr();
+    GLOBAL_CONSOLE.with_borrow(|console| {
+        let _ = console.assert_to(&mut out, condition, args);
+    });
+}
+
+pub fn assert_default() {
+    assert(false, &[]);
+}
+
+pub fn clear() {
+    let mut out = io::stdout();
+    GLOBAL_CONSOLE.with_borrow(|console| {
+        let _ = console.clear_to(&mut out);
+    });
+}
+
+pub fn count() {
+    count_label("default");
+}
+
+pub fn count_label(label: &str) {
+    let mut out = io::stdout();
+    GLOBAL_CONSOLE.with_borrow_mut(|console| {
+        let _ = console.count_to(&mut out, Some(label));
+    });
+}
+
+pub fn count_reset() {
+    count_reset_label("default");
+}
+
+pub fn count_reset_label(label: &str) {
+    GLOBAL_CONSOLE.with_borrow_mut(|console| console.count_reset(Some(label)));
+}
+
+pub fn dir(item: &JsValue) {
+    let mut out = io::stdout();
+    let _ = dir_to(&mut out, item);
+}
+
+pub fn dir_with_options(item: &JsValue, _options: &JsValue) {
+    dir(item);
+}
+
+pub fn dirxml(args: &[JsValue]) {
+    let mut out = io::stdout();
+    let _ = dirxml_to(&mut out, args);
+}
+
+pub fn group(args: &[JsValue]) {
+    let mut out = io::stdout();
+    GLOBAL_CONSOLE.with_borrow_mut(|console| {
+        let _ = console.group_to(&mut out, args);
+    });
+}
+
+pub fn group_collapsed(args: &[JsValue]) {
+    let mut out = io::stdout();
+    GLOBAL_CONSOLE.with_borrow_mut(|console| {
+        let _ = console.group_collapsed_to(&mut out, args);
+    });
+}
+
+pub fn group_end() {
+    GLOBAL_CONSOLE.with_borrow_mut(Console::group_end);
+}
+
+pub fn table(rows: &[JsValue]) {
+    let mut out = io::stdout();
+    let _ = table_to(&mut out, rows);
+}
+
+pub fn time() {
+    time_label("default");
+}
+
+pub fn time_label(label: &str) {
+    GLOBAL_CONSOLE.with_borrow_mut(|console| console.time(Some(label)));
+}
+
+pub fn time_log(args: &[JsValue]) {
+    time_log_label("default", args);
+}
+
+pub fn time_log_label(label: &str, args: &[JsValue]) {
+    let mut out = io::stdout();
+    GLOBAL_CONSOLE.with_borrow(|console| {
+        let _ = console.time_log_to(&mut out, Some(label), args);
+    });
+}
+
+pub fn time_end() {
+    time_end_label("default");
+}
+
+pub fn time_end_label(label: &str) {
+    let mut out = io::stdout();
+    GLOBAL_CONSOLE.with_borrow_mut(|console| {
+        let _ = console.time_end_to(&mut out, Some(label));
+    });
+}
+
+pub fn time_stamp() {
+    time_stamp_label("default");
+}
+
+pub fn time_stamp_label(label: &str) {
+    let mut out = io::stdout();
+    GLOBAL_CONSOLE.with_borrow(|console| {
+        let _ = console.time_stamp_to(&mut out, Some(label));
+    });
+}
+
+pub fn trace(args: &[JsValue]) {
+    let mut out = io::stderr();
+    let _ = trace_to(&mut out, args);
 }
 
 pub fn log_to(writer: &mut impl Write, args: &[JsValue]) -> io::Result<()> {

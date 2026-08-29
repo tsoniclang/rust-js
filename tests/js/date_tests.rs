@@ -17,7 +17,7 @@ fn date_epoch_and_iso_roundtrip() {
     assert_eq!(date.get_time(), 0.0);
     assert_eq!(date.value_of(), 0.0);
     assert_eq!(date.to_iso_string().unwrap(), "1970-01-01T00:00:00.000Z");
-    assert_eq!(date.to_json(), "1970-01-01T00:00:00.000Z");
+    assert_eq!(date.to_json(), Some("1970-01-01T00:00:00.000Z".to_string()));
     assert_eq!(JsDate::parse("1970-01-01T00:00:00.000Z"), 0.0);
 }
 
@@ -154,10 +154,10 @@ fn date_utc_matches_js_overflow_and_clipping() {
 
 #[test]
 fn date_to_json_serializes_invalid_dates_as_null() {
-    assert_eq!(JsDate::from_millis(f64::NAN).to_json(), "null");
+    assert_eq!(JsDate::from_millis(f64::NAN).to_json(), None);
     assert_eq!(
         JsDate::from_millis(86_400_000.0).to_json(),
-        "1970-01-02T00:00:00.000Z"
+        Some("1970-01-02T00:00:00.000Z".to_string())
     );
 }
 

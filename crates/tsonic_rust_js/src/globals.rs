@@ -31,7 +31,11 @@ pub fn to_number(value: &JsValue) -> f64 {
                 trimmed.parse::<f64>().unwrap_or(f64::NAN)
             }
         }
-        JsValue::Object(_) | JsValue::Array(_) => f64::NAN,
+        JsValue::Symbol(_)
+        | JsValue::Object(_)
+        | JsValue::Array(_)
+        | JsValue::Closed(_)
+        | JsValue::JsonProjection(_) => f64::NAN,
     }
 }
 
