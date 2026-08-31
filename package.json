@@ -7,7 +7,6 @@
     "crates",
     "tests",
     "tools",
-    "docs",
     "README.md",
     "LICENSE"
   ],
