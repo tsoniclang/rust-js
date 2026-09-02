@@ -1,14 +1,21 @@
-# Tsonic Rust JS Runtime
+# `@tsonic/rust-js`
 
-Rust JS surface runtime crate for Tsonic-emitted Rust.
+Rust runtime implementation for Tsonic's explicitly selected JavaScript source
+surface. The canonical crate is `tsonic_rust_js`; it depends on the installed
+`@tsonic/rust-runtime` through explicit runtime contributions.
 
-The npm artifact `@tsonic/rust-js` owns the canonical JavaScript surface
-runtime source tree. Installed Rust targets reference
-`crates/tsonic_rust_js`; target packages do not copy this source. Generated
-Cargo projects resolve the separately installed `@tsonic/rust-runtime` peer
-through explicit runtime contributions and an explicit crates.io source patch;
-the packages do not need to be physical filesystem siblings.
+Canonical product documentation:
 
-## Crate
+- [JavaScript source profile](https://github.com/tsoniclang/tsonic/blob/main/docs/reference/javascript-source-profile.md)
+- [Rust JavaScript surface](https://github.com/tsoniclang/tsonic/blob/main/docs/reference/targets/rust/javascript-surface.md)
+- [Rust support inventory](https://github.com/tsoniclang/tsonic/blob/main/docs/reference/targets/rust/support-inventory.md)
 
-- Package/crate: `tsonic_rust_js`
+## Development
+
+```sh
+npm test
+```
+
+The runtime's Cargo workspace owns its conformance and differential tests.
+Target packages reference `crates/tsonic_rust_js` directly rather than copying
+runtime source.
