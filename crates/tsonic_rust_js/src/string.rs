@@ -26,9 +26,7 @@ macro_rules! impl_js_to_string {
     };
 }
 
-impl_js_to_string!(
-    bool, i8, u8, i16, u16, i32, u32, i64, u64, isize, usize, String
-);
+impl_js_to_string!(bool, i8, u8, i16, u16, i32, u32, i64, u64, isize, usize, String);
 
 impl JsToString for f32 {
     fn to_js_string(&self) -> String {
