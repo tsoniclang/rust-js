@@ -227,7 +227,9 @@ impl<T: TypedElement> TypedArray<T> {
         let available = buffer_length - byte_offset;
         let length = match length {
             Some(value) => to_index(value)?,
-            None if available % T::BYTES_PER_ELEMENT == 0 => available / T::BYTES_PER_ELEMENT,
+            None if available.is_multiple_of(T::BYTES_PER_ELEMENT) => {
+                available / T::BYTES_PER_ELEMENT
+            }
             None => return Err(range_error("typed array buffer length is invalid")),
         };
         let byte_length = length

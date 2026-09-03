@@ -14,28 +14,25 @@ pub fn from_string(value: &str) -> super::JsArray<String> {
     super::JsArray::from_dense(value.chars().map(|ch| ch.to_string()).collect())
 }
 
-pub fn from_vec<T: Clone>(values: &Vec<T>) -> super::JsArray<T> {
-    super::JsArray::from_dense(values.clone())
+pub fn from_vec<T: Clone>(values: &[T]) -> super::JsArray<T> {
+    super::JsArray::from_dense(values.to_owned())
 }
 
-pub fn from_vec_map_zero<T: Clone, U, F>(values: &Vec<T>, mut callback: F) -> super::JsArray<U>
+pub fn from_vec_map_zero<T: Clone, U, F>(values: &[T], mut callback: F) -> super::JsArray<U>
 where
     F: FnMut() -> U,
 {
     super::JsArray::from_dense(values.iter().map(|_| callback()).collect())
 }
 
-pub fn from_vec_map<T: Clone, U, F>(values: &Vec<T>, mut callback: F) -> super::JsArray<U>
+pub fn from_vec_map<T: Clone, U, F>(values: &[T], mut callback: F) -> super::JsArray<U>
 where
     F: FnMut(T) -> U,
 {
     super::JsArray::from_dense(values.iter().cloned().map(&mut callback).collect())
 }
 
-pub fn from_vec_map_with_index<T: Clone, U, F>(
-    values: &Vec<T>,
-    mut callback: F,
-) -> super::JsArray<U>
+pub fn from_vec_map_with_index<T: Clone, U, F>(values: &[T], mut callback: F) -> super::JsArray<U>
 where
     F: FnMut(T, f64) -> U,
 {
@@ -50,7 +47,7 @@ where
 }
 
 pub fn from_vec_try_map_zero<T: Clone, U, E, F>(
-    values: &Vec<T>,
+    values: &[T],
     mut callback: F,
 ) -> Result<super::JsArray<U>, E>
 where
@@ -64,7 +61,7 @@ where
 }
 
 pub fn from_vec_try_map<T: Clone, U, E, F>(
-    values: &Vec<T>,
+    values: &[T],
     mut callback: F,
 ) -> Result<super::JsArray<U>, E>
 where
@@ -79,7 +76,7 @@ where
 }
 
 pub fn from_vec_try_map_with_index<T: Clone, U, E, F>(
-    values: &Vec<T>,
+    values: &[T],
     mut callback: F,
 ) -> Result<super::JsArray<U>, E>
 where

@@ -304,6 +304,10 @@ impl<'a, Input: InputIndexer> MatchAttempter<'a, Input> {
 
     // Helper function to extract the duplicated match blocks that handle different instruction types
     // with different matcher functions. This significantly reduces code duplication and compile times.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the backtracking instruction state stays explicit and allocation-free"
+    )]
     fn with_scm_loop_impl<Dir: Direction>(
         re: &CompiledRegex,
         input: &Input,

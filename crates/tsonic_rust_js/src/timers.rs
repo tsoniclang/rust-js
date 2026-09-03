@@ -18,7 +18,7 @@ struct TimerEntry {
 }
 
 thread_local! {
-    static TIMERS: RefCell<BTreeMap<u64, TimerEntry>> = RefCell::new(BTreeMap::new());
+    static TIMERS: RefCell<BTreeMap<u64, TimerEntry>> = const { RefCell::new(BTreeMap::new()) };
 }
 
 pub fn set_timeout_callable<E>(callback: Callable<(), Result<(), E>>, delay_ms: f64) -> f64

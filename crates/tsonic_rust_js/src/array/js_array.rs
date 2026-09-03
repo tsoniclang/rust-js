@@ -1212,8 +1212,8 @@ where
 
 fn canonical_array_index(value: f64) -> Option<usize> {
     const MAX_ARRAY_INDEX: f64 = 4_294_967_294.0;
-    (value.is_finite() && value >= 0.0 && value <= MAX_ARRAY_INDEX && value.trunc() == value)
-        .then(|| value as usize)
+    (value.is_finite() && (0.0..=MAX_ARRAY_INDEX).contains(&value) && value.trunc() == value)
+        .then_some(value as usize)
 }
 
 impl<T> ObjectIdentityCarrier for JsArray<T> {
