@@ -228,6 +228,22 @@ fn canonical_array_receiver_entrypoints_preserve_js_results() {
 }
 
 #[test]
+fn array_join_formats_floating_numbers_with_javascript_semantics() {
+    let values = JsArray::from_dense(vec![
+        2.0_f64,
+        -0.0,
+        f64::NAN,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+    ]);
+
+    assert_eq!(values.join(","), "2,0,NaN,Infinity,-Infinity");
+
+    let single_precision = JsArray::from_dense(vec![2.5_f32, -0.0]);
+    assert_eq!(single_precision.join(","), "2.5,0");
+}
+
+#[test]
 fn array_static_factories_preserve_values_and_array_brand() {
     let values = statics::of([1, 2, 3]);
     assert_eq!(values.values(), vec![Some(1), Some(2), Some(3)]);
