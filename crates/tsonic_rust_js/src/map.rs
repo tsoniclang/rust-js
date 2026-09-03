@@ -113,10 +113,10 @@ impl<K, V> JsMap<K, V> {
         state.size = 0;
     }
 
-    pub fn get<Q: ?Sized>(&self, key: &Q) -> Option<V>
+    pub fn get<Q>(&self, key: &Q) -> Option<V>
     where
         K: JsSameValueZero<Q>,
-        Q: JsHash,
+        Q: JsHash + ?Sized,
         V: Clone,
     {
         let state = self.state.borrow();
@@ -195,10 +195,10 @@ impl<K, V> JsMap<K, V> {
         }
     }
 
-    pub fn has<Q: ?Sized>(&self, key: &Q) -> bool
+    pub fn has<Q>(&self, key: &Q) -> bool
     where
         K: JsSameValueZero<Q>,
-        Q: JsHash,
+        Q: JsHash + ?Sized,
     {
         find_index(&self.state.borrow(), key.js_hash(), key).is_some()
     }
@@ -214,10 +214,10 @@ impl<K, V> JsMap<K, V> {
             .any(|entry| entry.present && entry.key == *key)
     }
 
-    pub fn delete<Q: ?Sized>(&self, key: &Q) -> bool
+    pub fn delete<Q>(&self, key: &Q) -> bool
     where
         K: JsSameValueZero<Q>,
-        Q: JsHash,
+        Q: JsHash + ?Sized,
     {
         let hash = key.js_hash();
         let mut state = self.state.borrow_mut();

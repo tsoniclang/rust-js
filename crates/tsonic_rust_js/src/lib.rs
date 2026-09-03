@@ -1,5 +1,7 @@
 //! JS-facing closed APIs.
 
+#![forbid(unsafe_code)]
+
 pub mod abi;
 pub mod array;
 pub mod array_buffer;

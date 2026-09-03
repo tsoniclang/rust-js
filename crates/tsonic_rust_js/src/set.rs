@@ -118,10 +118,10 @@ impl<T> JsSet<T> {
         state.size = 0;
     }
 
-    pub fn has<Q: ?Sized>(&self, value: &Q) -> bool
+    pub fn has<Q>(&self, value: &Q) -> bool
     where
         T: JsSameValueZero<Q>,
-        Q: JsHash,
+        Q: JsHash + ?Sized,
     {
         find_index(&self.state.borrow(), value.js_hash(), value).is_some()
     }
@@ -186,10 +186,10 @@ impl<T> JsSet<T> {
         }
     }
 
-    pub fn delete<Q: ?Sized>(&self, value: &Q) -> bool
+    pub fn delete<Q>(&self, value: &Q) -> bool
     where
         T: JsSameValueZero<Q>,
-        Q: JsHash,
+        Q: JsHash + ?Sized,
     {
         let hash = value.js_hash();
         let mut state = self.state.borrow_mut();

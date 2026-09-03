@@ -42,6 +42,12 @@ impl JsStrictEqual for JsDate {
     }
 }
 
+impl Default for JsDate {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl JsDate {
     pub fn new() -> Self {
         Self::from_millis(Self::now())
