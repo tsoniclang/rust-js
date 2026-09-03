@@ -6,7 +6,7 @@ fn fallible_array_callback_entrypoints_cover_every_declared_arity() {
     let values = JsArray::from_dense(vec![1, 2, 3]);
 
     assert!(values.try_map_zero(|| Ok::<_, TsonicError>(1)).is_ok());
-    assert!(values.try_map(|value| Ok::<_, TsonicError>(value)).is_ok());
+    assert!(values.try_map(Ok::<_, TsonicError>).is_ok());
     assert!(values
         .try_map_with_index(|value, index| Ok::<_, TsonicError>(value + index as i32))
         .is_ok());
