@@ -8,6 +8,7 @@ use crate::coercion::{absolute_index, relative_index, to_integer_or_infinity};
 use crate::errors::{type_error, JsResult};
 use crate::exact_string;
 use crate::js_string::to_native_string;
+use crate::number::JsNumberValue;
 use crate::{JsString, JsValue};
 
 /// JS-facing string value conversion contract used by dense array join and future array helpers.
@@ -25,7 +26,19 @@ macro_rules! impl_js_to_string {
     };
 }
 
-impl_js_to_string!(bool, i8, u8, i16, u16, i32, u32, i64, u64, String);
+impl_js_to_string!(bool, i8, u8, i16, u16, i32, u32, i64, u64, isize, usize, String);
+
+impl JsToString for f32 {
+    fn to_js_string(&self) -> String {
+        self.to_js_decimal_string()
+    }
+}
+
+impl JsToString for f64 {
+    fn to_js_string(&self) -> String {
+        self.to_js_decimal_string()
+    }
+}
 
 impl JsToString for str {
     fn to_js_string(&self) -> String {
