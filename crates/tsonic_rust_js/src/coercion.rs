@@ -31,6 +31,10 @@ pub(crate) fn to_integer_or_infinity(value: f64) -> f64 {
     }
 }
 
+pub(crate) fn to_length(value: f64) -> u64 {
+    to_integer_or_infinity(value).clamp(0.0, crate::number::MAX_SAFE_INTEGER) as u64
+}
+
 pub(crate) fn normalize_slice_index(value: f64, length: usize) -> usize {
     let integer = to_integer_or_infinity(value);
     if integer == f64::NEG_INFINITY {

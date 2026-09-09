@@ -25,6 +25,7 @@ pub mod promise;
 pub mod regexp;
 pub mod set;
 pub mod string;
+mod string_capacity;
 pub mod symbol;
 pub mod timers;
 pub mod typed_array;

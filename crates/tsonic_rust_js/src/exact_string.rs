@@ -1,7 +1,7 @@
 use unicode_normalization::UnicodeNormalization;
 
 use crate::array::JsArray;
-use crate::coercion::{absolute_index, relative_index, to_integer_or_infinity};
+use crate::coercion::{absolute_index, relative_index, to_integer_or_infinity, to_length};
 use crate::errors::{range_error, type_error, JsResult};
 use crate::regexp::string_replacement_arguments;
 use crate::{JsString, JsValue};
@@ -399,30 +399,21 @@ fn to_uint32(value: f64) -> u32 {
 }
 
 pub fn repeat(value: &JsString, count: f64) -> JsResult<JsString> {
-    let count = to_integer_or_infinity(count);
-    if count < 0.0 || count == f64::INFINITY {
-        return Err(range_error("repeat count must be non-negative and finite"));
-    }
-    let count = count as usize;
-    let length = value
-        .len()
-        .checked_mul(count)
-        .ok_or_else(|| range_error("invalid string length"))?;
-    if length as u64 > MAX_STRING_UTF16_UNITS {
-        return Err(range_error("invalid string length"));
+    let (_, length) = crate::string_capacity::repeat_shape(value.len(), count)?;
+    if length == 0 {
+        return Ok(JsString::new());
     }
     let mut units = Vec::new();
     units
         .try_reserve_exact(length)
         .map_err(|_| range_error("invalid string length"))?;
-    for _ in 0..count {
-        units.extend_from_slice(value.units());
+    units.extend_from_slice(value.units());
+    while units.len() < length {
+        let copied = (length - units.len()).min(units.len());
+        units.extend_from_within(..copied);
     }
     Ok(JsString::from_units(units))
 }
-
-pub const MAX_STRING_UTF16_UNITS: u64 = 16_777_216;
-const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 
 pub fn pad_start(value: &JsString, target_length: f64) -> JsResult<JsString> {
     pad(value, target_length, None, true)
@@ -459,34 +450,26 @@ fn pad(
     if filler.is_empty() {
         return Ok(value.clone());
     }
-    if target_length > MAX_STRING_UTF16_UNITS {
-        return Err(range_error("invalid string length"));
-    }
-    let needed = target_length as usize - value.len();
-    let mut padding = Vec::new();
-    padding
-        .try_reserve_exact(needed)
+    let target_length =
+        usize::try_from(target_length).map_err(|_| range_error("invalid string length"))?;
+    let needed = target_length - value.len();
+    let mut output = Vec::new();
+    output
+        .try_reserve_exact(target_length)
         .map_err(|_| range_error("invalid string length"))?;
-    while padding.len() < needed {
-        let remaining = needed - padding.len();
-        padding.extend_from_slice(&filler.units()[..remaining.min(filler.len())]);
+    if !at_start {
+        output.extend_from_slice(value.units());
     }
-    let padding = JsString::from_units(padding);
-    Ok(if at_start {
-        JsString::concat(&[padding, value.clone()])
-    } else {
-        JsString::concat(&[value.clone(), padding])
-    })
-}
-
-fn to_length(value: f64) -> u64 {
-    if value.is_nan() || value <= 0.0 {
-        0
-    } else if value.is_infinite() || value >= MAX_SAFE_INTEGER as f64 {
-        MAX_SAFE_INTEGER
-    } else {
-        value.floor() as u64
+    let mut remaining = needed;
+    while remaining > 0 {
+        let copied = remaining.min(filler.len());
+        output.extend_from_slice(&filler.units()[..copied]);
+        remaining -= copied;
     }
+    if at_start {
+        output.extend_from_slice(value.units());
+    }
+    Ok(JsString::from_units(output))
 }
 
 pub fn trim(value: &JsString) -> JsString {
