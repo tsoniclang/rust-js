@@ -454,7 +454,7 @@ fn to_uint32(value: f64) -> u32 {
 }
 
 pub fn repeat(value: &str, count: f64) -> Result<String, JsError> {
-    let (count, _) = crate::string_capacity::repeat_shape(js_len(value), count)?;
+    let (count, _) = crate::string_capacity::repeat_shape(count, || js_len(value))?;
     if count == 0 {
         return Ok(String::new());
     }

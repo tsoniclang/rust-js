@@ -399,7 +399,7 @@ fn to_uint32(value: f64) -> u32 {
 }
 
 pub fn repeat(value: &JsString, count: f64) -> JsResult<JsString> {
-    let (_, length) = crate::string_capacity::repeat_shape(value.len(), count)?;
+    let (_, length) = crate::string_capacity::repeat_shape(count, || value.len())?;
     if length == 0 {
         return Ok(JsString::new());
     }
