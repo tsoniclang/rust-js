@@ -4,7 +4,7 @@ use tsonic_rust_runtime::{JsError, JsErrorKind};
 use unicode_normalization::UnicodeNormalization;
 
 use crate::array::JsArray;
-use crate::coercion::{absolute_index, relative_index, to_integer_or_infinity};
+use crate::coercion::{absolute_index, relative_index, to_integer_or_infinity, to_length};
 use crate::errors::{type_error, JsResult};
 use crate::exact_string;
 use crate::js_string::to_native_string;
@@ -454,35 +454,25 @@ fn to_uint32(value: f64) -> u32 {
 }
 
 pub fn repeat(value: &str, count: f64) -> Result<String, JsError> {
-    let count = crate::coercion::to_integer_or_infinity(count);
-    if count < 0.0 || count == f64::INFINITY {
-        return Err(JsError::new(
-            JsErrorKind::RangeError,
-            "repeat count must be non-negative",
-        ));
-    }
-    if count == 0.0 {
+    let (count, _) = crate::string_capacity::repeat_shape(count, || js_len(value))?;
+    if count == 0 {
         return Ok(String::new());
     }
-    if value.is_empty() {
-        return Ok(String::new());
-    }
-    let value_units = js_len(value) as u64;
-    let count = count as u64;
-    if value_units
+    let length = value
+        .len()
         .checked_mul(count)
-        .is_none_or(|length| length > MAX_STRING_UTF16_UNITS)
-    {
-        return Err(JsError::new(
-            JsErrorKind::RangeError,
-            "repeat result exceeds the supported string length",
-        ));
+        .ok_or_else(|| crate::errors::range_error("invalid string length"))?;
+    let mut output = String::new();
+    output
+        .try_reserve_exact(length)
+        .map_err(|_| crate::errors::range_error("invalid string length"))?;
+    output.push_str(value);
+    while output.len() < length {
+        let copied = (length - output.len()).min(output.len());
+        output.extend_from_within(..copied);
     }
-    Ok(value.repeat(count as usize))
+    Ok(output)
 }
-
-pub const MAX_STRING_UTF16_UNITS: u64 = 16_777_216;
-const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 
 pub fn pad_start(value: &str, target_length: f64) -> Result<String, JsError> {
     pad(value, target_length, None, true)
@@ -515,13 +505,8 @@ fn pad(
     if filler.is_empty() {
         return Ok(value.to_string());
     }
-    if target_length > MAX_STRING_UTF16_UNITS {
-        return Err(JsError::new(
-            JsErrorKind::RangeError,
-            "invalid string length",
-        ));
-    }
-    let target_length = target_length as usize;
+    let target_length = usize::try_from(target_length)
+        .map_err(|_| crate::errors::range_error("invalid string length"))?;
     let needed = target_length - value_units.len();
     let filler_units = utf16_units(filler);
     let mut padding = Vec::new();
@@ -552,16 +537,6 @@ fn pad(
             "padding that produces a lone UTF-16 surrogate requires a UTF-16 string carrier",
         )
     })
-}
-
-fn to_length(value: f64) -> u64 {
-    if value.is_nan() || value <= 0.0 {
-        return 0;
-    }
-    if value.is_infinite() || value >= MAX_SAFE_INTEGER as f64 {
-        return MAX_SAFE_INTEGER;
-    }
-    value.floor() as u64
 }
 
 pub fn trim(value: &str) -> String {

@@ -115,12 +115,61 @@ fn split_and_repeat_and_trim() {
         JsErrorKind::RangeError
     );
     assert_eq!(
-        string::repeat(&js("ab"), 8_388_609.0).unwrap_err().kind(),
+        string::repeat(&js("ab"), f64::MAX).unwrap_err().kind(),
         JsErrorKind::RangeError
     );
     assert_eq!(string::trim(&js("  hi  ")), js("hi"));
     assert_eq!(string::trim_start(&js("  hi  ")), js("hi  "));
     assert_eq!(string::trim_end(&js("  hi  ")), js("  hi"));
+}
+
+#[test]
+fn native_and_exact_strings_are_not_limited_to_sixteen_megacodeunits() {
+    let length = 16_777_217;
+    let native = native_string::repeat("x", length as f64).unwrap();
+    assert_eq!(native.len(), length);
+    assert!(native.bytes().all(|byte| byte == b'x'));
+    let exact = string::repeat(&js("x"), length as f64).unwrap();
+    assert_eq!(exact.len(), length);
+    assert!(exact.units().iter().all(|unit| *unit == u16::from(b'x')));
+    let native_padded = native_string::pad_start_with("tail", length as f64, "ab").unwrap();
+    assert_eq!(native_padded.len(), length);
+    assert!(native_padded.starts_with("ababa"));
+    assert!(native_padded.ends_with("tail"));
+    let exact_padded = string::pad_end_with(&js("head"), length as f64, &js("ab")).unwrap();
+    assert_eq!(exact_padded.len(), length);
+    assert_eq!(&exact_padded.units()[..6], &[104, 101, 97, 100, 97, 98]);
+    assert_eq!(exact_padded.units()[length - 1], 97);
+}
+
+#[test]
+fn string_capacity_preserves_empty_results_and_checks_real_overflows() {
+    assert_eq!(string::repeat(&js(""), f64::MAX).unwrap(), js(""));
+    assert_eq!(native_string::repeat("", f64::MAX).unwrap(), "");
+    for count in [-1.0, f64::NEG_INFINITY, f64::INFINITY, f64::MAX] {
+        assert_eq!(
+            string::repeat(&js("😀"), count).unwrap_err().kind(),
+            JsErrorKind::RangeError
+        );
+        assert_eq!(
+            native_string::repeat("😀", count).unwrap_err().kind(),
+            JsErrorKind::RangeError
+        );
+    }
+    for count in [f64::NAN, -0.9, 0.0] {
+        assert_eq!(string::repeat(&js("😀"), count).unwrap(), js(""));
+        assert_eq!(native_string::repeat("😀", count).unwrap(), "");
+    }
+    assert_eq!(native_string::repeat("a😀", 3.9).unwrap(), "a😀a😀a😀");
+    assert_eq!(string::repeat(&js("a😀"), 3.9).unwrap(), js("a😀a😀a😀"));
+    assert_eq!(
+        native_string::pad_start_with("x", f64::INFINITY, "").unwrap(),
+        "x"
+    );
+    assert_eq!(
+        string::pad_end_with(&js("x"), f64::INFINITY, &js("")).unwrap(),
+        js("x")
+    );
 }
 
 #[test]
