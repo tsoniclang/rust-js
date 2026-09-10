@@ -32,8 +32,12 @@ pub use crate::data_view::DataView;
 pub use crate::date::JsDate;
 pub use crate::globals::{is_finite, is_nan, to_number};
 pub use crate::intl::{
-    IntlCollator, IntlDateTimeFormat, IntlDateTimeFormatPart, IntlNumberFormat,
-    IntlNumberFormatPart, IntlResolvedCollatorOptions, IntlResolvedDateTimeFormatOptions,
+    integer_to_locale_string, integer_to_locale_string_with_locale,
+    integer_to_locale_string_with_locales, integer_to_locale_string_with_locales_options,
+    integer_to_locale_string_with_options, integer_to_locale_string_with_undefined,
+    integer_to_locale_string_with_undefined_options, IntlCollator, IntlDateTimeFormat,
+    IntlDateTimeFormatPart, IntlGrouping, IntlNumberFormat, IntlNumberFormatPart,
+    IntlResolvedCollatorOptions, IntlResolvedDateTimeFormatOptions,
     IntlResolvedNumberFormatOptions,
 };
 pub use crate::js_string::{from_utf8_string as js_string_from_utf8, JsString};
