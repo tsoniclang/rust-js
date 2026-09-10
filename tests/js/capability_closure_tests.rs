@@ -35,6 +35,32 @@ fn intl_number_precision_grouping_and_exact_integers() {
     assert_eq!(mixed.resolved_options().maximum_fraction_digits(), None);
     assert_eq!(mixed.format(1234.5), "1,230");
     let default = IntlNumberFormat::new();
+    let defaults = default.resolved_options();
+    assert_eq!(defaults.locale(), "en-US");
+    assert_eq!(defaults.numbering_system(), "latn");
+    assert_eq!(defaults.style(), "decimal");
+    assert_eq!(defaults.minimum_integer_digits(), 1.0);
+    assert_eq!(defaults.currency(), None);
+    assert_eq!(defaults.currency_display(), None);
+    assert_eq!(defaults.currency_sign(), None);
+    assert_eq!(defaults.unit(), None);
+    assert_eq!(defaults.unit_display(), None);
+    assert_eq!(defaults.compact_display(), None);
+    assert_eq!(defaults.notation(), "standard");
+    assert_eq!(defaults.sign_display(), "auto");
+    assert_eq!(defaults.rounding_priority(), "auto");
+    assert_eq!(defaults.rounding_increment(), 1.0);
+    assert_eq!(defaults.rounding_mode(), "halfExpand");
+    assert_eq!(defaults.trailing_zero_display(), "auto");
+    let currency = make(vec![
+        ("style", string_value("currency")),
+        ("currency", string_value("usd")),
+        ("currencyDisplay", string_value("code")),
+    ])
+    .resolved_options();
+    assert_eq!(currency.currency().as_deref(), Some("USD"));
+    assert_eq!(currency.currency_display().as_deref(), Some("code"));
+    assert_eq!(currency.currency_sign().as_deref(), Some("standard"));
     assert_eq!(
         default.resolved_options().minimum_fraction_digits(),
         Some(0.0)
