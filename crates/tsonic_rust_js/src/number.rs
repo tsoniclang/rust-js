@@ -69,8 +69,8 @@ macro_rules! impl_unsigned_integer {
     };
 }
 
-impl_signed_integer!(i8, i16, i32, i64, isize);
-impl_unsigned_integer!(u8, u16, u32, u64, usize);
+impl_signed_integer!(i8, i16, i32, i64, i128, isize);
+impl_unsigned_integer!(u8, u16, u32, u64, u128, usize);
 
 impl JsNumberValue for f32 {
     fn to_js_f64(self) -> f64 {

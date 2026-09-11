@@ -1,14 +1,69 @@
 //! Deterministic, closed internationalization carriers.
 
-use tsonic_rust_runtime::{ObjectIdentity, ObjectIdentityCarrier};
+use tsonic_rust_runtime::{ObjectIdentity, ObjectIdentityCarrier, Undefined};
 
 use crate::array::JsArray;
 use crate::date::JsDate;
 use crate::errors::{range_error, type_error, JsResult};
 use crate::value::JsValue;
+mod number_precision;
+use number_precision::NumberPrecision;
+mod number_input;
+pub use number_input::IntlNumberInput;
+mod grouping;
+pub use grouping::IntlGrouping;
 
 const DEFAULT_LOCALE: &str = "en-US";
 const DEFAULT_TIME_ZONE: &str = "UTC";
+
+pub fn integer_to_locale_string<Value: IntlNumberInput>(value: Value) -> String {
+    IntlNumberFormat::new().format(value)
+}
+
+pub fn integer_to_locale_string_with_undefined<Value: IntlNumberInput>(
+    value: Value,
+    _locale: Undefined,
+) -> String {
+    integer_to_locale_string(value)
+}
+
+pub fn integer_to_locale_string_with_undefined_options<Value: IntlNumberInput>(
+    value: Value,
+    _locale: Undefined,
+    options: &JsValue,
+) -> JsResult<String> {
+    Ok(IntlNumberFormat::build(DEFAULT_LOCALE, options)?.format(value))
+}
+
+pub fn integer_to_locale_string_with_locale<Value: IntlNumberInput>(
+    value: Value,
+    locale: &str,
+) -> JsResult<String> {
+    Ok(IntlNumberFormat::with_locale(locale)?.format(value))
+}
+
+pub fn integer_to_locale_string_with_options<Value: IntlNumberInput>(
+    value: Value,
+    locale: &str,
+    options: &JsValue,
+) -> JsResult<String> {
+    Ok(IntlNumberFormat::with_locale_options(locale, options)?.format(value))
+}
+
+pub fn integer_to_locale_string_with_locales<Value: IntlNumberInput>(
+    value: Value,
+    locales: &JsArray<String>,
+) -> JsResult<String> {
+    Ok(IntlNumberFormat::with_locales(locales)?.format(value))
+}
+
+pub fn integer_to_locale_string_with_locales_options<Value: IntlNumberInput>(
+    value: Value,
+    locales: &JsArray<String>,
+    options: &JsValue,
+) -> JsResult<String> {
+    Ok(IntlNumberFormat::with_locales_options(locales, options)?.format(value))
+}
 
 #[derive(Clone, Debug)]
 pub struct IntlDateTimeFormatPart {
@@ -84,10 +139,10 @@ impl IntlResolvedDateTimeFormatOptions {
 pub struct IntlResolvedNumberFormatOptions {
     locale: String,
     style: String,
-    minimum_integer_digits: u8,
-    minimum_fraction_digits: u8,
-    maximum_fraction_digits: u8,
-    use_grouping: bool,
+    precision: NumberPrecision,
+    use_grouping: Option<String>,
+    currency: Option<String>,
+    currency_display: Option<String>,
 }
 
 impl IntlResolvedNumberFormatOptions {
@@ -104,19 +159,64 @@ impl IntlResolvedNumberFormatOptions {
     }
 
     pub fn minimum_integer_digits(&self) -> f64 {
-        f64::from(self.minimum_integer_digits)
+        f64::from(self.precision.minimum_integer)
     }
 
-    pub fn minimum_fraction_digits(&self) -> f64 {
-        f64::from(self.minimum_fraction_digits)
+    pub fn minimum_fraction_digits(&self) -> Option<f64> {
+        self.precision.minimum_fraction.map(f64::from)
     }
 
-    pub fn maximum_fraction_digits(&self) -> f64 {
-        f64::from(self.maximum_fraction_digits)
+    pub fn maximum_fraction_digits(&self) -> Option<f64> {
+        self.precision.maximum_fraction.map(f64::from)
     }
 
-    pub fn use_grouping(&self) -> bool {
-        self.use_grouping
+    pub fn use_grouping(&self) -> IntlGrouping {
+        match &self.use_grouping {
+            Some(strategy) => IntlGrouping::Strategy(strategy.clone()),
+            None => IntlGrouping::Disabled,
+        }
+    }
+    pub fn minimum_significant_digits(&self) -> Option<f64> {
+        self.precision.minimum_significant.map(f64::from)
+    }
+    pub fn maximum_significant_digits(&self) -> Option<f64> {
+        self.precision.maximum_significant.map(f64::from)
+    }
+    pub fn currency(&self) -> Option<String> {
+        self.currency.clone()
+    }
+    pub fn currency_display(&self) -> Option<String> {
+        self.currency_display.clone()
+    }
+    pub fn currency_sign(&self) -> Option<String> {
+        self.currency.as_ref().map(|_| "standard".to_owned())
+    }
+    pub fn unit(&self) -> Option<String> {
+        None
+    }
+    pub fn unit_display(&self) -> Option<String> {
+        None
+    }
+    pub fn notation(&self) -> String {
+        "standard".to_owned()
+    }
+    pub fn compact_display(&self) -> Option<String> {
+        None
+    }
+    pub fn sign_display(&self) -> String {
+        "auto".to_owned()
+    }
+    pub fn rounding_priority(&self) -> String {
+        "auto".to_owned()
+    }
+    pub fn rounding_increment(&self) -> f64 {
+        1.0
+    }
+    pub fn rounding_mode(&self) -> String {
+        "halfExpand".to_owned()
+    }
+    pub fn trailing_zero_display(&self) -> String {
+        "auto".to_owned()
     }
 }
 
@@ -404,10 +504,9 @@ pub struct IntlNumberFormat {
     style: String,
     currency_label: Option<String>,
     currency_display: String,
-    use_grouping: bool,
-    minimum_integer_digits: u8,
-    minimum_fraction_digits: u8,
-    maximum_fraction_digits: u8,
+    use_grouping: Option<String>,
+    precision: NumberPrecision,
+    currency: Option<String>,
 }
 
 impl IntlNumberFormat {
@@ -431,7 +530,7 @@ impl IntlNumberFormat {
         Self::with_locale_options(&first_locale(locales)?, options)
     }
 
-    pub fn format(&self, value: f64) -> String {
+    pub fn format<Value: IntlNumberInput>(&self, value: Value) -> String {
         self.format_to_parts(value)
             .values()
             .into_iter()
@@ -441,29 +540,29 @@ impl IntlNumberFormat {
             .concat()
     }
 
-    pub fn format_to_parts(&self, value: f64) -> JsArray<IntlNumberFormatPart> {
-        if value.is_nan() {
+    pub fn format_to_parts<Value: IntlNumberInput>(
+        &self,
+        value: Value,
+    ) -> JsArray<IntlNumberFormatPart> {
+        let (text, negative_zero) = value.into_intl_decimal();
+        if text == "NaN" {
             return JsArray::from_dense(vec![IntlNumberFormatPart::new("nan", "NaN")]);
         }
-        if value.is_infinite() {
+        if text == "Infinity" || text == "-Infinity" {
             let mut parts = Vec::new();
-            if value.is_sign_negative() {
+            if text.starts_with('-') {
                 parts.push(IntlNumberFormatPart::new("minusSign", "-"));
             }
             parts.push(IntlNumberFormatPart::new("infinity", "∞"));
             return JsArray::from_dense(parts);
         }
-        let scaled = if self.style == "percent" {
-            value * 100.0
-        } else {
-            value
-        };
-        let negative = scaled.is_sign_negative() && scaled != 0.0;
-        let absolute = scaled.abs();
-        let rendered = format!("{:.*}", usize::from(self.maximum_fraction_digits), absolute);
-        let (integer, fraction) = rendered.split_once('.').unwrap_or((&rendered, ""));
-        let integer = integer_with_minimum(integer, usize::from(self.minimum_integer_digits));
-        let groups = if self.use_grouping {
+        let negative = text.starts_with('-') || negative_zero;
+        let (integer, fraction) = self
+            .precision
+            .format(text.trim_start_matches('-'), self.style == "percent");
+        let groups = if self.use_grouping.is_some()
+            && (self.use_grouping.as_deref() != Some("min2") || integer.len() > 4)
+        {
             group_integer(&integer)
         } else {
             vec![integer]
@@ -487,12 +586,9 @@ impl IntlNumberFormat {
             }
             parts.push(IntlNumberFormatPart::new("integer", group));
         }
-        let minimum = usize::from(self.minimum_fraction_digits);
-        let trimmed = fraction.trim_end_matches('0');
-        let kept = trimmed.len().max(minimum).min(fraction.len());
-        if kept > 0 {
+        if !fraction.is_empty() {
             parts.push(IntlNumberFormatPart::new("decimal", "."));
-            parts.push(IntlNumberFormatPart::new("fraction", &fraction[..kept]));
+            parts.push(IntlNumberFormatPart::new("fraction", fraction));
         }
         if self.style == "percent" {
             parts.push(IntlNumberFormatPart::new("percentSign", "%"));
@@ -504,10 +600,18 @@ impl IntlNumberFormat {
         IntlResolvedNumberFormatOptions {
             locale: self.locale.clone(),
             style: self.style.clone(),
-            minimum_integer_digits: self.minimum_integer_digits,
-            minimum_fraction_digits: self.minimum_fraction_digits,
-            maximum_fraction_digits: self.maximum_fraction_digits,
-            use_grouping: self.use_grouping,
+            precision: self.precision.clone(),
+            use_grouping: self.use_grouping.clone(),
+            currency: if self.style == "currency" {
+                self.currency.clone()
+            } else {
+                None
+            },
+            currency_display: if self.style == "currency" {
+                Some(self.currency_display.clone())
+            } else {
+                None
+            },
         }
     }
 
@@ -532,19 +636,69 @@ impl IntlNumberFormat {
             .as_deref()
             .map(|value| currency_value(value, &currency_display))
             .transpose()?;
-        let minimum_integer_digits =
-            integer_option(options, "minimumIntegerDigits", 1, 21)?.unwrap_or(1);
-        let minimum_fraction_digits =
-            integer_option(options, "minimumFractionDigits", 0, 20)?.unwrap_or(0);
-        let default_maximum = if style == "currency" { 2 } else { 3 };
-        let maximum_fraction_digits = integer_option(
+        for (name, values) in [
+            ("numberingSystem", &["latn"][..]),
+            ("currencySign", &["standard"][..]),
+            ("notation", &["standard"][..]),
+            ("compactDisplay", &["short", "long"][..]),
+            ("unitDisplay", &["short", "long", "narrow"][..]),
+            ("signDisplay", &["auto"][..]),
+            ("roundingPriority", &["auto"][..]),
+            ("roundingMode", &["halfExpand"][..]),
+            ("trailingZeroDisplay", &["auto"][..]),
+        ] {
+            enum_option(options, name, values)?;
+        }
+        if string_option(options, "unit")?.is_some() {
+            return Err(range_error(
+                "Intl.NumberFormat unit options are not supported",
+            ));
+        }
+        if integer_option(options, "roundingIncrement", 1, 5000)?.unwrap_or(1) != 1 {
+            return Err(range_error(
+                "Intl.NumberFormat supports only roundingIncrement 1",
+            ));
+        }
+        let use_grouping = match option_value(options, "useGrouping")? {
+            JsValue::Undefined => Some("auto".to_owned()),
+            JsValue::Bool(false) => None,
+            JsValue::Bool(true) => Some("always".to_owned()),
+            JsValue::String(value) => match value
+                .to_utf8()
+                .map_err(|_| range_error("Invalid grouping strategy"))?
+                .as_str()
+            {
+                "auto" => Some("auto".to_owned()),
+                "always" => Some("always".to_owned()),
+                "min2" => Some("min2".to_owned()),
+                "true" | "false" => Some("auto".to_owned()),
+                _ => return Err(range_error("Invalid grouping strategy")),
+            },
+            _ => return Err(range_error("Invalid grouping strategy")),
+        };
+        let currency_digits = if currency
+            .as_deref()
+            .is_some_and(|value| value.eq_ignore_ascii_case("JPY"))
+        {
+            0
+        } else {
+            2
+        };
+        let precision = NumberPrecision::new(
             options,
-            "maximumFractionDigits",
-            minimum_fraction_digits,
-            20,
-        )?
-        .unwrap_or(default_maximum.max(minimum_fraction_digits));
-        let use_grouping = boolean_option(options, "useGrouping")?.unwrap_or(true);
+            if style == "currency" {
+                currency_digits
+            } else {
+                0
+            },
+            if style == "currency" {
+                currency_digits
+            } else if style == "percent" {
+                0
+            } else {
+                3
+            },
+        )?;
         Ok(Self {
             identity: ObjectIdentity::new(),
             locale,
@@ -552,9 +706,8 @@ impl IntlNumberFormat {
             currency_label,
             currency_display,
             use_grouping,
-            minimum_integer_digits,
-            minimum_fraction_digits,
-            maximum_fraction_digits,
+            precision,
+            currency: currency.map(|value| value.to_ascii_uppercase()),
         })
     }
 }
@@ -748,16 +901,18 @@ fn boolean_option(options: &JsValue, name: &str) -> JsResult<Option<bool>> {
     }
 }
 
-fn integer_option(options: &JsValue, name: &str, minimum: u8, maximum: u8) -> JsResult<Option<u8>> {
+fn integer_option(
+    options: &JsValue,
+    name: &str,
+    minimum: u16,
+    maximum: u16,
+) -> JsResult<Option<u16>> {
     match option_value(options, name)? {
         JsValue::Undefined => Ok(None),
         JsValue::Number(value)
-            if value.is_finite()
-                && value.fract() == 0.0
-                && value >= f64::from(minimum)
-                && value <= f64::from(maximum) =>
+            if value.is_finite() && value >= f64::from(minimum) && value <= f64::from(maximum) =>
         {
-            Ok(Some(value as u8))
+            Ok(Some(value as u16))
         }
         _ => Err(range_error(format!(
             "Intl option '{name}' is outside its supported range"
@@ -908,14 +1063,6 @@ fn currency_value(currency: &str, display: &str) -> JsResult<String> {
         },
     };
     Ok(value)
-}
-
-fn integer_with_minimum(value: &str, minimum: usize) -> String {
-    if value.len() >= minimum {
-        value.to_owned()
-    } else {
-        format!("{}{}", "0".repeat(minimum - value.len()), value)
-    }
 }
 
 fn group_integer(value: &str) -> Vec<String> {

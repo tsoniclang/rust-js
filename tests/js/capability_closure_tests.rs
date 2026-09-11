@@ -10,6 +10,181 @@ use tsonic_rust_js::{
 use tsonic_rust_runtime::{Callable, Null, TsonicError, Undefined};
 
 #[test]
+fn intl_number_precision_grouping_and_exact_integers() {
+    let make = |pairs: Vec<(&str, JsValue)>| {
+        IntlNumberFormat::with_locale_options("en", &JsValue::object(JsObject::from_pairs(pairs)))
+            .unwrap()
+    };
+    let significant = make(vec![("maximumSignificantDigits", JsValue::Number(3.0))]);
+    let resolved = significant.resolved_options();
+    assert_eq!(resolved.minimum_fraction_digits(), None);
+    assert_eq!(resolved.maximum_fraction_digits(), None);
+    assert_eq!(resolved.minimum_significant_digits(), Some(1.0));
+    assert_eq!(resolved.maximum_significant_digits(), Some(3.0));
+    assert_eq!(resolved.use_grouping().as_string(), "auto");
+    assert_eq!(significant.format(1234.5), "1,230");
+    assert_eq!(significant.format(0.0012345), "0.00123");
+    let mixed = make(vec![
+        ("maximumSignificantDigits", JsValue::Number(3.9)),
+        ("maximumFractionDigits", JsValue::Number(-1.0)),
+    ]);
+    assert_eq!(
+        mixed.resolved_options().maximum_significant_digits(),
+        Some(3.0)
+    );
+    assert_eq!(mixed.resolved_options().maximum_fraction_digits(), None);
+    assert_eq!(mixed.format(1234.5), "1,230");
+    let default = IntlNumberFormat::new();
+    let defaults = default.resolved_options();
+    assert_eq!(defaults.locale(), "en-US");
+    assert_eq!(defaults.numbering_system(), "latn");
+    assert_eq!(defaults.style(), "decimal");
+    assert_eq!(defaults.minimum_integer_digits(), 1.0);
+    assert_eq!(defaults.currency(), None);
+    assert_eq!(defaults.currency_display(), None);
+    assert_eq!(defaults.currency_sign(), None);
+    assert_eq!(defaults.unit(), None);
+    assert_eq!(defaults.unit_display(), None);
+    assert_eq!(defaults.compact_display(), None);
+    assert_eq!(defaults.notation(), "standard");
+    assert_eq!(defaults.sign_display(), "auto");
+    assert_eq!(defaults.rounding_priority(), "auto");
+    assert_eq!(defaults.rounding_increment(), 1.0);
+    assert_eq!(defaults.rounding_mode(), "halfExpand");
+    assert_eq!(defaults.trailing_zero_display(), "auto");
+    let currency = make(vec![
+        ("style", string_value("currency")),
+        ("currency", string_value("usd")),
+        ("currencyDisplay", string_value("code")),
+    ])
+    .resolved_options();
+    assert_eq!(currency.currency().as_deref(), Some("USD"));
+    assert_eq!(currency.currency_display().as_deref(), Some("code"));
+    assert_eq!(currency.currency_sign().as_deref(), Some("standard"));
+    assert_eq!(
+        default.resolved_options().minimum_fraction_digits(),
+        Some(0.0)
+    );
+    assert_eq!(
+        default.resolved_options().maximum_fraction_digits(),
+        Some(3.0)
+    );
+    assert_eq!(
+        default.resolved_options().maximum_significant_digits(),
+        None
+    );
+    assert_eq!(default.format(-0.0), "-0");
+    assert_eq!(
+        make(vec![("roundingIncrement", JsValue::Number(1.9))]).format(1.25),
+        "1.25"
+    );
+    assert_eq!(
+        make(vec![("maximumFractionDigits", JsValue::Number(2.0))]).format(1.005),
+        "1.01"
+    );
+    assert_eq!(
+        make(vec![("minimumSignificantDigits", JsValue::Number(3.0))]).format(0.0),
+        "0.00"
+    );
+    for (input, strategy, rendered) in [
+        (JsValue::Bool(false), None, "1234"),
+        (JsValue::Bool(true), Some("always"), "1,234"),
+        (string_value("auto"), Some("auto"), "1,234"),
+        (string_value("always"), Some("always"), "1,234"),
+        (string_value("min2"), Some("min2"), "1234"),
+    ] {
+        let formatter = make(vec![("useGrouping", input)]);
+        let selected = formatter.resolved_options().use_grouping();
+        if let Some(strategy) = strategy {
+            assert_eq!(selected.type_of(), "string");
+            assert_eq!(selected.as_string(), strategy);
+        } else {
+            assert_eq!(selected.type_of(), "boolean");
+            assert!(!selected.as_bool());
+        }
+        assert_eq!(formatter.format(1234.0), rendered);
+        assert_eq!(
+            formatter.format(12345.0),
+            if strategy.is_none() {
+                "12345"
+            } else {
+                "12,345"
+            }
+        );
+    }
+    for (value, expected) in [
+        (9_007_199_254_740_993_i64, "9,007,199,254,740,993"),
+        (i64::MIN, "-9,223,372,036,854,775,808"),
+    ] {
+        assert_eq!(default.format(value), expected);
+        let parts = default
+            .format_to_parts(value)
+            .values()
+            .into_iter()
+            .flatten()
+            .map(|part| part.value())
+            .collect::<Vec<_>>()
+            .concat();
+        assert_eq!(parts, expected);
+        assert_eq!(
+            tsonic_rust_js::abi::integer_to_locale_string(value),
+            expected
+        );
+    }
+    assert_eq!(default.format(u64::MAX), "18,446,744,073,709,551,615");
+    let plain = make(vec![("useGrouping", JsValue::Bool(false))]);
+    assert_eq!(
+        plain.format(i128::MIN),
+        "-170141183460469231731687303715884105728"
+    );
+    assert_eq!(
+        plain.format(u128::MAX),
+        "340282366920938463463374607431768211455"
+    );
+    let arbitrary = tsonic_rust_runtime::BigInt::from_decimal_literal(
+        "340282366920938463463374607431768211456123",
+    );
+    assert_eq!(
+        plain.format(&arbitrary),
+        "340282366920938463463374607431768211456123"
+    );
+    assert_eq!(
+        plain.format(&-arbitrary),
+        "-340282366920938463463374607431768211456123"
+    );
+    assert_eq!(
+        make(vec![("style", string_value("percent"))]).format(9_007_199_254_740_993_i64),
+        "900,719,925,474,099,300%"
+    );
+}
+
+#[test]
+fn intl_number_rejects_unsupported_options_instead_of_ignoring_them() {
+    for (name, value) in [
+        ("useGrouping", string_value("unknown")),
+        ("notation", string_value("compact")),
+        ("notation", string_value("scientific")),
+        ("style", string_value("unit")),
+        ("unit", string_value("not-a-unit")),
+        ("unit", string_value("meter")),
+        ("currencySign", string_value("accounting")),
+        ("roundingMode", string_value("halfEven")),
+        ("roundingPriority", string_value("morePrecision")),
+        ("roundingIncrement", JsValue::Number(5.0)),
+        ("signDisplay", string_value("always")),
+        ("trailingZeroDisplay", string_value("stripIfInteger")),
+        ("maximumSignificantDigits", JsValue::Number(22.0)),
+        ("maximumFractionDigits", JsValue::Number(101.0)),
+    ] {
+        let result = IntlNumberFormat::with_locale_options(
+            "en",
+            &JsValue::object(JsObject::from_pairs([(name, value)])),
+        );
+        assert!(result.is_err(), "option {name} must reject");
+    }
+}
+
+#[test]
 fn symbols_preserve_fresh_and_registry_identity() {
     let empty = JsSymbol::create();
     let numeric = JsSymbol::create_number(42.0);
