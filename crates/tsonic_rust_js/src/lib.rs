@@ -5,6 +5,7 @@
 pub mod abi;
 pub mod array;
 pub mod array_buffer;
+pub mod bigint;
 pub mod boolean;
 mod coercion;
 pub mod console;

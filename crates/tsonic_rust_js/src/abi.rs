@@ -1,5 +1,6 @@
 //! Backend-legal ABI re-exports for generated Rust.
 
+pub use crate::array::construct_length as array_construct_length;
 pub use crate::array::{
     from_string as array_from_string, from_vec as array_from_vec,
     from_vec_map as array_from_vec_map, from_vec_map_with_index as array_from_vec_map_with_index,
@@ -9,6 +10,10 @@ pub use crate::array::{
     of as array_of, JsArray, JsArrayConcatItem, JsSlot,
 };
 pub use crate::array_buffer::ArrayBuffer;
+pub use crate::bigint::{
+    from_boolean as bigint_from_boolean, from_integer as bigint_from_integer,
+    from_number as bigint_from_number, from_string as bigint_from_string,
+};
 pub use crate::boolean::{to_string as boolean_to_string, value_of as boolean_value_of};
 pub use crate::console::{
     assert as console_assert, assert_default as console_assert_default, clear as console_clear,
@@ -77,7 +82,7 @@ pub use crate::number::{
     MIN_VALUE as NUMBER_MIN_VALUE, NAN as NUMBER_NAN,
     NEGATIVE_INFINITY as NUMBER_NEGATIVE_INFINITY, POSITIVE_INFINITY as NUMBER_POSITIVE_INFINITY,
 };
-pub use crate::object::{is as object_is, JsObject};
+pub use crate::object::{is as object_is, EmptyObject, JsObject};
 pub use crate::promise::{
     promise_all_settled, promise_any, promise_race, JsPromise, PromiseFulfilledResult,
     PromiseRejectedResult, PromiseSettledResult,

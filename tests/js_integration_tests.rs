@@ -10,6 +10,8 @@ mod array_buffer_tests;
 mod capability_closure_tests;
 #[path = "js/console_tests.rs"]
 mod console_tests;
+#[path = "js/construction_tests.rs"]
+mod construction_tests;
 #[path = "js/date_tests.rs"]
 mod date_tests;
 #[path = "js/equality_tests.rs"]

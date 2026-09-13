@@ -1,10 +1,12 @@
 //! Canonical JavaScript array carrier and static helpers.
 
+pub mod construction;
 mod fallible_callbacks;
 pub mod js_array;
 pub mod slot;
 pub mod statics;
 
+pub use construction::{construct_length, ArrayLength};
 pub use js_array::{JsArray, JsArrayIterator};
 pub use slot::JsSlot;
 pub use statics::{
