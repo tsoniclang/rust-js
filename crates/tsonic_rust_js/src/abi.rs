@@ -2,7 +2,12 @@
 
 pub use crate::array::construct_length as array_construct_length;
 pub use crate::array::{
-    from_string as array_from_string, from_vec as array_from_vec,
+    from_string as array_from_string, from_string_map as array_from_string_map,
+    from_string_map_with_index as array_from_string_map_with_index,
+    from_string_map_zero as array_from_string_map_zero,
+    from_string_try_map as array_from_string_try_map,
+    from_string_try_map_with_index as array_from_string_try_map_with_index,
+    from_string_try_map_zero as array_from_string_try_map_zero, from_vec as array_from_vec,
     from_vec_map as array_from_vec_map, from_vec_map_with_index as array_from_vec_map_with_index,
     from_vec_map_zero as array_from_vec_map_zero, from_vec_try_map as array_from_vec_try_map,
     from_vec_try_map_with_index as array_from_vec_try_map_with_index,

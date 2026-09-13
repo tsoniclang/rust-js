@@ -14,6 +14,78 @@ pub fn from_string(value: &str) -> super::JsArray<String> {
     super::JsArray::from_dense(value.chars().map(|ch| ch.to_string()).collect())
 }
 
+pub fn from_string_map_zero<U, F>(value: &str, mut callback: F) -> super::JsArray<U>
+where
+    F: FnMut() -> U,
+{
+    super::JsArray::from_dense(value.chars().map(|_| callback()).collect())
+}
+
+pub fn from_string_map<U, F>(value: &str, mut callback: F) -> super::JsArray<U>
+where
+    F: FnMut(String) -> U,
+{
+    super::JsArray::from_dense(
+        value
+            .chars()
+            .map(|scalar| callback(scalar.to_string()))
+            .collect(),
+    )
+}
+
+pub fn from_string_map_with_index<U, F>(value: &str, mut callback: F) -> super::JsArray<U>
+where
+    F: FnMut(String, f64) -> U,
+{
+    super::JsArray::from_dense(
+        value
+            .chars()
+            .enumerate()
+            .map(|(index, scalar)| callback(scalar.to_string(), index as f64))
+            .collect(),
+    )
+}
+
+pub fn from_string_try_map_zero<U, E, F>(
+    value: &str,
+    mut callback: F,
+) -> Result<super::JsArray<U>, E>
+where
+    F: FnMut() -> Result<U, E>,
+{
+    let values = value
+        .chars()
+        .map(|_| callback())
+        .collect::<Result<Vec<_>, E>>()?;
+    Ok(super::JsArray::from_dense(values))
+}
+
+pub fn from_string_try_map<U, E, F>(value: &str, mut callback: F) -> Result<super::JsArray<U>, E>
+where
+    F: FnMut(String) -> Result<U, E>,
+{
+    let values = value
+        .chars()
+        .map(|scalar| callback(scalar.to_string()))
+        .collect::<Result<Vec<_>, E>>()?;
+    Ok(super::JsArray::from_dense(values))
+}
+
+pub fn from_string_try_map_with_index<U, E, F>(
+    value: &str,
+    mut callback: F,
+) -> Result<super::JsArray<U>, E>
+where
+    F: FnMut(String, f64) -> Result<U, E>,
+{
+    let values = value
+        .chars()
+        .enumerate()
+        .map(|(index, scalar)| callback(scalar.to_string(), index as f64))
+        .collect::<Result<Vec<_>, E>>()?;
+    Ok(super::JsArray::from_dense(values))
+}
+
 pub fn from_vec<T: Clone>(values: &[T]) -> super::JsArray<T> {
     super::JsArray::from_dense(values.to_owned())
 }

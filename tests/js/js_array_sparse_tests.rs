@@ -280,6 +280,80 @@ fn array_static_factories_preserve_values_and_array_brand() {
 }
 
 #[test]
+fn mapped_string_construction_preserves_scalars_indices_and_empty_input() {
+    let input = "a😀é";
+    assert_eq!(
+        statics::from_string_map_zero(input, || 7).values(),
+        vec![Some(7); 3]
+    );
+    assert_eq!(
+        statics::from_string_map(input, |part| part).values(),
+        vec![
+            Some("a".to_owned()),
+            Some("😀".to_owned()),
+            Some("é".to_owned())
+        ]
+    );
+    assert_eq!(
+        statics::from_string_map_with_index(input, |part, index| format!("{part}:{index}"))
+            .values(),
+        vec![
+            Some("a:0".to_owned()),
+            Some("😀:1".to_owned()),
+            Some("é:2".to_owned())
+        ]
+    );
+    let mut calls = 0;
+    let empty = statics::from_string_map_zero("", || {
+        calls += 1;
+        calls
+    });
+    assert_eq!(empty.len(), 0);
+    assert_eq!(calls, 0);
+    let exact = statics::from_string_try_map("Aÿ", |part| {
+        u8::try_from(part.chars().next().unwrap() as u32)
+    });
+    assert_eq!(exact.unwrap().values(), vec![Some(65), Some(255)]);
+}
+
+#[test]
+fn mapped_string_construction_stops_at_each_callback_failure() {
+    let mut zero_calls = 0;
+    let zero = statics::from_string_try_map_zero("abc", || {
+        zero_calls += 1;
+        if zero_calls == 2 {
+            Err("stop")
+        } else {
+            Ok(zero_calls)
+        }
+    });
+    assert_eq!(zero.unwrap_err(), "stop");
+    assert_eq!(zero_calls, 2);
+    let mut visited = String::new();
+    let values = statics::from_string_try_map("a😀z", |part| {
+        visited.push_str(&part);
+        if part == "😀" {
+            Err("stop")
+        } else {
+            Ok(part)
+        }
+    });
+    assert_eq!(values.unwrap_err(), "stop");
+    assert_eq!(visited, "a😀");
+    let mut indices = Vec::new();
+    let indexed = statics::from_string_try_map_with_index("a😀z", |part, index| {
+        indices.push(index);
+        if index == 1.0 {
+            Err("stop")
+        } else {
+            Ok(part)
+        }
+    });
+    assert_eq!(indexed.unwrap_err(), "stop");
+    assert_eq!(indices, vec![0.0, 1.0]);
+}
+
+#[test]
 fn concat_preserves_holes_values_order_and_source_identity() {
     let left = JsArray::from_sparse(3, vec![(0, 1), (2, 3)]);
     let right = JsArray::from_sparse(2, vec![(1, 5)]);
