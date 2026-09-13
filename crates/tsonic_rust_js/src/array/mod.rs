@@ -4,6 +4,7 @@ pub mod construction;
 mod entries;
 mod fallible_callbacks;
 pub mod js_array;
+mod locations;
 pub mod slot;
 pub mod statics;
 

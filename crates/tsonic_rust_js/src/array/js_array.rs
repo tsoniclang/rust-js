@@ -1207,7 +1207,7 @@ where
     Ok(sorted)
 }
 
-fn canonical_array_index(value: f64) -> Option<usize> {
+pub(super) fn canonical_array_index(value: f64) -> Option<usize> {
     const MAX_ARRAY_INDEX: f64 = 4_294_967_294.0;
     (value.is_finite() && (0.0..=MAX_ARRAY_INDEX).contains(&value) && value.trunc() == value)
         .then_some(value as usize)

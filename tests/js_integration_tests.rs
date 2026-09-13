@@ -8,6 +8,8 @@ fn js(value: impl AsRef<str>) -> JsString {
 mod array_buffer_tests;
 #[path = "js/array_entries_tests.rs"]
 mod array_entries_tests;
+#[path = "js/array_location_tests.rs"]
+mod array_location_tests;
 #[path = "js/atomics_tests.rs"]
 mod atomics_tests;
 #[path = "js/capability_closure_tests.rs"]
