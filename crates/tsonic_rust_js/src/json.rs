@@ -69,6 +69,11 @@ pub fn stringify_pretty(value: &JsValue) -> JsResult<Option<String>> {
     stringify(value)
 }
 
+pub fn stringify_string(value: &str) -> JsResult<String> {
+    stringify(&JsValue::String(JsString::from_utf8(value)))?
+        .ok_or_else(|| type_error("JSON string serialization did not produce a value"))
+}
+
 pub fn stringify_with_indent(value: &JsValue, indent: &str) -> JsResult<Option<String>> {
     stringify_with_indent_and_limits(value, indent, JsonLimits::default())
 }

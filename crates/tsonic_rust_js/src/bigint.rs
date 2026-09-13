@@ -21,6 +21,49 @@ pub fn from_boolean(value: bool) -> BigInt {
     from_integer(u8::from(value))
 }
 
+pub fn as_int_n(bits: f64, value: &BigInt) -> JsResult<BigInt> {
+    wrap_bits(bits, value, true)
+}
+
+pub fn as_uint_n(bits: f64, value: &BigInt) -> JsResult<BigInt> {
+    wrap_bits(bits, value, false)
+}
+
+fn wrap_bits(bits: f64, value: &BigInt, signed: bool) -> JsResult<BigInt> {
+    let width = crate::coercion::to_integer_or_infinity(bits);
+    if !(0.0..=crate::number::MAX_SAFE_INTEGER).contains(&width) {
+        return Err(range_error("BigInt bit width is outside the index range"));
+    }
+    let width = width as u64;
+    if width == 0 {
+        return Ok(from_integer(0_u8));
+    }
+    let mut bytes = value.to_signed_bytes_le();
+    let negative = bytes.last().is_some_and(|byte| byte & 0x80 != 0);
+    if (signed || !negative) && width >= bytes.len() as u64 * 8 {
+        return Ok(value.clone());
+    }
+    let length = usize::try_from(width.div_ceil(8))
+        .map_err(|_| range_error("BigInt result exceeds addressable storage"))?;
+    let capacity = length
+        .checked_add(1)
+        .ok_or_else(|| range_error("BigInt result exceeds addressable storage"))?;
+    bytes
+        .try_reserve_exact(capacity.saturating_sub(bytes.len()))
+        .map_err(|_| range_error("BigInt result cannot be allocated"))?;
+    bytes.resize(length, if negative { 0xff } else { 0 });
+    let high_bits = ((width - 1) % 8 + 1) as u32;
+    let mask = ((1_u16 << high_bits) - 1) as u8;
+    let last = bytes.last_mut().expect("a nonzero bit width has storage");
+    *last &= mask;
+    if signed && *last & (1_u8 << (high_bits - 1)) != 0 {
+        *last |= !mask;
+    } else if *last & 0x80 != 0 {
+        bytes.push(0);
+    }
+    Ok(BigInt::from_signed_bytes_le(&bytes))
+}
+
 pub fn from_string(value: &str) -> JsResult<BigInt> {
     let text = value.trim_matches(crate::globals::is_ecmascript_whitespace);
     if text.is_empty() {

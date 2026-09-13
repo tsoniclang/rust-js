@@ -2,6 +2,77 @@ use tsonic_rust_js::{abi, array::ArrayLength, JsErrorKind};
 use tsonic_rust_runtime::BigInt;
 
 #[test]
+fn bigint_width_selection_preserves_exact_signed_and_unsigned_bits() {
+    for (bits, input, signed, unsigned) in [
+        (0.0, "-17", "0", "0"),
+        (1.9, "3", "-1", "1"),
+        (7.0, "64", "-64", "64"),
+        (7.0, "-129", "-1", "127"),
+        (8.0, "255", "-1", "255"),
+        (8.0, "-129", "127", "127"),
+        (9.0, "256", "-256", "256"),
+        (9.0, "-1", "-1", "511"),
+        (64.0, "18446744073709551615", "-1", "18446744073709551615"),
+        (
+            64.0,
+            "-9223372036854775809",
+            "9223372036854775807",
+            "9223372036854775807",
+        ),
+        (
+            64.0,
+            "9007199254740993",
+            "9007199254740993",
+            "9007199254740993",
+        ),
+    ] {
+        let value = BigInt::from_decimal_literal(input);
+        assert_eq!(
+            abi::bigint_as_int_n(bits, &value).unwrap().to_string(),
+            signed
+        );
+        assert_eq!(
+            abi::bigint_as_uint_n(bits, &value).unwrap().to_string(),
+            unsigned
+        );
+    }
+    let value = BigInt::from_decimal_literal("9");
+    for width in [f64::NAN, -0.5, -0.0] {
+        assert_eq!(
+            abi::bigint_as_int_n(width, &value).unwrap().to_string(),
+            "0"
+        );
+        assert_eq!(
+            abi::bigint_as_uint_n(width, &value).unwrap().to_string(),
+            "0"
+        );
+    }
+    for width in [
+        -1.0,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        9_007_199_254_740_992.0,
+    ] {
+        assert_eq!(
+            abi::bigint_as_int_n(width, &value).unwrap_err().kind(),
+            JsErrorKind::RangeError
+        );
+        assert_eq!(
+            abi::bigint_as_uint_n(width, &value).unwrap_err().kind(),
+            JsErrorKind::RangeError
+        );
+    }
+    assert_eq!(
+        abi::bigint_as_int_n(9_007_199_254_740_991.0, &value).unwrap(),
+        value
+    );
+    assert_eq!(
+        abi::bigint_as_uint_n(9_007_199_254_740_991.0, &value).unwrap(),
+        value
+    );
+}
+
+#[test]
 fn bigint_construction_preserves_all_integer_bits() {
     assert_eq!(
         abi::bigint_from_integer(9_007_199_254_740_993_u64).to_string(),

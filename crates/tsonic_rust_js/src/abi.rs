@@ -16,6 +16,7 @@ pub use crate::array::{
 };
 pub use crate::array_buffer::ArrayBuffer;
 pub use crate::bigint::{
+    as_int_n as bigint_as_int_n, as_uint_n as bigint_as_uint_n,
     from_boolean as bigint_from_boolean, from_integer as bigint_from_integer,
     from_number as bigint_from_number, from_string as bigint_from_string,
 };
@@ -52,7 +53,7 @@ pub use crate::intl::{
 };
 pub use crate::js_string::{from_utf8_string as js_string_from_utf8, JsString};
 pub use crate::json::{
-    parse as json_parse, stringify as json_stringify,
+    parse as json_parse, stringify as json_stringify, stringify_string as json_stringify_string,
     stringify_with_indent as json_stringify_with_indent,
     stringify_with_property_list as json_stringify_with_property_list,
     stringify_with_property_list_and_space_number as json_stringify_with_property_list_and_space_number,
