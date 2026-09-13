@@ -2,6 +2,28 @@ use tsonic_rust_js::abi::{bigint_to_number, JsNumeric};
 use tsonic_rust_runtime::BigInt;
 
 #[test]
+fn numeric_union_string_conversion_retains_number_and_bigint_semantics() {
+    for (value, expected) in [
+        (0.0, "0"),
+        (-0.0, "0"),
+        (1.5, "1.5"),
+        (1e21, "1e+21"),
+        (f64::NAN, "NaN"),
+        (f64::INFINITY, "Infinity"),
+        (f64::NEG_INFINITY, "-Infinity"),
+    ] {
+        assert_eq!(
+            tsonic_rust_runtime::source_string(&JsNumeric::from_number(value)),
+            expected
+        );
+    }
+    for expected in ["9007199254740993", "-18446744073709551617"] {
+        let value = JsNumeric::from_bigint(&BigInt::from_decimal_literal(expected));
+        assert_eq!(tsonic_rust_runtime::source_string(&value), expected);
+    }
+}
+
+#[test]
 fn numeric_union_conversion_and_refinement_preserve_precision() {
     let big = BigInt::from_decimal_literal("9007199254740993");
     let value = JsNumeric::from_bigint(&big);

@@ -9,6 +9,15 @@ pub enum JsNumeric {
     BigInt(BigInt),
 }
 
+impl tsonic_rust_runtime::ToSourceString for JsNumeric {
+    fn to_source_string(&self) -> String {
+        match self {
+            Self::Number(value) => tsonic_rust_runtime::source_string(value),
+            Self::BigInt(value) => tsonic_rust_runtime::source_string(value),
+        }
+    }
+}
+
 impl JsNumeric {
     pub fn from_number(value: f64) -> Self {
         Self::Number(value)
