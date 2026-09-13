@@ -261,6 +261,13 @@ impl<T: TypedElement> TypedArray<T> {
         self.view.buffer.clone()
     }
 
+    pub fn with_bytes<Result>(&self, operation: impl FnOnce(&[u8]) -> Result) -> Result {
+        let bytes = self.view.buffer.as_bytes();
+        let start = self.view.byte_offset;
+        let end = start + self.view.length * T::BYTES_PER_ELEMENT;
+        operation(&bytes[start..end])
+    }
+
     pub fn bytes_per_element(&self) -> f64 {
         Self::BYTES_PER_ELEMENT
     }

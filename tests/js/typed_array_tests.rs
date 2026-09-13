@@ -1,6 +1,16 @@
 use tsonic_rust_js::{Int16Array, JsArray, Uint8Array};
 
 #[test]
+fn typed_array_byte_reader_respects_the_selected_view() {
+    let values = Int16Array::from_vec(vec![0x1234 as f64, 0x5678 as f64]).unwrap();
+    let view = values.subarray(1.0, None);
+    assert_eq!(view.with_bytes(|bytes| bytes.to_vec()), [0x78, 0x56]);
+    values.set_number(1.0, 0.0);
+    assert_eq!(view.with_bytes(|bytes| bytes.to_vec()), [0, 0]);
+    assert_eq!(values.subarray(2.0, None).with_bytes(<[u8]>::len), 0);
+}
+
+#[test]
 fn typed_array_get_set_fill_and_slice() {
     let values = Int16Array::from_vec(vec![1.0, 2.0, 3.0, 4.0]).unwrap();
     assert_eq!(values.length(), 4.0);
