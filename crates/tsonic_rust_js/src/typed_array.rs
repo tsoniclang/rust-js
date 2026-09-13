@@ -178,6 +178,13 @@ pub type Uint32Array = TypedArray<u32>;
 pub type Float32Array = TypedArray<f32>;
 pub type Float64Array = TypedArray<f64>;
 
+impl TypedArray<u8> {
+    pub fn from_bytes(bytes: Vec<u8>) -> Self {
+        let length = bytes.len();
+        Self::from_view(ArrayBuffer::from_bytes(bytes), 0, length)
+    }
+}
+
 impl<T: TypedElement> TypedArray<T> {
     pub const BYTES_PER_ELEMENT: f64 = T::BYTES_PER_ELEMENT as f64;
 
@@ -289,6 +296,14 @@ impl<T: TypedElement> TypedArray<T> {
 
     pub fn length(&self) -> f64 {
         self.view.length as f64
+    }
+
+    pub fn len(&self) -> usize {
+        self.view.length
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.view.length == 0
     }
 
     pub fn at(&self, index: f64) -> Option<f64> {

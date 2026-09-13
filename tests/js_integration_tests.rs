@@ -24,6 +24,8 @@ mod globals_uri_dataview_tests;
 mod js_array_sparse_tests;
 #[path = "js/json_tests.rs"]
 mod json_tests;
+#[path = "js/local_date_tests.rs"]
+mod local_date_tests;
 #[path = "js/map_tests.rs"]
 mod map_tests;
 #[path = "js/math_tests.rs"]

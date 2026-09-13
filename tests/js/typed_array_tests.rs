@@ -1,6 +1,20 @@
 use tsonic_rust_js::{Int16Array, JsArray, Uint8Array};
 
 #[test]
+fn typed_array_owned_bytes_keep_exact_native_length_and_view_identity() {
+    use tsonic_rust_runtime::ObjectIdentityCarrier;
+
+    let bytes = Uint8Array::from_bytes(vec![3, 4, 5]);
+    let alias = bytes.clone();
+    assert_eq!(bytes.len(), 3);
+    assert!(!bytes.is_empty());
+    assert_eq!(alias.object_identity().key(), bytes.object_identity().key());
+    alias.set_number(0.0, 7.0);
+    assert_eq!(bytes.get_number(0.0), Some(7.0));
+    assert!(Uint8Array::from_bytes(Vec::new()).is_empty());
+}
+
+#[test]
 fn typed_array_byte_reader_respects_the_selected_view() {
     let values = Int16Array::from_vec(vec![0x1234 as f64, 0x5678 as f64]).unwrap();
     let view = values.subarray(1.0, None);

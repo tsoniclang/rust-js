@@ -1,4 +1,6 @@
-//! Minimal UTC-only Date carrier.
+//! Date carrier with native local timezone observations.
+
+mod local;
 
 use std::cell::Cell;
 use std::rc::Rc;
