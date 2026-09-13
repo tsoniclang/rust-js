@@ -477,11 +477,8 @@ impl<T> JsArray<T> {
             .collect()
     }
 
-    pub fn entries(&self) -> Vec<(usize, Option<T>)>
-    where
-        T: Clone,
-    {
-        self.values().into_iter().enumerate().collect()
+    pub fn entries(&self) -> super::JsArrayEntries<T> {
+        super::JsArrayEntries::new(self.clone())
     }
 
     pub fn iter_values(&self) -> JsArrayIterator<T> {

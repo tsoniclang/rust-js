@@ -195,8 +195,8 @@ where
     let length = values.len();
     let converted = values
         .entries()
-        .into_iter()
-        .filter_map(|(index, value)| value.map(|value| (index, convert(value))))
+        .enumerate()
+        .filter_map(|(index, (_, value))| value.map(|value| (index, convert(value))))
         .collect();
     JsValue::array(JsArray::from_sparse(length, converted))
 }

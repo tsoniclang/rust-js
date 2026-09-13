@@ -204,6 +204,17 @@ impl<T: TypedElement> TypedArray<T> {
         Self::from_numbers(values.iter_values())
     }
 
+    pub fn from_typed_array<U: TypedElement>(values: &TypedArray<U>) -> JsResult<Self> {
+        let result = Self::new(values.len() as f64)?;
+        for index in 0..values.len() {
+            let value = values
+                .get_usize(index)
+                .ok_or_else(|| range_error("typed array copy index is outside its view"))?;
+            result.set_usize(index, T::from_number(value.to_number()));
+        }
+        Ok(result)
+    }
+
     pub fn from_fixed_array<const LENGTH: usize>(values: &[f64; LENGTH]) -> JsResult<Self> {
         Self::from_numbers(values.iter().copied())
     }

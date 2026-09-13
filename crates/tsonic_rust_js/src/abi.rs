@@ -1,6 +1,7 @@
 //! Backend-legal ABI re-exports for generated Rust.
 
 pub use crate::array::construct_length as array_construct_length;
+pub use crate::array::JsArrayEntries;
 pub use crate::array::{
     from_string as array_from_string, from_string_map as array_from_string_map,
     from_string_map_with_index as array_from_string_map_with_index,

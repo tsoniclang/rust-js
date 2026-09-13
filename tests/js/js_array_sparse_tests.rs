@@ -68,8 +68,8 @@ fn sparse_array_splice_shift_unshift_and_entries() {
     assert_eq!(xs.pop(), Some(3));
     assert_eq!(xs.keys(), vec![0, 1, 2]);
     assert_eq!(
-        xs.entries(),
-        vec![(0, Some(0)), (1, Some(9)), (2, Some(10))]
+        xs.entries().collect::<Vec<_>>(),
+        vec![(0.0, Some(0)), (1.0, Some(9)), (2.0, Some(10))]
     );
 }
 
