@@ -175,3 +175,4 @@ pub use crate::web::{
     DomException, Event, EventInit, EventListenerOptions, EventTarget, File, FormData,
     FormDataValue, Headers, ImportMeta, Navigator, Request, Response, Storage,
 };
+pub use crate::JsStringNumber;

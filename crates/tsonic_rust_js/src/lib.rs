@@ -28,6 +28,7 @@ pub mod regexp;
 pub mod set;
 pub mod string;
 mod string_capacity;
+mod string_number;
 pub mod symbol;
 pub mod timers;
 pub mod typed_array;
@@ -54,6 +55,7 @@ pub use map::JsMap;
 pub use object::{JsObject, JsPropertyValue};
 pub use promise::{JsPromise, PromiseFulfilledResult, PromiseRejectedResult, PromiseSettledResult};
 pub use set::JsSet;
+pub use string_number::JsStringNumber;
 pub use symbol::JsSymbol;
 pub use tsonic_rust_runtime::{JsError, JsErrorKind};
 pub use typed_array::{

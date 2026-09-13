@@ -44,6 +44,8 @@ mod object_tests;
 mod regexp_tests;
 #[path = "js/set_tests.rs"]
 mod set_tests;
+#[path = "js/string_number_tests.rs"]
+mod string_number_tests;
 #[path = "js/string_tests.rs"]
 mod string_tests;
 #[path = "js/typed_array_tests.rs"]
