@@ -268,6 +268,13 @@ impl<T: TypedElement> TypedArray<T> {
         operation(&bytes[start..end])
     }
 
+    pub fn with_mut_bytes<Result>(&self, operation: impl FnOnce(&mut [u8]) -> Result) -> Result {
+        let mut bytes = self.view.buffer.as_mut_bytes();
+        let start = self.view.byte_offset;
+        let end = start + self.view.length * T::BYTES_PER_ELEMENT;
+        operation(&mut bytes[start..end])
+    }
+
     pub fn bytes_per_element(&self) -> f64 {
         Self::BYTES_PER_ELEMENT
     }
