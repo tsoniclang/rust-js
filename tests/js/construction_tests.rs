@@ -73,6 +73,29 @@ fn bigint_width_selection_preserves_exact_signed_and_unsigned_bits() {
 }
 
 #[test]
+fn bigint_radix_formatting_retains_all_integer_bits() {
+    let value = abi::bigint_from_string("-9007199254740993").unwrap();
+    assert_eq!(
+        abi::bigint_to_string_radix(&value, 16.0).unwrap(),
+        "-20000000000001"
+    );
+    assert_eq!(
+        abi::bigint_to_string_radix(&value, 2.9).unwrap(),
+        format!("-1{}1", "0".repeat(52))
+    );
+    let value = abi::bigint_from_string("35").unwrap();
+    assert_eq!(abi::bigint_to_string_radix(&value, 36.0).unwrap(), "z");
+    for radix in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -2.0, 1.0, 37.0] {
+        assert_eq!(
+            abi::bigint_to_string_radix(&value, radix)
+                .unwrap_err()
+                .kind(),
+            JsErrorKind::RangeError
+        );
+    }
+}
+
+#[test]
 fn bigint_construction_preserves_all_integer_bits() {
     assert_eq!(
         abi::bigint_from_integer(9_007_199_254_740_993_u64).to_string(),

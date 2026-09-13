@@ -11,6 +11,29 @@ use crate::js_string::to_native_string;
 use crate::number::JsNumberValue;
 use crate::{JsString, JsValue};
 
+pub struct NativeStringIterator {
+    value: String,
+    offset: usize,
+}
+
+impl NativeStringIterator {
+    pub fn new(value: String) -> Self {
+        Self { value, offset: 0 }
+    }
+}
+
+impl Iterator for NativeStringIterator {
+    type Item = String;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let character = self.value[self.offset..].chars().next()?;
+        self.offset += character.len_utf8();
+        Some(character.to_string())
+    }
+}
+
+impl std::iter::FusedIterator for NativeStringIterator {}
+
 /// JS-facing string value conversion contract used by dense array join and future array helpers.
 pub trait JsToString {
     fn to_js_string(&self) -> String;

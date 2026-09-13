@@ -105,6 +105,40 @@ fn dataview_reads_and_writes_endian_values() {
 }
 
 #[test]
+fn dataview_big_uint64_preserves_bits_endianness_and_shared_bounds() {
+    let buffer = ArrayBuffer::new(16.0).unwrap();
+    let whole = DataView::from_buffer(buffer.clone()).unwrap();
+    let view = DataView::from_buffer_length(buffer.clone(), 1.0, 8.0).unwrap();
+    let value = abi::bigint_from_string("9007199254740993").unwrap();
+    for little_endian in [false, true] {
+        view.set_big_uint64(0.0, &value, little_endian).unwrap();
+        assert_eq!(whole.get_big_uint64(1.0, little_endian).unwrap(), value);
+        let bytes = buffer.as_bytes();
+        let expected = if little_endian {
+            9_007_199_254_740_993_u64.to_le_bytes()
+        } else {
+            9_007_199_254_740_993_u64.to_be_bytes()
+        };
+        assert_eq!(&bytes[1..9], &expected);
+    }
+    let negative = abi::bigint_from_string("-1").unwrap();
+    view.set_big_uint64(0.0, &negative, false).unwrap();
+    assert_eq!(
+        view.get_big_uint64(0.0, false).unwrap().to_string(),
+        "18446744073709551615"
+    );
+    let overflowing = abi::bigint_from_string("18446744073709551617").unwrap();
+    view.set_big_uint64(0.0, &overflowing, true).unwrap();
+    assert_eq!(view.get_big_uint64(0.0, true).unwrap().to_string(), "1");
+    let before = buffer.as_bytes().to_vec();
+    for offset in [-1.0, 1.0, f64::INFINITY, f64::MAX] {
+        assert!(view.get_big_uint64(offset, false).is_err());
+        assert!(view.set_big_uint64(offset, &value, true).is_err());
+        assert_eq!(&*buffer.as_bytes(), &before);
+    }
+}
+
+#[test]
 fn dataview_clone_preserves_identity_while_new_views_only_share_storage() {
     let buffer = ArrayBuffer::new(2.0).unwrap();
     let first = DataView::from_buffer(buffer.clone()).unwrap();

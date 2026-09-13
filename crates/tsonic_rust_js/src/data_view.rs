@@ -161,6 +161,36 @@ impl DataView {
         ))
     }
 
+    pub fn get_big_uint64(
+        &self,
+        offset: f64,
+        little_endian: bool,
+    ) -> JsResult<tsonic_rust_runtime::BigInt> {
+        Ok(crate::bigint::from_integer(read_number(
+            self.read::<8>(offset)?,
+            little_endian,
+            u64::from_le_bytes,
+            u64::from_be_bytes,
+        )))
+    }
+
+    pub fn set_big_uint64(
+        &self,
+        offset: f64,
+        value: &tsonic_rust_runtime::BigInt,
+        little_endian: bool,
+    ) -> JsResult<()> {
+        let value = crate::bigint::as_uint_n(64.0, value)?;
+        let mut bytes = [0_u8; 8];
+        for (target, source) in bytes.iter_mut().zip(value.to_signed_bytes_le()) {
+            *target = source;
+        }
+        if !little_endian {
+            bytes.reverse();
+        }
+        self.write(offset, &bytes)
+    }
+
     pub fn set_int8(&self, offset: f64, value: f64) -> JsResult<()> {
         self.write(
             offset,

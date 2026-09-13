@@ -29,6 +29,14 @@ pub fn as_uint_n(bits: f64, value: &BigInt) -> JsResult<BigInt> {
     wrap_bits(bits, value, false)
 }
 
+pub fn to_string_radix(value: &BigInt, radix: f64) -> JsResult<String> {
+    let radix = crate::coercion::to_integer_or_infinity(radix);
+    if !(2.0..=36.0).contains(&radix) {
+        return Err(range_error("BigInt radix must be between 2 and 36"));
+    }
+    Ok(value.to_str_radix(radix as u32))
+}
+
 fn wrap_bits(bits: f64, value: &BigInt, signed: bool) -> JsResult<BigInt> {
     let width = crate::coercion::to_integer_or_infinity(bits);
     if !(0.0..=crate::number::MAX_SAFE_INTEGER).contains(&width) {

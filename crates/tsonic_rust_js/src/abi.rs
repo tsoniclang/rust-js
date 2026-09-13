@@ -19,6 +19,7 @@ pub use crate::bigint::{
     as_int_n as bigint_as_int_n, as_uint_n as bigint_as_uint_n,
     from_boolean as bigint_from_boolean, from_integer as bigint_from_integer,
     from_number as bigint_from_number, from_string as bigint_from_string,
+    to_string_radix as bigint_to_string_radix,
 };
 pub use crate::boolean::{to_string as boolean_to_string, value_of as boolean_value_of};
 pub use crate::console::{
@@ -145,7 +146,7 @@ pub use crate::string::{
     substring_from as js_string_substring_from, to_well_formed as js_string_to_well_formed,
     trim_end as js_string_trim_end, trim_start as js_string_trim_start,
     try_replace_all_with as js_string_try_replace_all_with,
-    try_replace_with as js_string_try_replace_with,
+    try_replace_with as js_string_try_replace_with, NativeStringIterator,
 };
 pub use crate::symbol::JsSymbol;
 pub use crate::timers::{
