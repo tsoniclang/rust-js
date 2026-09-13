@@ -2,6 +2,19 @@ use tsonic_rust_js::{abi, array::ArrayLength, JsErrorKind};
 use tsonic_rust_runtime::BigInt;
 
 #[test]
+fn compiler_provider_error_constructors_retain_kind_and_message() {
+    for (error, expected) in [
+        (abi::range_error("range"), JsErrorKind::RangeError),
+        (abi::type_error("type"), JsErrorKind::TypeError),
+        (abi::uri_error("uri"), JsErrorKind::URIError),
+    ] {
+        assert_eq!(error.kind(), expected);
+        assert!(!error.message().is_empty());
+    }
+    assert_eq!(abi::range_error("").message(), "");
+}
+
+#[test]
 fn bigint_width_selection_preserves_exact_signed_and_unsigned_bits() {
     for (bits, input, signed, unsigned) in [
         (0.0, "-17", "0", "0"),
