@@ -16,6 +16,10 @@ pub use crate::array::{
     of as array_of, JsArray, JsArrayConcatItem, JsSlot,
 };
 pub use crate::array_buffer::ArrayBuffer;
+pub use crate::atomics::{
+    load as atomics_load, notify as atomics_notify, notify_all as atomics_notify_all,
+    store as atomics_store, wait as atomics_wait, wait_forever as atomics_wait_forever,
+};
 pub use crate::bigint::{
     as_int_n as bigint_as_int_n, as_uint_n as bigint_as_uint_n,
     from_boolean as bigint_from_boolean, from_integer as bigint_from_integer,
