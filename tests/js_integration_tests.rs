@@ -30,6 +30,8 @@ mod map_tests;
 mod math_tests;
 #[path = "js/number_tests.rs"]
 mod number_tests;
+#[path = "js/numeric_union_tests.rs"]
+mod numeric_union_tests;
 #[path = "js/object_tests.rs"]
 mod object_tests;
 #[path = "js/regexp_tests.rs"]

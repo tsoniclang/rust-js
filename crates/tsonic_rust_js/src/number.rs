@@ -1,5 +1,8 @@
 //! Number helpers used by generated code for JavaScript-compatible semantics.
 
+mod numeric;
+pub use numeric::{bigint_to_number, JsNumeric};
+
 use std::cmp::Ordering;
 use std::str::FromStr;
 
