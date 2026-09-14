@@ -180,6 +180,19 @@ impl<T> JsArray<T> {
         )
     }
 
+    pub fn contains_number_property(index: f64, array: &Self) -> bool {
+        if let Some(index) = canonical_array_index(index) {
+            return array.has_index(index);
+        }
+        let key = crate::number::to_string(index);
+        array
+            .state
+            .borrow()
+            .numeric_properties
+            .iter()
+            .any(|(candidate, _)| candidate == &key)
+    }
+
     pub fn delete_at(&self, index: usize) -> bool {
         let mut state = self.state.borrow_mut();
         if let Some(slot) = state.slots.get_mut(index) {

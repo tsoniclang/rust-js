@@ -1,6 +1,31 @@
 use tsonic_rust_js::array::{statics, JsArray, JsSlot};
 
 #[test]
+fn numeric_membership_preserves_presence_without_cloning_values() {
+    struct Token;
+    let values = JsArray::from_dense(vec![Token]);
+    assert!(JsArray::contains_number_property(-0.0, &values));
+    assert!(!JsArray::contains_number_property(1.0, &values));
+    values.set_len(3);
+    assert!(!JsArray::contains_number_property(2.0, &values));
+    for index in [-1.0, 0.5, f64::NAN, f64::INFINITY, 4_294_967_295.0] {
+        assert!(!JsArray::contains_number_property(index, &values));
+        values.set_number(index, Token);
+        assert!(JsArray::contains_number_property(index, &values));
+        values.delete_number(index);
+        assert!(!JsArray::contains_number_property(index, &values));
+    }
+    values.delete_at(0);
+    assert!(!JsArray::contains_number_property(0.0, &values));
+    let optional = JsArray::from_dense(vec![None::<Token>]);
+    assert!(JsArray::contains_number_property(0.0, &optional));
+    optional.delete_at(0);
+    assert!(!JsArray::contains_number_property(0.0, &optional));
+    optional.set(0, None);
+    assert!(JsArray::contains_number_property(0.0, &optional));
+}
+
+#[test]
 fn sparse_array_length_delete_and_holes() {
     assert_eq!(JsSlot::Present(1).as_ref(), Some(&1));
     assert_eq!(JsSlot::<i32>::Hole.as_ref(), None);
