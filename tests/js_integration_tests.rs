@@ -22,6 +22,8 @@ mod construction_tests;
 mod date_tests;
 #[path = "js/equality_tests.rs"]
 mod equality_tests;
+#[path = "js/error_value_tests.rs"]
+mod error_value_tests;
 #[path = "js/fallible_callback_tests.rs"]
 mod fallible_callback_tests;
 #[path = "js/globals_uri_dataview_tests.rs"]

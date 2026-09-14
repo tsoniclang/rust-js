@@ -16,6 +16,13 @@ pub trait JsStrictEqual<Rhs: ?Sized = Self> {
     fn strict_equal(&self, other: &Rhs) -> bool;
 }
 
+impl JsStrictEqual for tsonic_rust_runtime::JsError {
+    fn strict_equal(&self, other: &Self) -> bool {
+        use tsonic_rust_runtime::ObjectIdentityCarrier;
+        tsonic_rust_runtime::ObjectIdentity::same(self.object_identity(), other.object_identity())
+    }
+}
+
 /// Stable hash corresponding to JS SameValueZero comparison.
 ///
 /// Equal values must return the same hash. Hash collisions are resolved with
