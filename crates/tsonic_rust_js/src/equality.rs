@@ -18,8 +18,7 @@ pub trait JsStrictEqual<Rhs: ?Sized = Self> {
 
 impl JsStrictEqual for tsonic_rust_runtime::JsError {
     fn strict_equal(&self, other: &Self) -> bool {
-        use tsonic_rust_runtime::ObjectIdentityCarrier;
-        tsonic_rust_runtime::ObjectIdentity::same(self.object_identity(), other.object_identity())
+        self.has_same_identity(other)
     }
 }
 

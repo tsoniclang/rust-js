@@ -13,7 +13,7 @@ use crate::equality::{
 use crate::errors::JsResult;
 use crate::object::JsObject;
 use crate::{JsString, JsSymbol};
-use tsonic_rust_runtime::{JsError, JsErrorKind, Null, ObjectIdentityCarrier, Undefined};
+use tsonic_rust_runtime::{JsError, JsErrorKind, Null, ToSourceString, Undefined};
 
 pub trait JsClosedValueCarrier: fmt::Debug {
     fn identity_key(&self) -> usize;
@@ -47,14 +47,14 @@ impl JsClosedValue {
     pub fn identity_key(&self) -> usize {
         match &self.0 {
             JsClosedValuePayload::Object(value) => value.identity_key(),
-            JsClosedValuePayload::Error(error) => error.object_identity().key(),
+            JsClosedValuePayload::Error(error) => error.identity_key(),
         }
     }
 
     pub fn inspect(&self) -> String {
         match &self.0 {
             JsClosedValuePayload::Object(value) => value.inspect_value(),
-            JsClosedValuePayload::Error(error) => error.to_string(),
+            JsClosedValuePayload::Error(error) => error.to_source_string(),
         }
     }
 
@@ -139,10 +139,14 @@ impl JsValue {
 
     pub fn error_value(&self) -> JsError {
         match self {
-            Self::Closed(value) => value.as_error().expect("checked Error projection selected a non-error payload").clone(),
+            Self::Closed(value) => value
+                .as_error()
+                .expect("checked Error projection selected a non-error payload")
+                .clone(),
             _ => panic!("checked Error projection selected a non-error payload"),
         }
     }
+
     pub const fn undefined() -> Self {
         Self::Undefined
     }
