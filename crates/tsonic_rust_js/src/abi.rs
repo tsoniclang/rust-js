@@ -90,7 +90,7 @@ pub use crate::number::{
     to_fixed_digits as number_to_fixed_digits, to_precision_default as number_to_precision,
     to_precision_digits as number_to_precision_digits, to_string as number_to_string,
     to_string_radix as number_to_string_radix, value_of as number_value_of, JsNumeric,
-    EPSILON as NUMBER_EPSILON, MAX_SAFE_INTEGER as NUMBER_MAX_SAFE_INTEGER,
+    SourceNumeric, EPSILON as NUMBER_EPSILON, MAX_SAFE_INTEGER as NUMBER_MAX_SAFE_INTEGER,
     MAX_VALUE as NUMBER_MAX_VALUE, MIN_SAFE_INTEGER as NUMBER_MIN_SAFE_INTEGER,
     MIN_VALUE as NUMBER_MIN_VALUE, NAN as NUMBER_NAN,
     NEGATIVE_INFINITY as NUMBER_NEGATIVE_INFINITY, POSITIVE_INFINITY as NUMBER_POSITIVE_INFINITY,

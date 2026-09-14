@@ -1,5 +1,50 @@
+use tsonic_rust_js::abi::SourceNumeric;
 use tsonic_rust_js::abi::{bigint_to_number, JsNumeric};
 use tsonic_rust_runtime::BigInt;
+
+#[test]
+fn generic_numeric_constraints_preserve_exact_domains() {
+    let large = BigInt::from_decimal_literal("9007199254740993");
+    assert!(SourceNumeric::greater_than(&large, &9007199254740992_f64));
+    assert!(SourceNumeric::less_than(&9007199254740992_f64, &large));
+    assert!(SourceNumeric::loose_equal(
+        &2_f64,
+        &BigInt::from_decimal_literal("2")
+    ));
+    assert!(!SourceNumeric::strict_equal(
+        &2_f64,
+        &BigInt::from_decimal_literal("2")
+    ));
+    assert!(SourceNumeric::strict_equal(&2_u32, &2_f64));
+    assert!(SourceNumeric::strict_equal(
+        &u64::MAX,
+        &BigInt::from_decimal_literal("18446744073709551615")
+    ));
+    assert!(SourceNumeric::strict_equal(
+        &u128::MAX,
+        &BigInt::from_decimal_literal("340282366920938463463374607431768211455")
+    ));
+    assert!(SourceNumeric::strict_equal(
+        &i128::MIN,
+        &BigInt::from_decimal_literal("-170141183460469231731687303715884105728")
+    ));
+    assert!(!SourceNumeric::greater_than_or_equal(&f64::NAN, &large));
+    assert!(!SourceNumeric::less_than_or_equal(&large, &f64::NAN));
+    assert!(SourceNumeric::less_than(&large, &f64::INFINITY));
+    assert!(SourceNumeric::greater_than(&large, &f64::NEG_INFINITY));
+    assert!(SourceNumeric::loose_not_equal(
+        &large,
+        &9007199254740992_f64
+    ));
+    assert!(SourceNumeric::strict_not_equal(
+        &large,
+        &9007199254740992_f64
+    ));
+    assert!(SourceNumeric::less_than(
+        &BigInt::from_decimal_literal("2"),
+        &2.5_f64
+    ));
+}
 
 #[test]
 fn numeric_union_string_conversion_retains_number_and_bigint_semantics() {
