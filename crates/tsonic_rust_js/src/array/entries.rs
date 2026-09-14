@@ -30,7 +30,10 @@ impl<T> JsArrayEntries<T> {
 impl<T: Clone> JsArrayEntries<T> {
     pub fn checked_present_values(&self) -> impl Iterator<Item = (f64, T)> + use<T> {
         self.clone().map(|(index, value)| {
-            (index, value.expect("checked array density invariant violated"))
+            (
+                index,
+                value.expect("checked array density invariant violated"),
+            )
         })
     }
 

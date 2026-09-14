@@ -13,7 +13,10 @@ fn error_values_preserve_kind_message_and_reference_identity() {
     assert_eq!(alias.error_value().message(), "bounds");
     assert!(error.strict_equal(&alias.error_value()));
     assert!(value.strict_equal(&JsValue::from_error(&error)));
-    assert!(!value.strict_equal(&JsValue::from_error(&JsError::new(JsErrorKind::RangeError, "bounds"))));
+    assert!(!value.strict_equal(&JsValue::from_error(&JsError::new(
+        JsErrorKind::RangeError,
+        "bounds"
+    ))));
     assert_eq!(error, JsError::new(JsErrorKind::RangeError, "bounds"));
     assert_ne!(error, JsError::new(JsErrorKind::TypeError, "bounds"));
 }
@@ -28,7 +31,12 @@ fn native_diagnostic_errors_retain_send_and_sync() {
 
 #[test]
 fn non_error_values_cannot_pass_error_tests_or_projections() {
-    for value in [JsValue::undefined(), JsValue::null(), JsValue::Number(1.0), JsValue::object(tsonic_rust_js::object::JsObject::new())] {
+    for value in [
+        JsValue::undefined(),
+        JsValue::null(),
+        JsValue::Number(1.0),
+        JsValue::object(tsonic_rust_js::object::JsObject::new()),
+    ] {
         assert!(!value.is_error());
         assert!(!value.is_error_kind(JsErrorKind::Error));
     }
@@ -40,8 +48,12 @@ fn source_error_display_and_json_do_not_expose_diagnostic_storage() {
     let empty = JsError::error("");
     assert_eq!(empty.to_source_string(), "Error");
     assert_eq!(empty.to_string(), "Error: ");
-    let JsValue::Closed(value) = JsValue::from_error(&empty) else { panic!("missing closed error") };
+    let JsValue::Closed(value) = JsValue::from_error(&empty) else {
+        panic!("missing closed error")
+    };
     assert_eq!(value.inspect(), "Error");
-    let JsValue::Object(object) = value.project_json().expect("error JSON projection") else { panic!("non-object error JSON") };
+    let JsValue::Object(object) = value.project_json().expect("error JSON projection") else {
+        panic!("non-object error JSON")
+    };
     assert!(object.borrow().keys_exact().is_empty());
 }
