@@ -31,3 +31,23 @@ fn string_number_arrays_keep_native_strings_and_live_aliases() {
         JsStringNumber::Number(4.0)
     );
 }
+
+#[test]
+fn nullish_refinements_preserve_the_exact_selected_variant() {
+    assert_eq!(JsStringNumber::Null.as_null(), Null);
+    assert_eq!(JsStringNumber::Undefined.as_undefined(), Undefined);
+    for value in [
+        JsStringNumber::Number(0.0),
+        JsStringNumber::String(String::new()),
+        JsStringNumber::Undefined,
+    ] {
+        assert!(std::panic::catch_unwind(|| value.as_null()).is_err());
+    }
+    for value in [
+        JsStringNumber::Number(0.0),
+        JsStringNumber::String(String::new()),
+        JsStringNumber::Null,
+    ] {
+        assert!(std::panic::catch_unwind(|| value.as_undefined()).is_err());
+    }
+}

@@ -25,6 +25,33 @@ fn typed_array_byte_reader_respects_the_selected_view() {
 }
 
 #[test]
+fn typed_array_copy_converts_values_without_aliasing_the_original_view() {
+    let original = Int16Array::from_vec(vec![0.0, -1.0, 257.0, 3.0]).unwrap();
+    let view = original.subarray(1.0, Some(3.0));
+    let copy = Uint8Array::from_typed_array(&view).unwrap();
+    assert_eq!(copy.with_bytes(|bytes| bytes.to_vec()), vec![255, 1]);
+    view.set_number(0.0, 9.0);
+    assert_eq!(copy.get_number(0.0), Some(255.0));
+    copy.set_number(1.0, 7.0);
+    assert_eq!(original.get_number(2.0), Some(257.0));
+    assert!(Uint8Array::from_typed_array(&original.subarray(4.0, None)).unwrap().is_empty());
+}
+
+#[test]
+fn typed_array_mutable_bytes_only_expose_the_selected_backing_window() {
+    let original = Uint8Array::from_bytes(vec![1, 2, 3, 4]);
+    let view = original.subarray(1.0, Some(3.0));
+    let written = view.with_mut_bytes(|bytes| {
+        bytes.copy_from_slice(&[8, 9]);
+        bytes.len()
+    });
+    assert_eq!(written, 2);
+    assert_eq!(original.with_bytes(|bytes| bytes.to_vec()), vec![1, 8, 9, 4]);
+    assert_eq!(view.with_bytes(|bytes| bytes.to_vec()), vec![8, 9]);
+    assert_eq!(original.subarray(4.0, None).with_mut_bytes(|bytes| bytes.len()), 0);
+}
+
+#[test]
 fn typed_array_get_set_fill_and_slice() {
     let values = Int16Array::from_vec(vec![1.0, 2.0, 3.0, 4.0]).unwrap();
     assert_eq!(values.length(), 4.0);
