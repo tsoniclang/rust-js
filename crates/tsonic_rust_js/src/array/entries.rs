@@ -28,6 +28,12 @@ impl<T> JsArrayEntries<T> {
 }
 
 impl<T: Clone> JsArrayEntries<T> {
+    pub fn checked_present_values(&self) -> impl Iterator<Item = (f64, T)> + use<T> {
+        self.clone().map(|(index, value)| {
+            (index, value.expect("checked array density invariant violated"))
+        })
+    }
+
     pub fn next_result(&self) -> IteratorResult<(f64, Option<T>), Undefined> {
         match self.clone().next() {
             Some(value) => IteratorResult::yielded(value),
