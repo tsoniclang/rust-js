@@ -90,6 +90,33 @@ pub fn from_vec<T: Clone>(values: &[T]) -> super::JsArray<T> {
     super::JsArray::from_dense(values.to_owned())
 }
 
+pub fn from_dense_array<T: Clone>(values: &super::JsArray<T>) -> super::JsArray<T> {
+    super::JsArray::from_dense(
+        values
+            .entries()
+            .checked_present_values()
+            .map(|(_, value)| value)
+            .collect(),
+    )
+}
+
+pub fn from_optional_array<T: Clone>(
+    values: &super::JsArray<Option<T>>,
+) -> super::JsArray<Option<T>> {
+    super::JsArray::from_dense(values.entries().map(|(_, value)| value.flatten()).collect())
+}
+
+pub fn from_undefined_array(
+    values: &super::JsArray<tsonic_rust_runtime::Undefined>,
+) -> super::JsArray<tsonic_rust_runtime::Undefined> {
+    super::JsArray::from_dense(
+        values
+            .entries()
+            .map(|_| tsonic_rust_runtime::Undefined)
+            .collect(),
+    )
+}
+
 pub fn from_vec_map_zero<T: Clone, U, F>(values: &[T], mut callback: F) -> super::JsArray<U>
 where
     F: FnMut() -> U,
