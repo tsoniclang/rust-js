@@ -3,6 +3,25 @@ use tsonic_rust_js::abi::{bigint_to_number, JsNumeric};
 use tsonic_rust_runtime::BigInt;
 
 #[test]
+fn constrained_numeric_constructors_preserve_exact_conversion_rules() {
+    fn integer<Value: SourceNumeric>(value: &Value) -> tsonic_rust_js::errors::JsResult<BigInt> {
+        SourceNumeric::to_bigint(value)
+    }
+    let exact = BigInt::from_decimal_literal("9007199254740993");
+    assert_eq!(integer(&exact).unwrap(), exact);
+    assert_eq!(
+        integer(&u64::MAX).unwrap(),
+        BigInt::from_decimal_literal("18446744073709551615")
+    );
+    assert_eq!(integer(&7_f64).unwrap(), BigInt::from_decimal_literal("7"));
+    assert_eq!(integer(&-0_f64).unwrap(), BigInt::from_decimal_literal("0"));
+    assert_eq!(SourceNumeric::to_number(&exact), 9007199254740992_f64);
+    for invalid in [0.5, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert!(integer(&invalid).is_err());
+    }
+}
+
+#[test]
 fn generic_numeric_constraints_preserve_exact_domains() {
     let large = BigInt::from_decimal_literal("9007199254740993");
     assert!(SourceNumeric::greater_than(&large, &9007199254740992_f64));

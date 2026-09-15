@@ -1,8 +1,17 @@
 use super::JsNumeric;
+use crate::errors::JsResult;
 use tsonic_rust_runtime::BigInt;
 
 pub trait SourceNumeric {
     fn source_numeric(&self) -> JsNumeric;
+
+    fn to_number(&self) -> f64 {
+        self.source_numeric().to_number()
+    }
+
+    fn to_bigint(&self) -> JsResult<BigInt> {
+        self.source_numeric().to_bigint()
+    }
 
     fn less_than(&self, other: &impl SourceNumeric) -> bool {
         self.source_numeric().less_than(&other.source_numeric())
