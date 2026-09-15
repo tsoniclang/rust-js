@@ -9,7 +9,6 @@ use crate::value::JsValue;
 use crate::JsString;
 
 mod identity;
-pub use identity::EmptyObject;
 
 pub type JsPropertyValue = JsValue;
 

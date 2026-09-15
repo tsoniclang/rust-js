@@ -126,7 +126,10 @@ fn bigint_construction_preserves_all_integer_bits() {
     assert_eq!(abi::bigint_from_boolean(false).to_string(), "0");
     assert_eq!(abi::bigint_from_number(-42.0).unwrap().to_string(), "-42");
     assert_eq!(abi::bigint_from_number(-0.0).unwrap().to_string(), "0");
-    assert_eq!(abi::bigint_from_number(1e100).unwrap().to_string(), "10000000000000000159028911097599180468360808563945281389781327557747838772170381060813469985856815104");
+    assert_eq!(
+        abi::bigint_from_number(1e100).unwrap().to_string(),
+        "10000000000000000159028911097599180468360808563945281389781327557747838772170381060813469985856815104"
+    );
     for number in [1.5, -1.5, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         assert_eq!(
             abi::bigint_from_number(number).unwrap_err().kind(),
@@ -188,9 +191,9 @@ fn array_length_construction_keeps_holes_and_reference_fill() {
 fn empty_objects_retain_identity_and_freeze_through_aliases() {
     use tsonic_rust_js::equality::{JsHash, JsSameValue, JsSameValueZero, JsStrictEqual};
     use tsonic_rust_runtime::ObjectIdentityCarrier;
-    let first = abi::EmptyObject::new();
+    let first = tsonic_rust_runtime::EmptyObject::new();
     let alias = first.clone();
-    let other = abi::EmptyObject::default();
+    let other = tsonic_rust_runtime::EmptyObject::default();
     assert!(!first.is_frozen());
     assert_eq!(first.freeze(), alias);
     assert!(alias.is_frozen());
@@ -205,7 +208,7 @@ fn empty_objects_retain_identity_and_freeze_through_aliases() {
     tokens.add(first.clone());
     assert!(tokens.has(&alias));
     assert!(!tokens.has(&other));
-    let backing = abi::array_construct_length::<abi::EmptyObject>(2).unwrap();
+    let backing = abi::array_construct_length::<tsonic_rust_runtime::EmptyObject>(2).unwrap();
     backing.fill_all(first.clone());
     assert_eq!(backing.at(0.0), backing.at(1.0));
     assert_eq!(backing.at(0.0), Some(first));
