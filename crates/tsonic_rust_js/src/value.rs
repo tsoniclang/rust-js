@@ -447,17 +447,17 @@ impl From<bool> for JsValue {
     }
 }
 
-impl From<f64> for JsValue {
-    fn from(value: f64) -> Self {
-        Self::Number(value)
-    }
+macro_rules! impl_exact_number_from {
+    ($($source:ty),+ $(,)?) => {
+        $(impl From<$source> for JsValue {
+            fn from(value: $source) -> Self {
+                Self::Number(f64::from(value))
+            }
+        })+
+    };
 }
 
-impl From<i32> for JsValue {
-    fn from(value: i32) -> Self {
-        Self::Number(f64::from(value))
-    }
-}
+impl_exact_number_from!(i8, u8, i16, u16, i32, u32, f32, f64);
 
 impl From<Null> for JsValue {
     fn from(_: Null) -> Self {
