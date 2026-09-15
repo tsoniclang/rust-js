@@ -213,3 +213,23 @@ fn empty_objects_retain_identity_and_freeze_through_aliases() {
     assert_eq!(backing.at(0.0), backing.at(1.0));
     assert_eq!(backing.at(0.0), Some(first));
 }
+
+#[test]
+fn empty_objects_keep_identity_when_boxed_as_closed_values() {
+    use tsonic_rust_js::value::{JsClosedValueCarrier, JsValue};
+    let first = tsonic_rust_runtime::EmptyObject::new();
+    let alias = first.clone();
+    let other = tsonic_rust_runtime::EmptyObject::new();
+    let boxed = abi::js_value_from_closed(&first);
+    assert_eq!(boxed, abi::js_value_from_closed(&alias));
+    assert_ne!(boxed, abi::js_value_from_closed(&other));
+    first.freeze();
+    assert!(alias.is_frozen());
+    assert_eq!(boxed, abi::js_value_from_closed(&alias));
+    assert_eq!(first.inspect_value(), "[object Object]");
+    assert_eq!(
+        tsonic_rust_js::json::stringify(&first.project_json().unwrap()).unwrap(),
+        Some("{}".to_owned())
+    );
+    assert_ne!(boxed, JsValue::Undefined);
+}

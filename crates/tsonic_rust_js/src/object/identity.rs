@@ -1,5 +1,22 @@
 use crate::equality::{hash_identity, JsHash, JsSameValue, JsSameValueZero, JsStrictEqual};
+use crate::errors::JsResult;
+use crate::object::JsObject;
+use crate::value::{JsClosedValueCarrier, JsValue};
 use tsonic_rust_runtime::{EmptyObject, ObjectIdentityCarrier};
+
+impl JsClosedValueCarrier for EmptyObject {
+    fn identity_key(&self) -> usize {
+        self.object_identity().key()
+    }
+
+    fn inspect_value(&self) -> String {
+        "[object Object]".to_owned()
+    }
+
+    fn project_json(&self) -> JsResult<JsValue> {
+        Ok(JsValue::object(JsObject::new()))
+    }
+}
 
 impl JsSameValueZero for EmptyObject {
     fn same_value_zero(&self, other: &Self) -> bool {
