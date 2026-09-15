@@ -5,6 +5,7 @@ mod entries;
 mod fallible_callbacks;
 pub mod js_array;
 mod locations;
+pub mod number_array_like;
 pub mod slot;
 pub mod statics;
 

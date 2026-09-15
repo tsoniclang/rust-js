@@ -178,3 +178,6 @@ pub use crate::web::{
     FormDataValue, Headers, ImportMeta, Navigator, Request, Response, Storage,
 };
 pub use crate::JsStringNumber;
+pub use crate::array::number_array_like::{
+    number_array_from, number_array_get, number_array_length, NumberArrayLike,
+};
