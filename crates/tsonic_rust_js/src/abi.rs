@@ -1,6 +1,9 @@
 //! Backend-legal ABI re-exports for generated Rust.
 
 pub use crate::array::construct_length as array_construct_length;
+pub use crate::array::number_array_like::{
+    number_array_from, number_array_get, number_array_length, NumberArrayLike,
+};
 pub use crate::array::JsArrayEntries;
 pub use crate::array::{
     from_dense_array as array_from_dense_array, from_optional_array as array_from_optional_array,
@@ -178,6 +181,3 @@ pub use crate::web::{
     FormDataValue, Headers, ImportMeta, Navigator, Request, Response, Storage,
 };
 pub use crate::JsStringNumber;
-pub use crate::array::number_array_like::{
-    number_array_from, number_array_get, number_array_length, NumberArrayLike,
-};

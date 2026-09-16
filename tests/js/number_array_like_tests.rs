@@ -37,13 +37,17 @@ fn number_array_copies_preserve_values_widths_and_output_independence() {
     assert!(copy.get(0).unwrap().is_sign_negative());
     assert!(copy.get(1).unwrap().is_nan());
     assert_eq!(copy.get(2), Some(f64::INFINITY));
-    assert_eq!(number_array_length(&number_array_from(&Uint8Array::from_bytes(Vec::new()))), 0.0);
+    assert_eq!(
+        number_array_length(&number_array_from(&Uint8Array::from_bytes(Vec::new()))),
+        0.0
+    );
 }
 
 #[test]
 fn number_array_copy_does_not_invent_numbers_for_absent_slots() {
     let values = JsArray::<f64>::from_sparse(2, vec![(0, 3.0)]);
     assert_eq!(number_array_get(&values, 1.0), None);
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| number_array_from(&values)));
+    let result =
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| number_array_from(&values)));
     assert!(result.is_err());
 }
