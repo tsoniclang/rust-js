@@ -1,7 +1,9 @@
 use std::cell::Cell;
 use std::rc::Rc;
 use tsonic_rust_js::abi::{
-    array_from_dense_array, array_from_optional_array, array_from_undefined_array, JsArray,
+    array_from_dense_array, array_from_optional_array, array_from_string_map_with_index,
+    array_from_string_try_map, array_from_undefined_array, array_from_vec_map_with_index,
+    array_from_vec_try_map, JsArray,
 };
 use tsonic_rust_runtime::Undefined;
 
@@ -28,7 +30,10 @@ fn dense_copy_clones_each_element_once_without_copying_numeric_properties() {
         }
     }
     let copies = Rc::new(Cell::new(0));
-    let original = JsArray::from_dense(vec![Counted(Rc::clone(&copies)), Counted(Rc::clone(&copies))]);
+    let original = JsArray::from_dense(vec![
+        Counted(Rc::clone(&copies)),
+        Counted(Rc::clone(&copies)),
+    ]);
     original.set_number(-1.0, Counted(Rc::clone(&copies)));
     let copied = array_from_dense_array(&original);
     assert_eq!(copies.get(), 2);
@@ -60,4 +65,52 @@ fn sparse_copies_create_present_undefined_without_mutating_the_source() {
 #[should_panic(expected = "checked array density invariant violated")]
 fn dense_copy_defends_its_compiler_proved_presence_invariant() {
     array_from_dense_array(&JsArray::<i32>::with_length(1));
+}
+
+#[test]
+fn mapped_copies_collect_each_requested_value_in_order() {
+    let mut visited = Vec::new();
+    let copy = array_from_vec_map_with_index(&[4, 7, 9], |value, index| {
+        visited.push((value, index));
+        value * 2
+    });
+    assert_eq!(visited, vec![(4, 0.0), (7, 1.0), (9, 2.0)]);
+    assert_eq!(copy.values(), vec![Some(8), Some(14), Some(18)]);
+    let text =
+        array_from_string_map_with_index("a😀b", |value, index| format!("{index}:{value}"));
+    assert_eq!(
+        text.values(),
+        vec![
+            Some("0:a".to_owned()),
+            Some("1:😀".to_owned()),
+            Some("2:b".to_owned())
+        ]
+    );
+}
+
+#[test]
+fn fallible_copies_stop_at_the_exact_error_without_publishing_a_partial_array() {
+    let error = Rc::new(Cell::new(1));
+    let mut visited = Vec::new();
+    let result = array_from_vec_try_map(&[4, 7, 9], |value| {
+        visited.push(value);
+        if value == 7 {
+            Err(Rc::clone(&error))
+        } else {
+            Ok(value)
+        }
+    });
+    assert_eq!(visited, vec![4, 7]);
+    assert!(Rc::ptr_eq(&result.unwrap_err(), &error));
+    let mut scalars = Vec::new();
+    let result = array_from_string_try_map("a😀b", |value| {
+        scalars.push(value.clone());
+        if value == "😀" {
+            Err(Rc::clone(&error))
+        } else {
+            Ok(value)
+        }
+    });
+    assert_eq!(scalars, vec!["a", "😀"]);
+    assert!(Rc::ptr_eq(&result.unwrap_err(), &error));
 }

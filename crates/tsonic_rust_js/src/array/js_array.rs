@@ -73,7 +73,21 @@ impl<T> JsArray<T> {
     }
 
     pub fn from_dense(values: Vec<T>) -> Self {
+        Self::from_values(values)
+    }
+
+    pub(super) fn from_values(values: impl IntoIterator<Item = T>) -> Self {
         Self::from_slots(values.into_iter().map(JsSlot::Present).collect())
+    }
+
+    pub(super) fn try_from_values<E>(
+        values: impl IntoIterator<Item = Result<T, E>>,
+    ) -> Result<Self, E> {
+        let slots = values
+            .into_iter()
+            .map(|value| value.map(JsSlot::Present))
+            .collect::<Result<_, E>>()?;
+        Ok(Self::from_slots(slots))
     }
 
     pub fn from_sparse(length: usize, values: Vec<(usize, T)>) -> Self {
