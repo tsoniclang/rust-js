@@ -98,6 +98,25 @@ impl<T> JsArray<T> {
         }
     }
 
+    pub(super) fn copy_materialized(&self, missing: impl Fn() -> T) -> Self
+    where
+        T: Clone,
+    {
+        let slots = self
+            .state
+            .borrow()
+            .slots
+            .iter()
+            .map(|slot| {
+                JsSlot::Present(match slot {
+                    JsSlot::Present(value) => value.clone(),
+                    JsSlot::Hole => missing(),
+                })
+            })
+            .collect();
+        Self::from_slots(slots)
+    }
+
     pub(super) fn replace_present_values(&self, values: Vec<T>) {
         let mut state = self.state.borrow_mut();
         let length = state.slots.len();

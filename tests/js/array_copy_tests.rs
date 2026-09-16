@@ -19,6 +19,26 @@ fn copies_preserve_element_identity_and_create_independent_array_storage() {
 }
 
 #[test]
+fn dense_copy_clones_each_element_once_without_copying_numeric_properties() {
+    struct Counted(Rc<Cell<usize>>);
+    impl Clone for Counted {
+        fn clone(&self) -> Self {
+            self.0.set(self.0.get() + 1);
+            Self(Rc::clone(&self.0))
+        }
+    }
+    let copies = Rc::new(Cell::new(0));
+    let original = JsArray::from_dense(vec![Counted(Rc::clone(&copies)), Counted(Rc::clone(&copies))]);
+    original.set_number(-1.0, Counted(Rc::clone(&copies)));
+    let copied = array_from_dense_array(&original);
+    assert_eq!(copies.get(), 2);
+    assert_eq!(copied.len(), 2);
+    assert!(copied.get_number(-1.0).is_none());
+    assert!(original.get_number(-1.0).is_some());
+    assert!(array_from_dense_array(&JsArray::<i32>::new()).is_empty());
+}
+
+#[test]
 fn sparse_copies_create_present_undefined_without_mutating_the_source() {
     let source = JsArray::from_sparse(3, vec![(0, Some(4)), (2, None)]);
     let copy = array_from_optional_array(&source);
