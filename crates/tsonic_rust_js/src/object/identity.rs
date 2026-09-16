@@ -2,7 +2,7 @@ use crate::equality::{hash_identity, JsHash, JsSameValue, JsSameValueZero, JsStr
 use crate::errors::JsResult;
 use crate::object::JsObject;
 use crate::value::{JsClosedValueCarrier, JsValue};
-use tsonic_rust_runtime::{EmptyObject, ObjectIdentity, ObjectIdentityCarrier};
+use tsonic_rust_runtime::{EmptyObject, ObjectIdentityCarrier};
 
 impl JsClosedValueCarrier for EmptyObject {
     fn identity_key(&self) -> usize {
@@ -39,29 +39,5 @@ impl JsStrictEqual for EmptyObject {
 impl JsHash for EmptyObject {
     fn js_hash(&self) -> u64 {
         hash_identity(self.object_identity().key())
-    }
-}
-
-impl JsSameValueZero for ObjectIdentity {
-    fn same_value_zero(&self, other: &Self) -> bool {
-        self == other
-    }
-}
-
-impl JsSameValue for ObjectIdentity {
-    fn same_value(&self, other: &Self) -> bool {
-        self == other
-    }
-}
-
-impl JsStrictEqual for ObjectIdentity {
-    fn strict_equal(&self, other: &Self) -> bool {
-        self == other
-    }
-}
-
-impl JsHash for ObjectIdentity {
-    fn js_hash(&self) -> u64 {
-        hash_identity(self.key())
     }
 }
