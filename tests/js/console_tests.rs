@@ -14,7 +14,10 @@ fn native_number_boxing_preserves_full_ranges_and_float_bits() {
         (JsValue::from(i32::MIN), -2147483648.0),
         (JsValue::from(u32::MAX), 4294967295.0),
         (JsValue::from(f32::MAX), f64::from(f32::MAX)),
-        (JsValue::from(f32::from_bits(1)), f64::from(f32::from_bits(1))),
+        (
+            JsValue::from(f32::from_bits(1)),
+            f64::from(f32::from_bits(1)),
+        ),
         (JsValue::from(-0.0_f32), -0.0_f64),
         (JsValue::from(f32::INFINITY), f64::INFINITY),
         (JsValue::from(f32::NEG_INFINITY), f64::NEG_INFINITY),
@@ -26,7 +29,10 @@ fn native_number_boxing_preserves_full_ranges_and_float_bits() {
         assert_eq!(actual.to_bits(), expected.to_bits());
     }
     assert!(matches!(JsValue::from(f32::NAN), JsValue::Number(value) if value.is_nan()));
-    assert_eq!(console::format_args(&[JsValue::from(u32::MAX)]), "4294967295");
+    assert_eq!(
+        console::format_args(&[JsValue::from(u32::MAX)]),
+        "4294967295"
+    );
 }
 
 #[test]
