@@ -3,7 +3,7 @@ use num_traits::FromPrimitive;
 use tsonic_rust_runtime::BigInt;
 
 pub fn from_integer<T: Into<num_bigint::BigInt>>(value: T) -> BigInt {
-    BigInt::from_signed_bytes_le(&value.into().to_signed_bytes_le())
+    BigInt::from(value.into())
 }
 
 pub fn from_number(value: f64) -> JsResult<BigInt> {

@@ -107,7 +107,7 @@ impl JsNumeric {
 }
 
 pub fn bigint_to_number(value: &BigInt) -> f64 {
-    let integer = num_bigint::BigInt::from_signed_bytes_le(&value.to_signed_bytes_le());
+    let integer = value.as_ref();
     integer.to_f64().unwrap_or_else(|| {
         if integer.sign() == num_bigint::Sign::Minus {
             f64::NEG_INFINITY
@@ -127,7 +127,7 @@ fn compare_bigint_number(left: &BigInt, right: f64) -> Option<Ordering> {
     if right == f64::NEG_INFINITY {
         return Some(Ordering::Greater);
     }
-    let integer = num_bigint::BigInt::from_signed_bytes_le(&left.to_signed_bytes_le());
+    let integer = left.as_ref();
     let truncated = num_bigint::BigInt::from_f64(right)?;
     let ordering = integer.cmp(&truncated);
     Some(if ordering == Ordering::Equal && right.fract() != 0.0 {

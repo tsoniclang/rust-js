@@ -78,19 +78,10 @@ macro_rules! bigint_sources {
     ($($scalar:ty),+ $(,)?) => { $(
         impl SourceNumeric for $scalar {
             fn source_numeric(&self) -> JsNumeric {
-                let bytes = i128::from(*self).to_le_bytes();
-                JsNumeric::BigInt(BigInt::from_signed_bytes_le(&bytes))
+                JsNumeric::BigInt(crate::bigint::from_integer(*self))
             }
         }
     )+ };
 }
 
-bigint_sources!(i64, u64, i128);
-
-impl SourceNumeric for u128 {
-    fn source_numeric(&self) -> JsNumeric {
-        let mut bytes = [0; 17];
-        bytes[..16].copy_from_slice(&self.to_le_bytes());
-        JsNumeric::BigInt(BigInt::from_signed_bytes_le(&bytes))
-    }
-}
+bigint_sources!(i64, u64, i128, u128);
