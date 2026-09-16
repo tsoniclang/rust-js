@@ -35,12 +35,9 @@ pub fn number_array_get<Value: NumberArrayLike>(value: &Value, index: f64) -> Op
 }
 
 pub fn number_array_from<Value: NumberArrayLike>(value: &Value) -> JsArray<f64> {
-    JsArray::from_values(
-        (0..value.number_array_length() as usize)
-            .map(|index| {
-                value
-                    .number_array_get(index as f64)
-                    .expect("checked array density invariant violated")
-            }),
-    )
+    JsArray::from_values((0..value.number_array_length() as usize).map(|index| {
+        value
+            .number_array_get(index as f64)
+            .expect("checked array density invariant violated")
+    }))
 }
