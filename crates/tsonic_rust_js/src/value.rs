@@ -134,7 +134,7 @@ impl JsValue {
     }
 
     pub fn is_error_kind(&self, kind: JsErrorKind) -> bool {
-        matches!(self, Self::Closed(value) if value.as_error().is_some_and(|error| error.kind == kind))
+        matches!(self, Self::Closed(value) if value.as_error().is_some_and(|error| error.kind() == kind))
     }
 
     pub fn error_value(&self) -> JsError {

@@ -557,7 +557,7 @@ fn array_reduce_without_initial_uses_first_present_slot_and_rejects_empty_input(
     let error = empty
         .reduce_from_first(|sum, value| sum + value)
         .expect_err("an array containing only holes has no initial accumulator");
-    assert_eq!(error.kind, tsonic_rust_runtime::JsErrorKind::TypeError);
+    assert_eq!(error.kind(), tsonic_rust_runtime::JsErrorKind::TypeError);
 }
 
 #[test]
