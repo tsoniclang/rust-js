@@ -15,6 +15,19 @@ struct JsArrayState<T> {
     numeric_properties: Vec<(String, T)>,
 }
 
+impl<T> JsArrayState<T> {
+    fn enumerable_own_keys(&self) -> impl Iterator<Item = String> + '_ {
+        self.slots
+            .iter()
+            .enumerate()
+            .filter_map(|(index, slot)| match slot {
+                JsSlot::Present(_) => Some(index.to_string()),
+                JsSlot::Hole => None,
+            })
+            .chain(self.numeric_properties.iter().map(|(key, _)| key.clone()))
+    }
+}
+
 #[derive(Debug)]
 pub struct JsArray<T> {
     state: Rc<RefCell<JsArrayState<T>>>,
@@ -498,17 +511,11 @@ impl<T> JsArray<T> {
     }
 
     pub fn enumerable_own_keys(&self) -> Vec<String> {
-        let state = self.state.borrow();
-        state
-            .slots
-            .iter()
-            .enumerate()
-            .filter_map(|(index, slot)| match slot {
-                JsSlot::Present(_) => Some(index.to_string()),
-                JsSlot::Hole => None,
-            })
-            .chain(state.numeric_properties.iter().map(|(key, _)| key.clone()))
-            .collect()
+        self.state.borrow().enumerable_own_keys().collect()
+    }
+
+    pub fn object_keys(&self) -> JsArray<String> {
+        JsArray::from_values(self.state.borrow().enumerable_own_keys())
     }
 
     pub fn values(&self) -> Vec<Option<T>>

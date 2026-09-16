@@ -1,6 +1,25 @@
 use tsonic_rust_js::array::{statics, JsArray, JsSlot};
 
 #[test]
+fn object_keys_returns_an_independent_dense_array_without_cloning_source_values() {
+    struct Token;
+    let values = JsArray::with_length(4);
+    values.set(2, Token);
+    values.set(0, Token);
+    values.set_number(-1.0, Token);
+    values.set_number(f64::NAN, Token);
+    let keys = values.object_keys();
+    assert_eq!(keys.join("|"), "0|2|-1|NaN");
+    assert_eq!(keys.len(), 4);
+    assert!((0..keys.len()).all(|index| keys.has_index(index)));
+    values.delete_at(0);
+    values.delete_number(-1.0);
+    values.set_number(-1.0, Token);
+    assert_eq!(values.object_keys().join("|"), "2|NaN|-1");
+    assert_eq!(keys.join("|"), "0|2|-1|NaN");
+}
+
+#[test]
 fn numeric_membership_preserves_presence_without_cloning_values() {
     struct Token;
     let values = JsArray::from_dense(vec![Token]);
