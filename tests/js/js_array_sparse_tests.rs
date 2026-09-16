@@ -1,6 +1,26 @@
 use tsonic_rust_js::array::{statics, JsArray, JsSlot};
 
 #[test]
+fn array_search_borrows_string_queries_without_materializing_owned_values() {
+    let values = JsArray::with_length(5);
+    values.set(1, String::from("café😀"));
+    values.set(3, String::from("café😀"));
+    let query = String::from("café😀");
+    assert!(values.includes_from_start(query.as_str()));
+    assert!(values.includes_from_start(&query));
+    assert!(values.includes("café😀", 2.0));
+    assert!(!values.includes("café😀", 4.0));
+    assert_eq!(values.index_of_from_start("café😀"), 1);
+    assert_eq!(values.index_of("café😀", 2.0), 3);
+    assert_eq!(values.last_index_of_from_end("café😀"), 3);
+    assert_eq!(values.last_index_of("café😀", -3.0), 1);
+    assert!(!values.includes_from_start("missing"));
+    assert_eq!(values.index_of_from_start(""), -1);
+    assert_eq!(values.last_index_of_from_end("missing"), -1);
+    assert_eq!(values.get(1).as_deref(), Some("café😀"));
+}
+
+#[test]
 fn object_keys_returns_an_independent_dense_array_without_cloning_source_values() {
     struct Token;
     let values = JsArray::with_length(4);

@@ -541,9 +541,9 @@ impl<T> JsArray<T> {
         }
     }
 
-    pub fn includes(&self, value: &T, from_index: f64) -> bool
+    pub fn includes<Query: ?Sized>(&self, value: &Query, from_index: f64) -> bool
     where
-        T: JsSameValueZero,
+        T: JsSameValueZero<Query>,
     {
         let state = self.state.borrow();
         let Some(start) = normalize_search_start(state.slots.len(), from_index) else {
@@ -555,16 +555,16 @@ impl<T> JsArray<T> {
         })
     }
 
-    pub fn includes_from_start(&self, value: &T) -> bool
+    pub fn includes_from_start<Query: ?Sized>(&self, value: &Query) -> bool
     where
-        T: JsSameValueZero,
+        T: JsSameValueZero<Query>,
     {
         self.includes(value, 0.0)
     }
 
-    pub fn index_of(&self, value: &T, from_index: f64) -> isize
+    pub fn index_of<Query: ?Sized>(&self, value: &Query, from_index: f64) -> isize
     where
-        T: JsStrictEqual,
+        T: JsStrictEqual<Query>,
     {
         let state = self.state.borrow();
         let Some(start) = normalize_search_start(state.slots.len(), from_index) else {
@@ -576,16 +576,16 @@ impl<T> JsArray<T> {
             .map_or(-1, |index| (start + index) as isize)
     }
 
-    pub fn index_of_from_start(&self, value: &T) -> isize
+    pub fn index_of_from_start<Query: ?Sized>(&self, value: &Query) -> isize
     where
-        T: JsStrictEqual,
+        T: JsStrictEqual<Query>,
     {
         self.index_of(value, 0.0)
     }
 
-    pub fn last_index_of(&self, value: &T, from_index: f64) -> isize
+    pub fn last_index_of<Query: ?Sized>(&self, value: &Query, from_index: f64) -> isize
     where
-        T: JsStrictEqual,
+        T: JsStrictEqual<Query>,
     {
         let state = self.state.borrow();
         let Some(start) = normalize_last_search_start(state.slots.len(), from_index) else {
@@ -597,9 +597,9 @@ impl<T> JsArray<T> {
             .map_or(-1, |index| index as isize)
     }
 
-    pub fn last_index_of_from_end(&self, value: &T) -> isize
+    pub fn last_index_of_from_end<Query: ?Sized>(&self, value: &Query) -> isize
     where
-        T: JsStrictEqual,
+        T: JsStrictEqual<Query>,
     {
         self.last_index_of(value, f64::INFINITY)
     }
