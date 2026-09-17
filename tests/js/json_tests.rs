@@ -6,6 +6,22 @@ fn stringify_text(value: &JsValue) -> String {
 }
 
 #[test]
+fn json_string_input_retains_its_guaranteed_result() {
+    for (input, expected) in [
+        ("", "\"\""),
+        ("quoted\"\\\n\0", "\"quoted\\\"\\\\\\n\\u0000\""),
+        ("héllo 😀", "\"héllo 😀\""),
+    ] {
+        assert_eq!(json::stringify_string(input).unwrap(), expected);
+        assert_eq!(
+            json::stringify(&JsValue::String(JsString::from_utf8(input))).unwrap(),
+            Some(expected.to_owned())
+        );
+    }
+    assert_eq!(json::stringify(&JsValue::Undefined).unwrap(), None);
+}
+
+#[test]
 fn json_parse_and_stringify_closed_values() {
     let value = json::parse(r#"{"a":1,"b":[true,null]}"#).unwrap();
     let JsValue::Object(object) = &value else {

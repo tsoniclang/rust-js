@@ -1,7 +1,19 @@
 //! Backend-legal ABI re-exports for generated Rust.
 
+pub use crate::array::construct_length as array_construct_length;
+pub use crate::array::number_array_like::{
+    number_array_from, number_array_get, number_array_length, NumberArrayLike,
+};
+pub use crate::array::JsArrayEntries;
 pub use crate::array::{
-    from_string as array_from_string, from_vec as array_from_vec,
+    from_dense_array as array_from_dense_array, from_optional_array as array_from_optional_array,
+    from_string as array_from_string, from_string_map as array_from_string_map,
+    from_string_map_with_index as array_from_string_map_with_index,
+    from_string_map_zero as array_from_string_map_zero,
+    from_string_try_map as array_from_string_try_map,
+    from_string_try_map_with_index as array_from_string_try_map_with_index,
+    from_string_try_map_zero as array_from_string_try_map_zero,
+    from_undefined_array as array_from_undefined_array, from_vec as array_from_vec,
     from_vec_map as array_from_vec_map, from_vec_map_with_index as array_from_vec_map_with_index,
     from_vec_map_zero as array_from_vec_map_zero, from_vec_try_map as array_from_vec_try_map,
     from_vec_try_map_with_index as array_from_vec_try_map_with_index,
@@ -9,6 +21,16 @@ pub use crate::array::{
     of as array_of, JsArray, JsArrayConcatItem, JsSlot,
 };
 pub use crate::array_buffer::ArrayBuffer;
+pub use crate::atomics::{
+    load as atomics_load, notify as atomics_notify, notify_all as atomics_notify_all,
+    store as atomics_store, wait as atomics_wait, wait_forever as atomics_wait_forever,
+};
+pub use crate::bigint::{
+    as_int_n as bigint_as_int_n, as_uint_n as bigint_as_uint_n,
+    from_boolean as bigint_from_boolean, from_integer as bigint_from_integer,
+    from_number as bigint_from_number, from_string as bigint_from_string,
+    to_string_radix as bigint_to_string_radix,
+};
 pub use crate::boolean::{to_string as boolean_to_string, value_of as boolean_value_of};
 pub use crate::console::{
     assert as console_assert, assert_default as console_assert_default, clear as console_clear,
@@ -30,6 +52,7 @@ pub use crate::console::{
 };
 pub use crate::data_view::DataView;
 pub use crate::date::JsDate;
+pub use crate::errors::{range_error, type_error, uri_error};
 pub use crate::globals::{is_finite, is_nan, to_number};
 pub use crate::intl::{
     integer_to_locale_string, integer_to_locale_string_with_locale,
@@ -42,7 +65,7 @@ pub use crate::intl::{
 };
 pub use crate::js_string::{from_utf8_string as js_string_from_utf8, JsString};
 pub use crate::json::{
-    parse as json_parse, stringify as json_stringify,
+    parse as json_parse, stringify as json_stringify, stringify_string as json_stringify_string,
     stringify_with_indent as json_stringify_with_indent,
     stringify_with_property_list as json_stringify_with_property_list,
     stringify_with_property_list_and_space_number as json_stringify_with_property_list_and_space_number,
@@ -64,15 +87,15 @@ pub use crate::math::{
     LOG2E as MATH_LOG2E, PI as MATH_PI, SQRT1_2 as MATH_SQRT1_2, SQRT2 as MATH_SQRT2,
 };
 pub use crate::number::{
-    is_finite as number_is_finite, is_integer as number_is_integer, is_nan as number_is_nan,
-    is_safe_integer as number_is_safe_integer, parse_float as number_parse_float,
-    parse_int_default as number_parse_int, parse_int_radix as number_parse_int_radix,
-    to_exponential_default as number_to_exponential,
+    bigint_to_number, is_finite as number_is_finite, is_integer as number_is_integer,
+    is_nan as number_is_nan, is_safe_integer as number_is_safe_integer,
+    parse_float as number_parse_float, parse_int_default as number_parse_int,
+    parse_int_radix as number_parse_int_radix, to_exponential_default as number_to_exponential,
     to_exponential_digits as number_to_exponential_digits, to_fixed_default as number_to_fixed,
     to_fixed_digits as number_to_fixed_digits, to_precision_default as number_to_precision,
     to_precision_digits as number_to_precision_digits, to_string as number_to_string,
-    to_string_radix as number_to_string_radix, value_of as number_value_of,
-    EPSILON as NUMBER_EPSILON, MAX_SAFE_INTEGER as NUMBER_MAX_SAFE_INTEGER,
+    to_string_radix as number_to_string_radix, value_of as number_value_of, JsNumeric,
+    SourceNumeric, EPSILON as NUMBER_EPSILON, MAX_SAFE_INTEGER as NUMBER_MAX_SAFE_INTEGER,
     MAX_VALUE as NUMBER_MAX_VALUE, MIN_SAFE_INTEGER as NUMBER_MIN_SAFE_INTEGER,
     MIN_VALUE as NUMBER_MIN_VALUE, NAN as NUMBER_NAN,
     NEGATIVE_INFINITY as NUMBER_NEGATIVE_INFINITY, POSITIVE_INFINITY as NUMBER_POSITIVE_INFINITY,
@@ -134,7 +157,7 @@ pub use crate::string::{
     substring_from as js_string_substring_from, to_well_formed as js_string_to_well_formed,
     trim_end as js_string_trim_end, trim_start as js_string_trim_start,
     try_replace_all_with as js_string_try_replace_all_with,
-    try_replace_with as js_string_try_replace_with,
+    try_replace_with as js_string_try_replace_with, NativeStringIterator,
 };
 pub use crate::symbol::JsSymbol;
 pub use crate::timers::{
@@ -157,3 +180,4 @@ pub use crate::web::{
     DomException, Event, EventInit, EventListenerOptions, EventTarget, File, FormData,
     FormDataValue, Headers, ImportMeta, Navigator, Request, Response, Storage,
 };
+pub use crate::JsStringNumber;

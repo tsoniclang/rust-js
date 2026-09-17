@@ -13,7 +13,7 @@ use crate::equality::{
 use crate::errors::JsResult;
 use crate::object::JsObject;
 use crate::{JsString, JsSymbol};
-use tsonic_rust_runtime::{Null, Undefined};
+use tsonic_rust_runtime::{JsError, JsErrorKind, Null, ToSourceString, Undefined};
 
 pub trait JsClosedValueCarrier: fmt::Debug {
     fn identity_key(&self) -> usize;
@@ -22,7 +22,13 @@ pub trait JsClosedValueCarrier: fmt::Debug {
 }
 
 #[derive(Clone)]
-pub struct JsClosedValue(Rc<dyn JsClosedValueCarrier>);
+pub struct JsClosedValue(JsClosedValuePayload);
+
+#[derive(Clone)]
+enum JsClosedValuePayload {
+    Object(Rc<dyn JsClosedValueCarrier>),
+    Error(JsError),
+}
 
 impl fmt::Debug for JsClosedValue {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -35,19 +41,35 @@ impl JsClosedValue {
     where
         T: JsClosedValueCarrier + 'static,
     {
-        Self(Rc::new(value))
+        Self(JsClosedValuePayload::Object(Rc::new(value)))
     }
 
     pub fn identity_key(&self) -> usize {
-        self.0.identity_key()
+        match &self.0 {
+            JsClosedValuePayload::Object(value) => value.identity_key(),
+            JsClosedValuePayload::Error(error) => error.identity_key(),
+        }
     }
 
     pub fn inspect(&self) -> String {
-        self.0.inspect_value()
+        match &self.0 {
+            JsClosedValuePayload::Object(value) => value.inspect_value(),
+            JsClosedValuePayload::Error(error) => error.to_source_string(),
+        }
     }
 
     pub fn project_json(&self) -> JsResult<JsValue> {
-        self.0.project_json()
+        match &self.0 {
+            JsClosedValuePayload::Object(value) => value.project_json(),
+            JsClosedValuePayload::Error(_) => Ok(JsValue::object(JsObject::new())),
+        }
+    }
+
+    fn as_error(&self) -> Option<&JsError> {
+        match &self.0 {
+            JsClosedValuePayload::Error(error) => Some(error),
+            JsClosedValuePayload::Object(_) => None,
+        }
     }
 }
 
@@ -103,6 +125,28 @@ pub enum JsValue {
 }
 
 impl JsValue {
+    pub fn from_error(error: &JsError) -> Self {
+        Self::Closed(JsClosedValue(JsClosedValuePayload::Error(error.clone())))
+    }
+
+    pub fn is_error(&self) -> bool {
+        matches!(self, Self::Closed(value) if value.as_error().is_some())
+    }
+
+    pub fn is_error_kind(&self, kind: JsErrorKind) -> bool {
+        matches!(self, Self::Closed(value) if value.as_error().is_some_and(|error| error.kind() == kind))
+    }
+
+    pub fn error_value(&self) -> JsError {
+        match self {
+            Self::Closed(value) => value
+                .as_error()
+                .expect("checked Error projection selected a non-error payload")
+                .clone(),
+            _ => panic!("checked Error projection selected a non-error payload"),
+        }
+    }
+
     pub const fn undefined() -> Self {
         Self::Undefined
     }
@@ -195,8 +239,8 @@ where
     let length = values.len();
     let converted = values
         .entries()
-        .into_iter()
-        .filter_map(|(index, value)| value.map(|value| (index, convert(value))))
+        .enumerate()
+        .filter_map(|(index, (_, value))| value.map(|value| (index, convert(value))))
         .collect();
     JsValue::array(JsArray::from_sparse(length, converted))
 }
@@ -403,17 +447,17 @@ impl From<bool> for JsValue {
     }
 }
 
-impl From<f64> for JsValue {
-    fn from(value: f64) -> Self {
-        Self::Number(value)
-    }
+macro_rules! impl_exact_number_from {
+    ($($source:ty),+ $(,)?) => {
+        $(impl From<$source> for JsValue {
+            fn from(value: $source) -> Self {
+                Self::Number(f64::from(value))
+            }
+        })+
+    };
 }
 
-impl From<i32> for JsValue {
-    fn from(value: i32) -> Self {
-        Self::Number(f64::from(value))
-    }
-}
+impl_exact_number_from!(i8, u8, i16, u16, i32, u32, f32, f64);
 
 impl From<Null> for JsValue {
     fn from(_: Null) -> Self {

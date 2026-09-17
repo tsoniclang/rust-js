@@ -3,6 +3,27 @@ use tsonic_rust_js::{exact_string as string, string as native_string, JsArray, J
 use tsonic_rust_runtime::JsErrorKind;
 
 #[test]
+fn native_string_iteration_is_lazy_and_scalar_exact() {
+    let mut values = native_string::NativeStringIterator::new("aé😀z".to_owned());
+    assert_eq!(values.next().as_deref(), Some("a"));
+    assert_eq!(values.next().as_deref(), Some("é"));
+    assert_eq!(values.next().as_deref(), Some("😀"));
+    assert_eq!(values.next().as_deref(), Some("z"));
+    assert_eq!(values.next(), None);
+    assert_eq!(values.next(), None);
+    assert_eq!(
+        native_string::NativeStringIterator::new(String::new()).next(),
+        None
+    );
+    assert_eq!(
+        native_string::NativeStringIterator::new("abc".repeat(100_000))
+            .take(1)
+            .collect::<Vec<_>>(),
+        ["a"]
+    );
+}
+
+#[test]
 fn utf16_length_and_indexes() {
     let value = js("abc");
     let emoji = js("😀");

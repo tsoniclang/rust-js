@@ -39,7 +39,7 @@ pub fn to_number(value: &JsValue) -> f64 {
     }
 }
 
-fn is_ecmascript_whitespace(value: char) -> bool {
+pub(crate) fn is_ecmascript_whitespace(value: char) -> bool {
     matches!(
         value,
         '\u{0009}'

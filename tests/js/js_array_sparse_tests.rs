@@ -1,6 +1,70 @@
 use tsonic_rust_js::array::{statics, JsArray, JsSlot};
 
 #[test]
+fn array_search_borrows_string_queries_without_materializing_owned_values() {
+    let values = JsArray::with_length(5);
+    values.set(1, String::from("café😀"));
+    values.set(3, String::from("café😀"));
+    let query = String::from("café😀");
+    assert!(values.includes_from_start(query.as_str()));
+    assert!(values.includes_from_start(&query));
+    assert!(values.includes("café😀", 2.0));
+    assert!(!values.includes("café😀", 4.0));
+    assert_eq!(values.index_of_from_start("café😀"), 1);
+    assert_eq!(values.index_of("café😀", 2.0), 3);
+    assert_eq!(values.last_index_of_from_end("café😀"), 3);
+    assert_eq!(values.last_index_of("café😀", -3.0), 1);
+    assert!(!values.includes_from_start("missing"));
+    assert_eq!(values.index_of_from_start(""), -1);
+    assert_eq!(values.last_index_of_from_end("missing"), -1);
+    assert_eq!(values.get(1).as_deref(), Some("café😀"));
+}
+
+#[test]
+fn object_keys_returns_an_independent_dense_array_without_cloning_source_values() {
+    struct Token;
+    let values = JsArray::with_length(4);
+    values.set(2, Token);
+    values.set(0, Token);
+    values.set_number(-1.0, Token);
+    values.set_number(f64::NAN, Token);
+    let keys = values.object_keys();
+    assert_eq!(keys.join("|"), "0|2|-1|NaN");
+    assert_eq!(keys.len(), 4);
+    assert!((0..keys.len()).all(|index| keys.has_index(index)));
+    values.delete_at(0);
+    values.delete_number(-1.0);
+    values.set_number(-1.0, Token);
+    assert_eq!(values.object_keys().join("|"), "2|NaN|-1");
+    assert_eq!(keys.join("|"), "0|2|-1|NaN");
+}
+
+#[test]
+fn numeric_membership_preserves_presence_without_cloning_values() {
+    struct Token;
+    let values = JsArray::from_dense(vec![Token]);
+    assert!(JsArray::contains_number_property(-0.0, &values));
+    assert!(!JsArray::contains_number_property(1.0, &values));
+    values.set_len(3);
+    assert!(!JsArray::contains_number_property(2.0, &values));
+    for index in [-1.0, 0.5, f64::NAN, f64::INFINITY, 4_294_967_295.0] {
+        assert!(!JsArray::contains_number_property(index, &values));
+        values.set_number(index, Token);
+        assert!(JsArray::contains_number_property(index, &values));
+        values.delete_number(index);
+        assert!(!JsArray::contains_number_property(index, &values));
+    }
+    values.delete_at(0);
+    assert!(!JsArray::contains_number_property(0.0, &values));
+    let optional = JsArray::from_dense(vec![None::<Token>]);
+    assert!(JsArray::contains_number_property(0.0, &optional));
+    optional.delete_at(0);
+    assert!(!JsArray::contains_number_property(0.0, &optional));
+    optional.set(0, None);
+    assert!(JsArray::contains_number_property(0.0, &optional));
+}
+
+#[test]
 fn sparse_array_length_delete_and_holes() {
     assert_eq!(JsSlot::Present(1).as_ref(), Some(&1));
     assert_eq!(JsSlot::<i32>::Hole.as_ref(), None);
@@ -68,8 +132,8 @@ fn sparse_array_splice_shift_unshift_and_entries() {
     assert_eq!(xs.pop(), Some(3));
     assert_eq!(xs.keys(), vec![0, 1, 2]);
     assert_eq!(
-        xs.entries(),
-        vec![(0, Some(0)), (1, Some(9)), (2, Some(10))]
+        xs.entries().collect::<Vec<_>>(),
+        vec![(0.0, Some(0)), (1.0, Some(9)), (2.0, Some(10))]
     );
 }
 
@@ -280,6 +344,80 @@ fn array_static_factories_preserve_values_and_array_brand() {
 }
 
 #[test]
+fn mapped_string_construction_preserves_scalars_indices_and_empty_input() {
+    let input = "a😀é";
+    assert_eq!(
+        statics::from_string_map_zero(input, || 7).values(),
+        vec![Some(7); 3]
+    );
+    assert_eq!(
+        statics::from_string_map(input, |part| part).values(),
+        vec![
+            Some("a".to_owned()),
+            Some("😀".to_owned()),
+            Some("é".to_owned())
+        ]
+    );
+    assert_eq!(
+        statics::from_string_map_with_index(input, |part, index| format!("{part}:{index}"))
+            .values(),
+        vec![
+            Some("a:0".to_owned()),
+            Some("😀:1".to_owned()),
+            Some("é:2".to_owned())
+        ]
+    );
+    let mut calls = 0;
+    let empty = statics::from_string_map_zero("", || {
+        calls += 1;
+        calls
+    });
+    assert_eq!(empty.len(), 0);
+    assert_eq!(calls, 0);
+    let exact = statics::from_string_try_map("Aÿ", |part| {
+        u8::try_from(part.chars().next().unwrap() as u32)
+    });
+    assert_eq!(exact.unwrap().values(), vec![Some(65), Some(255)]);
+}
+
+#[test]
+fn mapped_string_construction_stops_at_each_callback_failure() {
+    let mut zero_calls = 0;
+    let zero = statics::from_string_try_map_zero("abc", || {
+        zero_calls += 1;
+        if zero_calls == 2 {
+            Err("stop")
+        } else {
+            Ok(zero_calls)
+        }
+    });
+    assert_eq!(zero.unwrap_err(), "stop");
+    assert_eq!(zero_calls, 2);
+    let mut visited = String::new();
+    let values = statics::from_string_try_map("a😀z", |part| {
+        visited.push_str(&part);
+        if part == "😀" {
+            Err("stop")
+        } else {
+            Ok(part)
+        }
+    });
+    assert_eq!(values.unwrap_err(), "stop");
+    assert_eq!(visited, "a😀");
+    let mut indices = Vec::new();
+    let indexed = statics::from_string_try_map_with_index("a😀z", |part, index| {
+        indices.push(index);
+        if index == 1.0 {
+            Err("stop")
+        } else {
+            Ok(part)
+        }
+    });
+    assert_eq!(indexed.unwrap_err(), "stop");
+    assert_eq!(indices, vec![0.0, 1.0]);
+}
+
+#[test]
 fn concat_preserves_holes_values_order_and_source_identity() {
     let left = JsArray::from_sparse(3, vec![(0, 1), (2, 3)]);
     let right = JsArray::from_sparse(2, vec![(1, 5)]);
@@ -458,7 +596,7 @@ fn array_reduce_without_initial_uses_first_present_slot_and_rejects_empty_input(
     let error = empty
         .reduce_from_first(|sum, value| sum + value)
         .expect_err("an array containing only holes has no initial accumulator");
-    assert_eq!(error.kind, tsonic_rust_runtime::JsErrorKind::TypeError);
+    assert_eq!(error.kind(), tsonic_rust_runtime::JsErrorKind::TypeError);
 }
 
 #[test]

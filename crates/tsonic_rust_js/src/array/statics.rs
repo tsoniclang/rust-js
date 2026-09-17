@@ -11,38 +11,111 @@ pub enum JsArrayConcatItem<T> {
 /// This keeps a closed behavior with no iterator callbacks.
 /// Code-point semantics are used (`.chars()`), not UTF-16 unit splitting.
 pub fn from_string(value: &str) -> super::JsArray<String> {
-    super::JsArray::from_dense(value.chars().map(|ch| ch.to_string()).collect())
+    super::JsArray::from_values(value.chars().map(|scalar| scalar.to_string()))
+}
+
+pub fn from_string_map_zero<U, F>(value: &str, mut callback: F) -> super::JsArray<U>
+where
+    F: FnMut() -> U,
+{
+    super::JsArray::from_values(value.chars().map(|_| callback()))
+}
+
+pub fn from_string_map<U, F>(value: &str, mut callback: F) -> super::JsArray<U>
+where
+    F: FnMut(String) -> U,
+{
+    super::JsArray::from_values(value.chars().map(|scalar| callback(scalar.to_string())))
+}
+
+pub fn from_string_map_with_index<U, F>(value: &str, mut callback: F) -> super::JsArray<U>
+where
+    F: FnMut(String, f64) -> U,
+{
+    super::JsArray::from_values(
+        value
+            .chars()
+            .enumerate()
+            .map(|(index, scalar)| callback(scalar.to_string(), index as f64)),
+    )
+}
+
+pub fn from_string_try_map_zero<U, E, F>(
+    value: &str,
+    mut callback: F,
+) -> Result<super::JsArray<U>, E>
+where
+    F: FnMut() -> Result<U, E>,
+{
+    super::JsArray::try_from_values(value.chars().map(|_| callback()))
+}
+
+pub fn from_string_try_map<U, E, F>(value: &str, mut callback: F) -> Result<super::JsArray<U>, E>
+where
+    F: FnMut(String) -> Result<U, E>,
+{
+    super::JsArray::try_from_values(value.chars().map(|scalar| callback(scalar.to_string())))
+}
+
+pub fn from_string_try_map_with_index<U, E, F>(
+    value: &str,
+    mut callback: F,
+) -> Result<super::JsArray<U>, E>
+where
+    F: FnMut(String, f64) -> Result<U, E>,
+{
+    super::JsArray::try_from_values(
+        value
+            .chars()
+            .enumerate()
+            .map(|(index, scalar)| callback(scalar.to_string(), index as f64)),
+    )
 }
 
 pub fn from_vec<T: Clone>(values: &[T]) -> super::JsArray<T> {
-    super::JsArray::from_dense(values.to_owned())
+    super::JsArray::from_values(values.iter().cloned())
+}
+
+pub fn from_dense_array<T: Clone>(values: &super::JsArray<T>) -> super::JsArray<T> {
+    values.copy_materialized(|| panic!("checked array density invariant violated"))
+}
+
+pub fn from_optional_array<T: Clone>(
+    values: &super::JsArray<Option<T>>,
+) -> super::JsArray<Option<T>> {
+    values.copy_materialized(|| None)
+}
+
+pub fn from_undefined_array(
+    values: &super::JsArray<tsonic_rust_runtime::Undefined>,
+) -> super::JsArray<tsonic_rust_runtime::Undefined> {
+    values.copy_materialized(|| tsonic_rust_runtime::Undefined)
 }
 
 pub fn from_vec_map_zero<T: Clone, U, F>(values: &[T], mut callback: F) -> super::JsArray<U>
 where
     F: FnMut() -> U,
 {
-    super::JsArray::from_dense(values.iter().map(|_| callback()).collect())
+    super::JsArray::from_values(values.iter().map(|_| callback()))
 }
 
 pub fn from_vec_map<T: Clone, U, F>(values: &[T], mut callback: F) -> super::JsArray<U>
 where
     F: FnMut(T) -> U,
 {
-    super::JsArray::from_dense(values.iter().cloned().map(&mut callback).collect())
+    super::JsArray::from_values(values.iter().cloned().map(&mut callback))
 }
 
 pub fn from_vec_map_with_index<T: Clone, U, F>(values: &[T], mut callback: F) -> super::JsArray<U>
 where
     F: FnMut(T, f64) -> U,
 {
-    super::JsArray::from_dense(
+    super::JsArray::from_values(
         values
             .iter()
             .cloned()
             .enumerate()
-            .map(|(index, value)| callback(value, index as f64))
-            .collect(),
+            .map(|(index, value)| callback(value, index as f64)),
     )
 }
 
@@ -53,11 +126,7 @@ pub fn from_vec_try_map_zero<T: Clone, U, E, F>(
 where
     F: FnMut() -> Result<U, E>,
 {
-    let values = values
-        .iter()
-        .map(|_| callback())
-        .collect::<Result<Vec<_>, E>>()?;
-    Ok(super::JsArray::from_dense(values))
+    super::JsArray::try_from_values(values.iter().map(|_| callback()))
 }
 
 pub fn from_vec_try_map<T: Clone, U, E, F>(
@@ -67,12 +136,7 @@ pub fn from_vec_try_map<T: Clone, U, E, F>(
 where
     F: FnMut(T) -> Result<U, E>,
 {
-    let values = values
-        .iter()
-        .cloned()
-        .map(&mut callback)
-        .collect::<Result<Vec<_>, E>>()?;
-    Ok(super::JsArray::from_dense(values))
+    super::JsArray::try_from_values(values.iter().cloned().map(&mut callback))
 }
 
 pub fn from_vec_try_map_with_index<T: Clone, U, E, F>(
@@ -82,13 +146,13 @@ pub fn from_vec_try_map_with_index<T: Clone, U, E, F>(
 where
     F: FnMut(T, f64) -> Result<U, E>,
 {
-    let values = values
-        .iter()
-        .cloned()
-        .enumerate()
-        .map(|(index, value)| callback(value, index as f64))
-        .collect::<Result<Vec<_>, E>>()?;
-    Ok(super::JsArray::from_dense(values))
+    super::JsArray::try_from_values(
+        values
+            .iter()
+            .cloned()
+            .enumerate()
+            .map(|(index, value)| callback(value, index as f64)),
+    )
 }
 
 pub fn of<T, const N: usize>(items: [T; N]) -> super::JsArray<T> {

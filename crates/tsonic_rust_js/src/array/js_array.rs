@@ -15,6 +15,19 @@ struct JsArrayState<T> {
     numeric_properties: Vec<(String, T)>,
 }
 
+impl<T> JsArrayState<T> {
+    fn enumerable_own_keys(&self) -> impl Iterator<Item = String> + '_ {
+        self.slots
+            .iter()
+            .enumerate()
+            .filter_map(|(index, slot)| match slot {
+                JsSlot::Present(_) => Some(index.to_string()),
+                JsSlot::Hole => None,
+            })
+            .chain(self.numeric_properties.iter().map(|(key, _)| key.clone()))
+    }
+}
+
 #[derive(Debug)]
 pub struct JsArray<T> {
     state: Rc<RefCell<JsArrayState<T>>>,
@@ -73,7 +86,21 @@ impl<T> JsArray<T> {
     }
 
     pub fn from_dense(values: Vec<T>) -> Self {
+        Self::from_values(values)
+    }
+
+    pub(super) fn from_values(values: impl IntoIterator<Item = T>) -> Self {
         Self::from_slots(values.into_iter().map(JsSlot::Present).collect())
+    }
+
+    pub(super) fn try_from_values<E>(
+        values: impl IntoIterator<Item = Result<T, E>>,
+    ) -> Result<Self, E> {
+        let slots = values
+            .into_iter()
+            .map(|value| value.map(JsSlot::Present))
+            .collect::<Result<_, E>>()?;
+        Ok(Self::from_slots(slots))
     }
 
     pub fn from_sparse(length: usize, values: Vec<(usize, T)>) -> Self {
@@ -96,6 +123,25 @@ impl<T> JsArray<T> {
             })),
             identity: ObjectIdentity::new(),
         }
+    }
+
+    pub(super) fn copy_materialized(&self, missing: impl Fn() -> T) -> Self
+    where
+        T: Clone,
+    {
+        let slots = self
+            .state
+            .borrow()
+            .slots
+            .iter()
+            .map(|slot| {
+                JsSlot::Present(match slot {
+                    JsSlot::Present(value) => value.clone(),
+                    JsSlot::Hole => missing(),
+                })
+            })
+            .collect();
+        Self::from_slots(slots)
     }
 
     pub(super) fn replace_present_values(&self, values: Vec<T>) {
@@ -178,6 +224,19 @@ impl<T> JsArray<T> {
             self.state.borrow().slots.get(index),
             Some(JsSlot::Present(_))
         )
+    }
+
+    pub fn contains_number_property(index: f64, array: &Self) -> bool {
+        if let Some(index) = canonical_array_index(index) {
+            return array.has_index(index);
+        }
+        let key = crate::number::to_string(index);
+        array
+            .state
+            .borrow()
+            .numeric_properties
+            .iter()
+            .any(|(candidate, _)| candidate == &key)
     }
 
     pub fn delete_at(&self, index: usize) -> bool {
@@ -452,17 +511,11 @@ impl<T> JsArray<T> {
     }
 
     pub fn enumerable_own_keys(&self) -> Vec<String> {
-        let state = self.state.borrow();
-        state
-            .slots
-            .iter()
-            .enumerate()
-            .filter_map(|(index, slot)| match slot {
-                JsSlot::Present(_) => Some(index.to_string()),
-                JsSlot::Hole => None,
-            })
-            .chain(state.numeric_properties.iter().map(|(key, _)| key.clone()))
-            .collect()
+        self.state.borrow().enumerable_own_keys().collect()
+    }
+
+    pub fn object_keys(&self) -> JsArray<String> {
+        JsArray::from_values(self.state.borrow().enumerable_own_keys())
     }
 
     pub fn values(&self) -> Vec<Option<T>>
@@ -477,11 +530,8 @@ impl<T> JsArray<T> {
             .collect()
     }
 
-    pub fn entries(&self) -> Vec<(usize, Option<T>)>
-    where
-        T: Clone,
-    {
-        self.values().into_iter().enumerate().collect()
+    pub fn entries(&self) -> super::JsArrayEntries<T> {
+        super::JsArrayEntries::new(self.clone())
     }
 
     pub fn iter_values(&self) -> JsArrayIterator<T> {
@@ -491,9 +541,9 @@ impl<T> JsArray<T> {
         }
     }
 
-    pub fn includes(&self, value: &T, from_index: f64) -> bool
+    pub fn includes<Query: ?Sized>(&self, value: &Query, from_index: f64) -> bool
     where
-        T: JsSameValueZero,
+        T: JsSameValueZero<Query>,
     {
         let state = self.state.borrow();
         let Some(start) = normalize_search_start(state.slots.len(), from_index) else {
@@ -505,16 +555,16 @@ impl<T> JsArray<T> {
         })
     }
 
-    pub fn includes_from_start(&self, value: &T) -> bool
+    pub fn includes_from_start<Query: ?Sized>(&self, value: &Query) -> bool
     where
-        T: JsSameValueZero,
+        T: JsSameValueZero<Query>,
     {
         self.includes(value, 0.0)
     }
 
-    pub fn index_of(&self, value: &T, from_index: f64) -> isize
+    pub fn index_of<Query: ?Sized>(&self, value: &Query, from_index: f64) -> isize
     where
-        T: JsStrictEqual,
+        T: JsStrictEqual<Query>,
     {
         let state = self.state.borrow();
         let Some(start) = normalize_search_start(state.slots.len(), from_index) else {
@@ -526,16 +576,16 @@ impl<T> JsArray<T> {
             .map_or(-1, |index| (start + index) as isize)
     }
 
-    pub fn index_of_from_start(&self, value: &T) -> isize
+    pub fn index_of_from_start<Query: ?Sized>(&self, value: &Query) -> isize
     where
-        T: JsStrictEqual,
+        T: JsStrictEqual<Query>,
     {
         self.index_of(value, 0.0)
     }
 
-    pub fn last_index_of(&self, value: &T, from_index: f64) -> isize
+    pub fn last_index_of<Query: ?Sized>(&self, value: &Query, from_index: f64) -> isize
     where
-        T: JsStrictEqual,
+        T: JsStrictEqual<Query>,
     {
         let state = self.state.borrow();
         let Some(start) = normalize_last_search_start(state.slots.len(), from_index) else {
@@ -547,9 +597,9 @@ impl<T> JsArray<T> {
             .map_or(-1, |index| index as isize)
     }
 
-    pub fn last_index_of_from_end(&self, value: &T) -> isize
+    pub fn last_index_of_from_end<Query: ?Sized>(&self, value: &Query) -> isize
     where
-        T: JsStrictEqual,
+        T: JsStrictEqual<Query>,
     {
         self.last_index_of(value, f64::INFINITY)
     }
@@ -1210,7 +1260,7 @@ where
     Ok(sorted)
 }
 
-fn canonical_array_index(value: f64) -> Option<usize> {
+pub(super) fn canonical_array_index(value: f64) -> Option<usize> {
     const MAX_ARRAY_INDEX: f64 = 4_294_967_294.0;
     (value.is_finite() && (0.0..=MAX_ARRAY_INDEX).contains(&value) && value.trunc() == value)
         .then_some(value as usize)

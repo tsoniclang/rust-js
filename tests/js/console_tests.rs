@@ -5,6 +5,37 @@ fn exact(value: &str) -> JsString {
 }
 
 #[test]
+fn native_number_boxing_preserves_full_ranges_and_float_bits() {
+    for (boxed, expected) in [
+        (JsValue::from(i8::MIN), -128.0),
+        (JsValue::from(u8::MAX), 255.0),
+        (JsValue::from(i16::MIN), -32768.0),
+        (JsValue::from(u16::MAX), 65535.0),
+        (JsValue::from(i32::MIN), -2147483648.0),
+        (JsValue::from(u32::MAX), 4294967295.0),
+        (JsValue::from(f32::MAX), f64::from(f32::MAX)),
+        (
+            JsValue::from(f32::from_bits(1)),
+            f64::from(f32::from_bits(1)),
+        ),
+        (JsValue::from(-0.0_f32), -0.0_f64),
+        (JsValue::from(f32::INFINITY), f64::INFINITY),
+        (JsValue::from(f32::NEG_INFINITY), f64::NEG_INFINITY),
+        (JsValue::from(f64::MAX), f64::MAX),
+    ] {
+        let JsValue::Number(actual) = boxed else {
+            panic!("a native number must retain its number tag");
+        };
+        assert_eq!(actual.to_bits(), expected.to_bits());
+    }
+    assert!(matches!(JsValue::from(f32::NAN), JsValue::Number(value) if value.is_nan()));
+    assert_eq!(
+        console::format_args(&[JsValue::from(u32::MAX)]),
+        "4294967295"
+    );
+}
+
+#[test]
 fn console_formats_to_injectable_writer() {
     let args = [JsValue::String(exact("x")), JsValue::Number(1.0)];
     assert_eq!(console::format_args(&args), "x 1");

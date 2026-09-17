@@ -8,6 +8,8 @@ use crate::errors::{type_error, JsResult};
 use crate::value::JsValue;
 use crate::JsString;
 
+mod identity;
+
 pub type JsPropertyValue = JsValue;
 
 pub fn is(values: [JsValue; 2]) -> bool {

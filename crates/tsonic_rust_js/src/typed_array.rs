@@ -178,6 +178,13 @@ pub type Uint32Array = TypedArray<u32>;
 pub type Float32Array = TypedArray<f32>;
 pub type Float64Array = TypedArray<f64>;
 
+impl TypedArray<u8> {
+    pub fn from_bytes(bytes: Vec<u8>) -> Self {
+        let length = bytes.len();
+        Self::from_view(ArrayBuffer::from_bytes(bytes), 0, length)
+    }
+}
+
 impl<T: TypedElement> TypedArray<T> {
     pub const BYTES_PER_ELEMENT: f64 = T::BYTES_PER_ELEMENT as f64;
 
@@ -195,6 +202,17 @@ impl<T: TypedElement> TypedArray<T> {
 
     pub fn from_array(values: &JsArray<f64>) -> JsResult<Self> {
         Self::from_numbers(values.iter_values())
+    }
+
+    pub fn from_typed_array<U: TypedElement>(values: &TypedArray<U>) -> JsResult<Self> {
+        let result = Self::new(values.len() as f64)?;
+        for index in 0..values.len() {
+            let value = values
+                .get_usize(index)
+                .ok_or_else(|| range_error("typed array copy index is outside its view"))?;
+            result.set_usize(index, T::from_number(value.to_number()));
+        }
+        Ok(result)
     }
 
     pub fn from_fixed_array<const LENGTH: usize>(values: &[f64; LENGTH]) -> JsResult<Self> {
@@ -261,6 +279,20 @@ impl<T: TypedElement> TypedArray<T> {
         self.view.buffer.clone()
     }
 
+    pub fn with_bytes<Result>(&self, operation: impl FnOnce(&[u8]) -> Result) -> Result {
+        let bytes = self.view.buffer.as_bytes();
+        let start = self.view.byte_offset;
+        let end = start + self.view.length * T::BYTES_PER_ELEMENT;
+        operation(&bytes[start..end])
+    }
+
+    pub fn with_mut_bytes<Result>(&self, operation: impl FnOnce(&mut [u8]) -> Result) -> Result {
+        let mut bytes = self.view.buffer.as_mut_bytes();
+        let start = self.view.byte_offset;
+        let end = start + self.view.length * T::BYTES_PER_ELEMENT;
+        operation(&mut bytes[start..end])
+    }
+
     pub fn bytes_per_element(&self) -> f64 {
         Self::BYTES_PER_ELEMENT
     }
@@ -275,6 +307,14 @@ impl<T: TypedElement> TypedArray<T> {
 
     pub fn length(&self) -> f64 {
         self.view.length as f64
+    }
+
+    pub fn len(&self) -> usize {
+        self.view.length
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.view.length == 0
     }
 
     pub fn at(&self, index: f64) -> Option<f64> {
