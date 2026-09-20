@@ -10,16 +10,33 @@ fn parse_int_promotes_only_after_exact_native_accumulator_overflow() {
     use num_bigint::BigUint;
     use num_traits::ToPrimitive;
     for radix in 2_u32..=36 {
-        for value in [0_u128, 1, 9_007_199_254_740_993, u64::MAX as u128, u64::MAX as u128 + 1, u128::MAX] {
+        for value in [
+            0_u128,
+            1,
+            9_007_199_254_740_993,
+            u64::MAX as u128,
+            u64::MAX as u128 + 1,
+            u128::MAX,
+        ] {
             let exact = BigUint::from(value);
             let digits = exact.to_str_radix(radix);
             let expected = exact.to_f64().unwrap();
-            assert_eq!(number::parse_int(&digits, Some(radix as f64)), expected, "{radix}: {digits}");
-            assert_eq!(number::parse_int(&format!("-{digits}"), Some(radix as f64)).to_bits(), (-expected).to_bits());
+            assert_eq!(
+                number::parse_int(&digits, Some(radix as f64)),
+                expected,
+                "{radix}: {digits}"
+            );
+            assert_eq!(
+                number::parse_int(&format!("-{digits}"), Some(radix as f64)).to_bits(),
+                (-expected).to_bits()
+            );
         }
         let digits = "1".repeat(2048);
         let exact = BigUint::parse_bytes(digits.as_bytes(), radix).unwrap();
-        assert_eq!(number::parse_int(&digits, Some(radix as f64)), exact.to_f64().unwrap_or(f64::INFINITY));
+        assert_eq!(
+            number::parse_int(&digits, Some(radix as f64)),
+            exact.to_f64().unwrap_or(f64::INFINITY)
+        );
     }
 }
 

@@ -15,21 +15,34 @@ struct CountedString {
 impl Clone for CountedString {
     fn clone(&self) -> Self {
         self.copies.set(self.copies.get() + 1);
-        Self { text: self.text.clone(), copies: Rc::clone(&self.copies) }
+        Self {
+            text: self.text.clone(),
+            copies: Rc::clone(&self.copies),
+        }
     }
 }
 
 impl AsRef<str> for CountedString {
-    fn as_ref(&self) -> &str { &self.text }
+    fn as_ref(&self) -> &str {
+        &self.text
+    }
 }
 
 #[test]
 fn scoped_reads_and_comparators_do_not_copy_string_elements() {
     let copies = Rc::new(Cell::new(0));
-    let values = JsArray::from_dense(["cc", "a", "bb"].map(|text| CountedString {
-        text: text.to_string(), copies: Rc::clone(&copies),
-    }).into());
-    assert_eq!(values.with_number_element(0, |value| value.unwrap().text.len()), 2);
+    let values = JsArray::from_dense(
+        ["cc", "a", "bb"]
+            .map(|text| CountedString {
+                text: text.to_string(),
+                copies: Rc::clone(&copies),
+            })
+            .into(),
+    );
+    assert_eq!(
+        values.with_number_element(0, |value| value.unwrap().text.len()),
+        2
+    );
     assert!(values.with_number_element(99.0, |value| value.is_none()));
     assert!(values.with_number_element(-1.0, |value| value.is_none()));
     assert_eq!(copies.get(), 0);
@@ -39,10 +52,17 @@ fn scoped_reads_and_comparators_do_not_copy_string_elements() {
         left.cmp(right) as i32 as f64
     });
     assert_eq!(copies.get(), 3);
-    assert_eq!(values.with_number_element(0, |value| value.unwrap().text.clone()), "a");
+    assert_eq!(
+        values.with_number_element(0, |value| value.unwrap().text.clone()),
+        "a"
+    );
     values.sort_value_borrowed(|_| 0.0);
-    values.try_sort_borrowed(|left, right| Ok::<_, ()>(left.cmp(right) as i32 as f64)).unwrap();
-    values.try_sort_value_borrowed(|_| Ok::<_, ()>(0.0)).unwrap();
+    values
+        .try_sort_borrowed(|left, right| Ok::<_, ()>(left.cmp(right) as i32 as f64))
+        .unwrap();
+    values
+        .try_sort_value_borrowed(|_| Ok::<_, ()>(0.0))
+        .unwrap();
     assert_eq!(copies.get(), 12);
 }
 
@@ -52,12 +72,16 @@ fn borrowed_sort_snapshots_allow_reentry_and_preserve_failure_identity() {
     let alias = values.clone();
     let first = Cell::new(true);
     values.sort_borrowed(|left, right| {
-        if first.replace(false) { alias.push(String::from("tail")); }
+        if first.replace(false) {
+            alias.push(String::from("tail"));
+        }
         left.cmp(right) as i32 as f64
     });
     assert_eq!(values.values(), ["a", "b", "tail"]);
     let failure = Rc::new("failure");
-    let error = values.try_sort_borrowed(|_, _| Err::<f64, _>(Rc::clone(&failure))).unwrap_err();
+    let error = values
+        .try_sort_borrowed(|_, _| Err::<f64, _>(Rc::clone(&failure)))
+        .unwrap_err();
     assert!(Rc::ptr_eq(&error, &failure));
     assert_eq!(values.values(), ["a", "b", "tail"]);
 }
@@ -68,10 +92,16 @@ fn lazy_array_identity_is_shared_before_and_after_mutation() {
     let values = JsArray::from_dense(vec![String::from("café"), String::from("😀")]);
     let alias = values.clone();
     assert_eq!(values.join("|"), "café|😀");
-    assert!(ObjectIdentity::same(values.object_identity(), alias.object_identity()));
+    assert!(ObjectIdentity::same(
+        values.object_identity(),
+        alias.object_identity()
+    ));
     alias.set(0, String::from("changed"));
     assert_eq!(values.join(""), "changed😀");
-    assert!(!ObjectIdentity::same(values.object_identity(), JsArray::<String>::new().object_identity()));
+    assert!(!ObjectIdentity::same(
+        values.object_identity(),
+        JsArray::<String>::new().object_identity()
+    ));
     assert_eq!(JsArray::<String>::new().join("|"), "");
 }
 

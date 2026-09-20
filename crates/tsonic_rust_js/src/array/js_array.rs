@@ -293,8 +293,12 @@ impl<T> JsArray<T> {
         }
         let key = crate::number::to_string(index);
         let state = self.state.borrow();
-        read(state.numeric_properties.iter()
-            .find_map(|(candidate, value)| (candidate == &key).then_some(value)))
+        read(
+            state
+                .numeric_properties
+                .iter()
+                .find_map(|(candidate, value)| (candidate == &key).then_some(value)),
+        )
     }
 
     pub fn at(&self, index: f64) -> Option<T>
@@ -1256,8 +1260,7 @@ where
             let mut right = middle;
             let mut output = start;
             while left < middle && right < end {
-                let comparison =
-                    compare(&values[order[left]], &values[order[right]])?;
+                let comparison = compare(&values[order[left]], &values[order[right]])?;
                 if comparison.is_nan() || comparison <= 0.0 {
                     scratch[output] = order[left];
                     left += 1;
