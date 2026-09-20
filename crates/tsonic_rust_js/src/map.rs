@@ -22,14 +22,19 @@ struct JsMapState<K, V> {
 
 impl<K, V> JsMapState<K, V> {
     fn compact(&mut self) {
-        if self.active_iterators != 0 || self.entries.len().saturating_sub(self.size) <= self.size.max(32) {
+        if self.active_iterators != 0
+            || self.entries.len().saturating_sub(self.size) <= self.size.max(32)
+        {
             return;
         }
         self.entries.retain(Option::is_some);
         self.indices_by_hash.clear();
         for (index, entry) in self.entries.iter().enumerate() {
             let entry = entry.as_ref().expect("compacted map entry");
-            self.indices_by_hash.entry(entry.hash).or_default().push(index);
+            self.indices_by_hash
+                .entry(entry.hash)
+                .or_default()
+                .push(index);
         }
     }
 }
@@ -156,7 +161,13 @@ impl<K, V> JsMap<K, V> {
         V: Clone,
     {
         let state = self.state.borrow();
-        find_index(&state, key.js_hash(), key).map(|index| state.entries[index].as_ref().expect("live map entry").value.clone())
+        find_index(&state, key.js_hash(), key).map(|index| {
+            state.entries[index]
+                .as_ref()
+                .expect("live map entry")
+                .value
+                .clone()
+        })
     }
 
     pub fn get_eq(&self, key: &K) -> Option<V>
@@ -167,7 +178,8 @@ impl<K, V> JsMap<K, V> {
         self.state
             .borrow()
             .entries
-            .iter().flatten()
+            .iter()
+            .flatten()
             .find(|entry| entry.key == *key)
             .map(|entry| entry.value.clone())
     }
@@ -190,11 +202,7 @@ impl<K, V> JsMap<K, V> {
             state.entries[index].as_mut().expect("live map entry").value = value;
         } else {
             let index = state.entries.len();
-            state.entries.push(Some(MapEntry {
-                key,
-                value,
-                hash,
-            }));
+            state.entries.push(Some(MapEntry { key, value, hash }));
             state.indices_by_hash.entry(hash).or_default().push(index);
             state.size += 1;
         }
@@ -215,7 +223,8 @@ impl<K, V> JsMap<K, V> {
         let mut state = self.state.borrow_mut();
         if let Some(entry) = state
             .entries
-            .iter_mut().flatten()
+            .iter_mut()
+            .flatten()
             .find(|entry| entry.key == key)
         {
             entry.value = value;
@@ -244,7 +253,8 @@ impl<K, V> JsMap<K, V> {
         self.state
             .borrow()
             .entries
-            .iter().flatten()
+            .iter()
+            .flatten()
             .any(|entry| entry.key == *key)
     }
 
@@ -270,7 +280,9 @@ impl<K, V> JsMap<K, V> {
         K: PartialEq,
     {
         let mut state = self.state.borrow_mut();
-        if let Some(index) = state.entries.iter()
+        if let Some(index) = state
+            .entries
+            .iter()
             .position(|entry| entry.as_ref().is_some_and(|entry| entry.key == *key))
         {
             let hash = state.entries[index].as_ref().expect("live map entry").hash;
@@ -453,7 +465,8 @@ where
         .iter()
         .copied()
         .find(|index| {
-            state.entries[*index].as_ref()
+            state.entries[*index]
+                .as_ref()
                 .is_some_and(|entry| entry.hash == hash && entry.key.same_value_zero(key))
         })
 }

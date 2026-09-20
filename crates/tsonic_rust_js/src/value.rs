@@ -126,7 +126,9 @@ pub enum JsValue {
 }
 
 impl Default for JsValue {
-    fn default() -> Self { Self::Undefined }
+    fn default() -> Self {
+        Self::Undefined
+    }
 }
 
 impl JsValue {
@@ -241,10 +243,7 @@ where
     T: Clone,
     F: FnMut(T) -> JsValue,
 {
-    let converted = values
-        .entries()
-        .map(|(_, value)| convert(value))
-        .collect();
+    let converted = values.entries().map(|(_, value)| convert(value)).collect();
     JsValue::array(JsArray::from_dense(converted))
 }
 
@@ -339,11 +338,7 @@ impl InspectState {
         let mut rendered = values
             .into_iter()
             .take(self.max_entries)
-            .map(|value| {
-                value
-                    .map(|value| self.render(&value, depth + 1))
-                    .unwrap_or_default()
-            })
+            .map(|value| self.render(&value, depth + 1))
             .collect::<Vec<_>>();
         append_remaining(&mut rendered, total, self.max_entries);
         self.active.remove(&id);

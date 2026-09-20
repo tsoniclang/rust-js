@@ -63,7 +63,9 @@ impl JsObject {
     }
 
     pub fn get_ref(&self, key: &str) -> Option<&JsValue> {
-        self.indexes.get(key).map(|index| &self.entries[*index].value)
+        self.indexes
+            .get(key)
+            .map(|index| &self.entries[*index].value)
     }
 
     pub fn get_exact(&self, key: &JsString) -> JsValue {
@@ -135,7 +137,9 @@ impl JsObject {
     }
 
     pub fn keys(&self) -> JsResult<Vec<String>> {
-        self.ordered_entries().map(|entry| entry.key.to_native()).collect()
+        self.ordered_entries()
+            .map(|entry| entry.key.to_native())
+            .collect()
     }
 
     pub fn keys_exact(&self) -> Vec<JsString> {
@@ -162,8 +166,16 @@ impl JsObject {
             .collect()
     }
 
-    pub(crate) fn serialization_entries(&self) -> Vec<(PropertyKey, JsValue)> {
-        self.ordered_entries().map(|entry| (entry.key.clone(), entry.value.clone())).collect()
+    pub(crate) fn serialization_keys(&self) -> Vec<PropertyKey> {
+        self.ordered_entries()
+            .map(|entry| entry.key.clone())
+            .collect()
+    }
+
+    pub(crate) fn get_key_ref(&self, key: &PropertyKey) -> Option<&JsValue> {
+        self.indexes
+            .get(key)
+            .map(|index| &self.entries[*index].value)
     }
 
     pub fn assign(&mut self, sources: &[JsObject]) {
@@ -177,10 +189,16 @@ impl JsObject {
     pub fn inspect(&self) -> String {
         let body = self
             .ordered_entries()
-            .map(|entry| format!("{}: {}", match &entry.key {
-                PropertyKey::Native(value) => value.clone(),
-                PropertyKey::Utf16(value) => value.to_utf8_escaped(),
-            }, entry.value.inspect()))
+            .map(|entry| {
+                format!(
+                    "{}: {}",
+                    match &entry.key {
+                        PropertyKey::Native(value) => value.clone(),
+                        PropertyKey::Utf16(value) => value.to_utf8_escaped(),
+                    },
+                    entry.value.inspect()
+                )
+            })
             .collect::<Vec<_>>()
             .join(", ");
         format!("{{{body}}}")

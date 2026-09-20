@@ -121,7 +121,6 @@ fn intl_number_precision_grouping_and_exact_integers() {
             .format_to_parts(value)
             .values()
             .into_iter()
-            .flatten()
             .map(|part| part.value())
             .collect::<Vec<_>>()
             .concat();

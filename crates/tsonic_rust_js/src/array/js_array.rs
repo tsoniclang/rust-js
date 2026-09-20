@@ -75,7 +75,8 @@ impl<T> JsArray<T> {
     }
 
     pub fn with_length(length: usize) -> Self
-    where T: Default,
+    where
+        T: Default,
     {
         Self::from_values(std::iter::repeat_with(T::default).take(length))
     }
@@ -86,7 +87,10 @@ impl<T> JsArray<T> {
 
     pub fn from_dense(values: Vec<T>) -> Self {
         Self {
-            state: Rc::new(RefCell::new(JsArrayState { values, numeric_properties: Vec::new() })),
+            state: Rc::new(RefCell::new(JsArrayState {
+                values,
+                numeric_properties: Vec::new(),
+            })),
             identity: ObjectIdentity::new(),
         }
     }
@@ -95,12 +99,18 @@ impl<T> JsArray<T> {
         Self::from_dense(values.into_iter().collect())
     }
 
-    pub(super) fn try_from_values<E>(values: impl IntoIterator<Item = Result<T, E>>) -> Result<Self, E> {
-        values.into_iter().collect::<Result<Vec<_>, _>>().map(Self::from_dense)
+    pub(super) fn try_from_values<E>(
+        values: impl IntoIterator<Item = Result<T, E>>,
+    ) -> Result<Self, E> {
+        values
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()
+            .map(Self::from_dense)
     }
 
     pub(super) fn copy_materialized(&self) -> Self
-    where T: Clone,
+    where
+        T: Clone,
     {
         Self::from_dense(self.state.borrow().values.clone())
     }
@@ -108,8 +118,11 @@ impl<T> JsArray<T> {
     pub(super) fn replace_present_values(&self, values: Vec<T>) {
         let mut state = self.state.borrow_mut();
         for (index, value) in values.into_iter().enumerate() {
-            if index < state.values.len() { state.values[index] = value; }
-            else { state.values.push(value); }
+            if index < state.values.len() {
+                state.values[index] = value;
+            } else {
+                state.values.push(value);
+            }
         }
     }
 
@@ -177,7 +190,10 @@ impl<T> JsArray<T> {
 
     pub fn set_len(&self, len: usize) {
         let mut state = self.state.borrow_mut();
-        assert!(len <= state.values.len(), "Dense array growth requires initialized values; use push or fill at construction");
+        assert!(
+            len <= state.values.len(),
+            "Dense array growth requires initialized values; use push or fill at construction"
+        );
         state.values.truncate(len);
     }
 
@@ -199,7 +215,10 @@ impl<T> JsArray<T> {
     }
 
     pub fn delete_at(&self, index: usize) -> bool {
-        assert!(index >= self.len(), "Deleting a dense array element would create a hole; use splice");
+        assert!(
+            index >= self.len(),
+            "Deleting a dense array element would create a hole; use splice"
+        );
         true
     }
 
@@ -207,11 +226,15 @@ impl<T> JsArray<T> {
     where
         T: Clone,
     {
-        self.state
-            .borrow()
-            .values
-            .get(index)
-            .cloned()
+        self.state.borrow().values.get(index).cloned()
+    }
+
+    pub(crate) fn with_element<Result>(
+        &self,
+        index: usize,
+        read: impl FnOnce(Option<&T>) -> Result,
+    ) -> Result {
+        read(self.state.borrow().values.get(index))
     }
 
     pub fn get_number(&self, index: f64) -> Option<T>
@@ -238,9 +261,15 @@ impl<T> JsArray<T> {
 
     pub fn set(&self, index: usize, value: T) {
         let mut state = self.state.borrow_mut();
-        assert!(index <= state.values.len(), "Array assignment exceeds initialized dense storage");
-        if index == state.values.len() { state.values.push(value); }
-        else { state.values[index] = value; }
+        assert!(
+            index <= state.values.len(),
+            "Array assignment exceeds initialized dense storage"
+        );
+        if index == state.values.len() {
+            state.values.push(value);
+        } else {
+            state.values[index] = value;
+        }
     }
 
     pub fn set_number(&self, index: f64, value: T) {
@@ -286,10 +315,7 @@ impl<T> JsArray<T> {
     }
 
     pub fn push_many_discard<const N: usize>(&self, items: [T; N]) {
-        self.state
-            .borrow_mut()
-            .values
-            .extend(items);
+        self.state.borrow_mut().values.extend(items);
     }
 
     pub fn pop(&self) -> Option<T> {
@@ -312,17 +338,12 @@ impl<T> JsArray<T> {
 
     pub fn unshift_many<const N: usize>(&self, items: [T; N]) -> usize {
         let mut state = self.state.borrow_mut();
-        state
-            .values
-            .splice(0..0, items);
+        state.values.splice(0..0, items);
         state.values.len()
     }
 
     pub fn unshift_many_discard<const N: usize>(&self, items: [T; N]) {
-        self.state
-            .borrow_mut()
-            .values
-            .splice(0..0, items);
+        self.state.borrow_mut().values.splice(0..0, items);
     }
 
     pub fn concat<const N: usize>(&self, items: [JsArrayConcatItem<T>; N]) -> Self
@@ -407,9 +428,13 @@ impl<T> JsArray<T> {
         let count = end.saturating_sub(from).min(len.saturating_sub(to));
         let mut state = self.state.borrow_mut();
         if to > from {
-            for offset in (0..count).rev() { state.values[to + offset] = state.values[from + offset].clone(); }
+            for offset in (0..count).rev() {
+                state.values[to + offset] = state.values[from + offset].clone();
+            }
         } else {
-            for offset in 0..count { state.values[to + offset] = state.values[from + offset].clone(); }
+            for offset in 0..count {
+                state.values[to + offset] = state.values[from + offset].clone();
+            }
         }
         self.clone()
     }
@@ -447,10 +472,7 @@ impl<T> JsArray<T> {
             .state
             .borrow_mut()
             .values
-            .splice(
-                start..start + delete_count,
-                items,
-            )
+            .splice(start..start + delete_count, items)
             .collect();
         Self::from_dense(removed)
     }
@@ -467,16 +489,11 @@ impl<T> JsArray<T> {
         JsArray::from_values(self.state.borrow().enumerable_own_keys())
     }
 
-    pub fn values(&self) -> Vec<Option<T>>
+    pub fn values(&self) -> Vec<T>
     where
         T: Clone,
     {
-        self.state
-            .borrow()
-            .values
-            .iter()
-            .cloned().map(Some)
-            .collect()
+        self.state.borrow().values.clone()
     }
 
     pub fn entries(&self) -> super::JsArrayEntries<T> {
@@ -498,7 +515,9 @@ impl<T> JsArray<T> {
         let Some(start) = normalize_search_start(state.values.len(), from_index) else {
             return false;
         };
-        state.values[start..].iter().any(|item| item.same_value_zero(value))
+        state.values[start..]
+            .iter()
+            .any(|item| item.same_value_zero(value))
     }
 
     pub fn includes_from_start<Query: ?Sized>(&self, value: &Query) -> bool
@@ -614,7 +633,9 @@ impl<T> JsArray<T> {
         let length = self.len();
         let output = JsArray::with_capacity(length);
         for index in 0..length {
-            let value = self.get(index).expect("Array.map cannot create holes after its source is shortened");
+            let value = self
+                .get(index)
+                .expect("Array.map cannot create holes after its source is shortened");
             output.push(mapper(value, index as f64, self.clone()));
         }
         output
@@ -1151,7 +1172,10 @@ impl<T> JsArray<T> {
     where
         T: Clone + crate::string::JsToString,
     {
-        self.state.borrow_mut().values.sort_by_cached_key(|item| item.to_js_string());
+        self.state
+            .borrow_mut()
+            .values
+            .sort_by_cached_key(|item| item.to_js_string());
         self.clone()
     }
 
@@ -1186,7 +1210,8 @@ where
             let mut right = middle;
             let mut output = start;
             while left < middle && right < end {
-                let comparison = compare(values[order[left]].clone(), values[order[right]].clone())?;
+                let comparison =
+                    compare(values[order[left]].clone(), values[order[right]].clone())?;
                 if comparison.is_nan() || comparison <= 0.0 {
                     scratch[output] = order[left];
                     left += 1;
@@ -1196,7 +1221,11 @@ where
                 }
                 output += 1;
             }
-            let remaining = if left < middle { &order[left..middle] } else { &order[right..end] };
+            let remaining = if left < middle {
+                &order[left..middle]
+            } else {
+                &order[right..end]
+            };
             scratch[output..end].copy_from_slice(remaining);
             start = end;
         }

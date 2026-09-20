@@ -9,15 +9,12 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
     let dense = js::abi::JsArray::from_dense(vec![1_i32, 2_i32]);
     assert_eq!(dense.push(3), 3);
     assert_eq!(dense.at(-1.0), Some(3));
-    assert_eq!(
-        dense.map(|x| x * 2).values(),
-        vec![Some(2), Some(4), Some(6)]
-    );
+    assert_eq!(dense.map(|x| x * 2).values(), vec![2, 4, 6]);
     assert!(dense.includes(&2, 0.0));
     assert_eq!(dense.index_of(&3, 0.0), 2);
     assert_eq!(dense.join(&text(",")), "1,2,3");
-    assert_eq!(dense.slice(1.0, None).values(), vec![Some(2), Some(3)]);
-    assert_eq!(dense.slice_to(0.0, 2.0).values(), vec![Some(1), Some(2)]);
+    assert_eq!(dense.slice(1.0, None).values(), vec![2, 3]);
+    assert_eq!(dense.slice_to(0.0, 2.0).values(), vec![1, 2]);
     assert!(js::abi::number_is_finite(1.0));
     assert!(js::abi::number_is_integer(1.0));
     assert!(!js::abi::number_is_nan(1.0));
@@ -26,7 +23,9 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
     let mut out = Vec::new();
     js::abi::console_log_to(
         &mut out,
-        &[js::abi::JsValue::Utf16String(js::abi::JsString::from_utf8("ok"))],
+        &[js::abi::JsValue::Utf16String(js::abi::JsString::from_utf8(
+            "ok",
+        ))],
     )
     .unwrap();
     assert_eq!(String::from_utf8(out).unwrap(), "ok\n");

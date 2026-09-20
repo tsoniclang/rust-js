@@ -48,5 +48,5 @@ fn number_array_copy_preserves_initialized_native_defaults() {
     let values = JsArray::<f64>::with_length(2);
     values.set(0, 3.0);
     assert_eq!(number_array_get(&values, 1.0), Some(0.0));
-    assert_eq!(number_array_from(&values).values(), vec![Some(3.0), Some(0.0)]);
+    assert_eq!(number_array_from(&values).values(), vec![3.0, 0.0]);
 }

@@ -40,6 +40,59 @@ fn json_parse_and_stringify_closed_values() {
 }
 
 #[test]
+fn json_callbacks_observe_current_values_without_retaining_container_borrows() {
+    let values = tsonic_rust_js::JsArray::from_dense(vec![
+        JsValue::from(String::from("first")),
+        JsValue::from(String::from("old")),
+    ]);
+    let alias = values.clone();
+    let output = json::stringify_with_replacer(&JsValue::Array(values), move |key, value| {
+        if key == "0" {
+            alias.set(1, JsValue::from(String::from("new")));
+            alias.push(JsValue::from(String::from("not in initial length")));
+        }
+        value
+    })
+    .unwrap()
+    .unwrap();
+    assert_eq!(output, "[\"first\",\"new\"]");
+
+    let value = JsValue::object(JsObject::from_pairs([
+        ("first", String::from("one")),
+        ("later", String::from("old")),
+    ]));
+    let alias = value.as_object().unwrap().clone();
+    let output = json::stringify_with_replacer(&value, move |key, value| {
+        if key == "first" {
+            alias.borrow_mut().set("later", String::from("new"));
+            alias
+                .borrow_mut()
+                .set("added", String::from("not in initial keys"));
+        }
+        value
+    })
+    .unwrap()
+    .unwrap();
+    assert_eq!(output, "{\"first\":\"one\",\"later\":\"new\"}");
+
+    let values = tsonic_rust_js::JsArray::from_dense(vec![
+        JsValue::Null,
+        JsValue::from(String::from("old")),
+    ]);
+    let projected =
+        tsonic_rust_js::value::js_value_from_json_projection(values.clone(), |values, _| {
+            values.set(1, JsValue::from(String::from("new")));
+            Ok(JsValue::from(String::from("projected")))
+        });
+    values.set(0, projected);
+    assert_eq!(
+        stringify_text(&JsValue::Array(values.clone())),
+        "[\"projected\",\"new\"]"
+    );
+    values.set(0, JsValue::Null);
+}
+
+#[test]
 fn json_omits_undefined_object_fields_and_nulls_array_slots() {
     assert!(JsValue::Undefined.is_nullish());
     assert!(JsValue::Null.is_nullish());
@@ -301,7 +354,10 @@ fn json_utf16_escape_policy_is_explicit() {
         (r#""\uD800""#, 0xD800, r#""\ud800""#),
         (r#""\uDC00""#, 0xDC00, r#""\udc00""#),
     ] {
-        assert_eq!(json::parse(source).unwrap_err().kind(), JsErrorKind::SyntaxError);
+        assert_eq!(
+            json::parse(source).unwrap_err().kind(),
+            JsErrorKind::SyntaxError
+        );
         let value = JsValue::Utf16String(JsString::from_units(vec![unit]));
         assert_eq!(stringify_text(&value), serialized);
     }

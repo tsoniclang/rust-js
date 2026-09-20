@@ -38,10 +38,10 @@ mod json_tests;
 mod local_date_tests;
 #[path = "js/map_tests.rs"]
 mod map_tests;
-#[path = "js/native_performance_tests.rs"]
-mod native_performance_tests;
 #[path = "js/math_tests.rs"]
 mod math_tests;
+#[path = "js/native_performance_tests.rs"]
+mod native_performance_tests;
 #[path = "js/number_array_like_tests.rs"]
 mod number_array_like_tests;
 #[path = "js/number_tests.rs"]

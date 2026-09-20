@@ -315,7 +315,6 @@ impl IntlDateTimeFormat {
         self.parts(value)
             .values()
             .into_iter()
-            .flatten()
             .map(|part| part.value)
             .collect::<Vec<_>>()
             .concat()
@@ -541,11 +540,17 @@ impl IntlNumberFormat {
         value: Value,
     ) -> JsArray<IntlNumberFormatPart> {
         let mut parts = Vec::new();
-        self.visit_parts(value, |kind, text| parts.push(IntlNumberFormatPart::new(kind, text)));
+        self.visit_parts(value, |kind, text| {
+            parts.push(IntlNumberFormatPart::new(kind, text))
+        });
         JsArray::from_dense(parts)
     }
 
-    fn visit_parts<Value: IntlNumberInput>(&self, value: Value, mut append: impl FnMut(&str, &str)) {
+    fn visit_parts<Value: IntlNumberInput>(
+        &self,
+        value: Value,
+        mut append: impl FnMut(&str, &str),
+    ) {
         let (text, negative_zero) = value.into_intl_decimal();
         if text == "NaN" {
             append("nan", "NaN");
@@ -566,7 +571,10 @@ impl IntlNumberFormat {
             append("minusSign", "-");
         }
         if self.style == "currency" {
-            append("currency", self.currency_label.as_deref().unwrap_or_default());
+            append(
+                "currency",
+                self.currency_label.as_deref().unwrap_or_default(),
+            );
             if self.currency_display == "code" || self.currency_display == "name" {
                 append("literal", " ");
             }
@@ -574,11 +582,17 @@ impl IntlNumberFormat {
         if self.use_grouping.is_some()
             && (self.use_grouping.as_deref() != Some("min2") || integer.len() > 4)
         {
-            let first = match integer.len() % 3 { 0 => 3, count => count };
+            let first = match integer.len() % 3 {
+                0 => 3,
+                count => count,
+            };
             append("integer", &integer[..first]);
             for group in integer[first..].as_bytes().chunks(3) {
                 append("group", ",");
-                append("integer", std::str::from_utf8(group).expect("decimal digits are ASCII"));
+                append(
+                    "integer",
+                    std::str::from_utf8(group).expect("decimal digits are ASCII"),
+                );
             }
         } else {
             append("integer", &integer);
@@ -659,8 +673,7 @@ impl IntlNumberFormat {
             JsValue::Undefined => Some("auto".to_owned()),
             JsValue::Bool(false) => None,
             JsValue::Bool(true) => Some("always".to_owned()),
-            JsValue::String(value) => match value.as_str()
-            {
+            JsValue::String(value) => match value.as_str() {
                 "auto" => Some("auto".to_owned()),
                 "always" => Some("always".to_owned()),
                 "min2" => Some("min2".to_owned()),
@@ -841,9 +854,7 @@ fn validate_locale_matcher(options: &JsValue) -> JsResult<()> {
 
 fn first_locale(locales: &JsArray<String>) -> JsResult<String> {
     locales
-        .values()
-        .first()
-        .and_then(|value| value.clone())
+        .get(0)
         .ok_or_else(|| range_error("Intl locale list must contain at least one locale"))
 }
 

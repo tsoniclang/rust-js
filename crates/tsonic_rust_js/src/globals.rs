@@ -37,7 +37,11 @@ pub fn to_number(value: &JsValue) -> f64 {
 
 fn parse_numeric_string(value: &str) -> f64 {
     let trimmed = value.trim_matches(is_ecmascript_whitespace);
-    if trimmed.is_empty() { 0.0 } else { trimmed.parse::<f64>().unwrap_or(f64::NAN) }
+    if trimmed.is_empty() {
+        0.0
+    } else {
+        trimmed.parse::<f64>().unwrap_or(f64::NAN)
+    }
 }
 
 pub(crate) fn is_ecmascript_whitespace(value: char) -> bool {

@@ -22,7 +22,9 @@ impl PropertyKey {
     pub(crate) fn to_native(&self) -> JsResult<String> {
         match self {
             Self::Native(value) => Ok(value.clone()),
-            Self::Utf16(_) => Err(type_error("Object key cannot be represented by a native Rust string")),
+            Self::Utf16(_) => Err(type_error(
+                "Object key cannot be represented by a native Rust string",
+            )),
         }
     }
 
@@ -34,11 +36,17 @@ impl PropertyKey {
     }
 
     pub(crate) fn array_index(&self) -> Option<u32> {
-        let Self::Native(text) = self else { return None; };
-        if text.is_empty() || (text.len() > 1 && text.starts_with('0')) { return None; }
+        let Self::Native(text) = self else {
+            return None;
+        };
+        if text.is_empty() || (text.len() > 1 && text.starts_with('0')) {
+            return None;
+        }
         let mut value = 0_u32;
         for byte in text.bytes() {
-            if !byte.is_ascii_digit() { return None; }
+            if !byte.is_ascii_digit() {
+                return None;
+            }
             value = value.checked_mul(10)?.checked_add(u32::from(byte - b'0'))?;
         }
         (value != u32::MAX).then_some(value)

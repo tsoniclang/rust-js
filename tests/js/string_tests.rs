@@ -62,7 +62,12 @@ fn native_string_indexes_and_searches_use_utf8_bytes() {
     assert!(native_string::char_code_at(text, 2.0).is_nan());
     assert_eq!(native_string::code_point_at(text, 4.0), None);
     assert_eq!(native_string::slice(text, 1.0, Some(7.0)).unwrap(), "é😀");
-    assert_eq!(native_string::slice(text, 2.0, Some(7.0)).unwrap_err().kind(), JsErrorKind::RangeError);
+    assert_eq!(
+        native_string::slice(text, 2.0, Some(7.0))
+            .unwrap_err()
+            .kind(),
+        JsErrorKind::RangeError
+    );
     assert_eq!(native_string::index_of(text, "😀", 0.0), 3);
     assert_eq!(native_string::index_of(text, "z", 4.0), 7);
     assert_eq!(native_string::last_index_of(text, "😀", 4.0), 3);
@@ -77,15 +82,35 @@ fn native_string_indexes_and_searches_use_utf8_bytes() {
 
 #[test]
 fn native_string_construction_and_padding_preserve_valid_utf8() {
-    assert_eq!(native_string::from_char_code(&[233.0, 128512.0]).unwrap(), "é😀");
+    assert_eq!(
+        native_string::from_char_code(&[233.0, 128512.0]).unwrap(),
+        "é😀"
+    );
     assert!(native_string::from_code_point(&[0xd800 as f64]).is_err());
     assert!(native_string::from_char_code(&[65.5]).is_err());
-    assert_eq!(native_string::split_all("a😀é", "").unwrap().iter_values().collect::<Vec<_>>(), ["a", "😀", "é"]);
+    assert_eq!(
+        native_string::split_all("a😀é", "")
+            .unwrap()
+            .iter_values()
+            .collect::<Vec<_>>(),
+        ["a", "😀", "é"]
+    );
     assert_eq!(native_string::replace_all("😀", "", "-").unwrap(), "-😀-");
-    assert_eq!(native_string::pad_start_with("😀", 6.0, "é").unwrap(), "é😀");
+    assert_eq!(
+        native_string::pad_start_with("😀", 6.0, "é").unwrap(),
+        "é😀"
+    );
     assert_eq!(native_string::pad_end_with("😀", 6.0, "é").unwrap(), "😀é");
-    assert_eq!(native_string::pad_end_with("😀", 5.0, "é").unwrap_err().kind(), JsErrorKind::RangeError);
-    assert_eq!(native_string::trim("\u{feff}x\u{feff}"), "\u{feff}x\u{feff}");
+    assert_eq!(
+        native_string::pad_end_with("😀", 5.0, "é")
+            .unwrap_err()
+            .kind(),
+        JsErrorKind::RangeError
+    );
+    assert_eq!(
+        native_string::trim("\u{feff}x\u{feff}"),
+        "\u{feff}x\u{feff}"
+    );
     assert_eq!(native_string::trim("\u{85}x\u{85}"), "x");
 }
 

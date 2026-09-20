@@ -163,7 +163,11 @@ fn console_options_profiles_timestamps_and_dirxml_are_closed() {
     console.assert_to(&mut assertion, true, &[]).unwrap();
     assert!(assertion.is_empty());
     console
-        .assert_to(&mut assertion, false, &[JsValue::Utf16String(exact("broken"))])
+        .assert_to(
+            &mut assertion,
+            false,
+            &[JsValue::Utf16String(exact("broken"))],
+        )
         .unwrap();
     assert_eq!(
         String::from_utf8(assertion).unwrap(),

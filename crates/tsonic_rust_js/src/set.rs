@@ -1,6 +1,6 @@
 use tsonic_rust_runtime::{ObjectIdentity, ObjectIdentityCarrier, TsonicResult};
 
-use crate::equality::{ JsHash, JsSameValueZero, JsStrictEqual};
+use crate::equality::{JsHash, JsSameValueZero, JsStrictEqual};
 
 #[derive(Debug)]
 pub struct JsSet<T> {
@@ -9,7 +9,9 @@ pub struct JsSet<T> {
 
 impl<T> Clone for JsSet<T> {
     fn clone(&self) -> Self {
-        Self { entries: self.entries.clone() }
+        Self {
+            entries: self.entries.clone(),
+        }
     }
 }
 
@@ -41,7 +43,9 @@ impl<T> JsStrictEqual for JsSet<T> {
 
 impl<T> JsSet<T> {
     pub fn new() -> Self {
-        Self { entries: crate::map::JsMap::new() }
+        Self {
+            entries: crate::map::JsMap::new(),
+        }
     }
 
     pub fn from_values(values: impl IntoIterator<Item = T>) -> Self
@@ -198,7 +202,8 @@ impl<T> JsSet<T> {
         T: Clone,
         F: FnMut(T, T, Self),
     {
-        self.entries.for_each(|(), value, _| callback(value.clone(), value, self.clone()));
+        self.entries
+            .for_each(|(), value, _| callback(value.clone(), value, self.clone()));
     }
 
     pub fn difference(&self, other: &Self) -> Self
@@ -265,7 +270,8 @@ impl<T> JsSet<T> {
         T: Clone,
         F: FnMut(T, T, Self) -> TsonicResult<()>,
     {
-        self.entries.try_for_each(|(), value, _| callback(value.clone(), value, self.clone()))
+        self.entries
+            .try_for_each(|(), value, _| callback(value.clone(), value, self.clone()))
     }
 
     pub fn try_for_each_zero<F>(&self, mut callback: F) -> TsonicResult<()>
@@ -300,7 +306,6 @@ impl<T> JsSet<T> {
         self.try_for_each_with(callback)
     }
 }
-
 
 impl<T> ObjectIdentityCarrier for JsSet<T> {
     fn object_identity(&self) -> &ObjectIdentity {

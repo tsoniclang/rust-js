@@ -157,7 +157,7 @@ impl JsRegExpIndices {
     }
 
     pub fn iter_values(&self) -> impl Iterator<Item = Option<JsRegExpIndexPair>> {
-        self.values.values().into_iter().map(Option::flatten)
+        self.values.values().into_iter()
     }
 }
 
@@ -181,11 +181,17 @@ pub struct JsRegExpMatchArray {
 
 impl JsRegExpMatchArray {
     pub fn required_group(&self, index: f64) -> JsString {
-        self.values.get_number(index).flatten().expect("required whole-match capture")
+        self.values
+            .get_number(index)
+            .flatten()
+            .expect("required whole-match capture")
     }
 
     pub fn text(&self) -> JsString {
-        self.values.get(0).flatten().expect("required whole-match capture")
+        self.values
+            .get(0)
+            .flatten()
+            .expect("required whole-match capture")
     }
 
     pub fn value(&self) -> JsString {
@@ -229,7 +235,7 @@ impl JsRegExpMatchArray {
     }
 
     pub fn iter_values(&self) -> impl Iterator<Item = Option<JsString>> {
-        self.values.values().into_iter().map(Option::flatten)
+        self.values.values().into_iter()
     }
 }
 
@@ -253,11 +259,17 @@ pub struct JsRegExpExecArray {
 
 impl JsRegExpExecArray {
     pub fn required_group(&self, index: f64) -> JsString {
-        self.values.get_number(index).flatten().expect("required whole-match capture")
+        self.values
+            .get_number(index)
+            .flatten()
+            .expect("required whole-match capture")
     }
 
     pub fn text(&self) -> JsString {
-        self.values.get(0).flatten().expect("required whole-match capture")
+        self.values
+            .get(0)
+            .flatten()
+            .expect("required whole-match capture")
     }
 
     pub fn value(&self) -> JsString {
@@ -297,7 +309,7 @@ impl JsRegExpExecArray {
     }
 
     pub fn iter_values(&self) -> impl Iterator<Item = Option<JsString>> {
-        self.values.values().into_iter().map(Option::flatten)
+        self.values.values().into_iter()
     }
 
     fn into_match_array(self) -> JsRegExpMatchArray {
@@ -687,7 +699,9 @@ impl JsRegExp {
     }
 
     pub fn exec(&self, input: &JsString) -> JsResult<Option<JsRegExpExecArray>> {
-        Ok(self.execute_match(input)?.map(|found| self.build_match(input, found)))
+        Ok(self
+            .execute_match(input)?
+            .map(|found| self.build_match(input, found)))
     }
 
     fn execute_match(&self, input: &JsString) -> JsResult<Option<Match>> {
@@ -828,7 +842,11 @@ impl JsRegExp {
         self.try_replace_with(input, replacer)
     }
 
-    pub fn split(&self, input: &JsString, limit: Option<f64>) -> JsResult<JsArray<Option<JsString>>> {
+    pub fn split(
+        &self,
+        input: &JsString,
+        limit: Option<f64>,
+    ) -> JsResult<JsArray<Option<JsString>>> {
         let maximum = to_uint32(limit.unwrap_or(u32::MAX as f64));
         let mut output = Vec::new();
         if maximum == 0 {
@@ -878,7 +896,11 @@ impl JsRegExp {
         self.split(input, None)
     }
 
-    pub fn split_with_limit(&self, input: &JsString, limit: f64) -> JsResult<JsArray<Option<JsString>>> {
+    pub fn split_with_limit(
+        &self,
+        input: &JsString,
+        limit: f64,
+    ) -> JsResult<JsArray<Option<JsString>>> {
         self.split(input, Some(limit))
     }
 
@@ -1181,7 +1203,10 @@ pub fn string_search_regexp(input: &JsString, expression: &JsRegExp) -> JsResult
     expression.search(input)
 }
 
-pub fn string_split_regexp(input: &JsString, expression: &JsRegExp) -> JsResult<JsArray<Option<JsString>>> {
+pub fn string_split_regexp(
+    input: &JsString,
+    expression: &JsRegExp,
+) -> JsResult<JsArray<Option<JsString>>> {
     expression.split_all(input)
 }
 
@@ -1311,9 +1336,9 @@ fn regexp_replacement_arguments(matched: &JsRegExpExecArray, input: &JsString) -
             .map(|(name, value)| {
                 (
                     name.clone(),
-                    value
-                        .as_ref()
-                        .map_or(JsValue::Undefined, |value| JsValue::Utf16String(value.clone())),
+                    value.as_ref().map_or(JsValue::Undefined, |value| {
+                        JsValue::Utf16String(value.clone())
+                    }),
                 )
             })
             .collect::<Vec<_>>();

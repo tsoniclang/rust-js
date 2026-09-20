@@ -1,9 +1,8 @@
 use std::cell::Cell;
 use std::rc::Rc;
 use tsonic_rust_js::abi::{
-    array_from_dense_array, array_from_string_map_with_index,
-    array_from_string_try_map, array_from_vec_map_with_index,
-    array_from_vec_try_map, JsArray,
+    array_from_dense_array, array_from_string_map_with_index, array_from_string_try_map,
+    array_from_vec_map_with_index, array_from_vec_try_map, JsArray,
 };
 use tsonic_rust_runtime::Undefined;
 
@@ -63,7 +62,10 @@ fn optional_copies_retain_explicit_undefined_without_mutating_the_source() {
 
 #[test]
 fn dense_copy_retains_initialized_native_defaults() {
-    assert_eq!(array_from_dense_array(&JsArray::<i32>::with_length(1)).get(0), Some(0));
+    assert_eq!(
+        array_from_dense_array(&JsArray::<i32>::with_length(1)).get(0),
+        Some(0)
+    );
 }
 
 #[test]
@@ -74,16 +76,12 @@ fn mapped_copies_collect_each_requested_value_in_order() {
         value * 2
     });
     assert_eq!(visited, vec![(4, 0.0), (7, 1.0), (9, 2.0)]);
-    assert_eq!(copy.values(), vec![Some(8), Some(14), Some(18)]);
+    assert_eq!(copy.values(), vec![8, 14, 18]);
     let text =
         array_from_string_map_with_index("a😀b", |value, index| format!("{index}:{value}"));
     assert_eq!(
         text.values(),
-        vec![
-            Some("0:a".to_owned()),
-            Some("1:😀".to_owned()),
-            Some("2:b".to_owned())
-        ]
+        vec!["0:a".to_owned(), "1:😀".to_owned(), "2:b".to_owned()]
     );
 }
 

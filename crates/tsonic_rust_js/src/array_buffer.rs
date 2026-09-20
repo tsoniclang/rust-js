@@ -146,7 +146,12 @@ impl ArrayBuffer {
         }
     }
 
-    pub fn copy_bytes_from(&self, destination: usize, source: &Self, range: std::ops::Range<usize>) {
+    pub fn copy_bytes_from(
+        &self,
+        destination: usize,
+        source: &Self,
+        range: std::ops::Range<usize>,
+    ) {
         let destination_key = self.storage_key();
         let source_key = source.storage_key();
         if destination_key == source_key {

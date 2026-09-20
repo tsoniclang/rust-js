@@ -182,12 +182,17 @@ fn last_index_of_with_position(value: &str, search: &str, position: Option<f64>)
     while !value.is_char_boundary(end) {
         end -= 1;
     }
-    value[..end].rfind(search).map(|offset| offset as isize).unwrap_or(-1)
+    value[..end]
+        .rfind(search)
+        .map(|offset| offset as isize)
+        .unwrap_or(-1)
 }
 
 pub fn starts_with(value: &str, search: &str, position: f64) -> bool {
     let start = clamped_position(position, value.len());
-    value.get(start..).is_some_and(|suffix| suffix.starts_with(search))
+    value
+        .get(start..)
+        .is_some_and(|suffix| suffix.starts_with(search))
 }
 
 pub fn last_index_of(value: &str, search: &str, position: f64) -> isize {
@@ -198,7 +203,9 @@ fn ends_with_position(value: &str, search: &str, end_position: Option<f64>) -> b
     let end = end_position
         .map(|end| clamped_position(end, value.len()))
         .unwrap_or(value.len());
-    value.get(..end).is_some_and(|prefix| prefix.ends_with(search))
+    value
+        .get(..end)
+        .is_some_and(|prefix| prefix.ends_with(search))
 }
 
 pub fn includes(value: &str, search: &str, position: f64) -> bool {
@@ -347,7 +354,9 @@ where
         ]);
         output.push_str(&replacer(arguments)?);
         consumed = offset + matched.len();
-        if !all { break; }
+        if !all {
+            break;
+        }
     }
     output.push_str(&value[consumed..]);
     Ok(output)
@@ -578,8 +587,9 @@ pub fn from_code_point(code_points: &[f64]) -> Result<String, JsError> {
                 "fromCodePoint expects an integer between 0 and 0x10FFFF",
             ));
         }
-        let character = char::from_u32(*value as u32)
-            .ok_or_else(|| crate::errors::range_error("native string character must be a Unicode scalar"))?;
+        let character = char::from_u32(*value as u32).ok_or_else(|| {
+            crate::errors::range_error("native string character must be a Unicode scalar")
+        })?;
         output.push(character);
     }
     Ok(output)

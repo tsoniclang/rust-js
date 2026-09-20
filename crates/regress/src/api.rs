@@ -2,11 +2,11 @@ use crate::classicalbacktrack;
 use crate::emit;
 use crate::exec;
 use crate::indexing;
+use crate::indexing::InputIndexer;
 use crate::insn::CompiledRegex;
 use crate::optimizer;
 use crate::parse;
 use crate::types::MAX_CAPTURE_GROUPS;
-use crate::indexing::InputIndexer;
 
 #[cfg(feature = "utf16")]
 use crate::{
@@ -463,12 +463,19 @@ impl Regex {
         start: usize,
         maximum_steps: u64,
     ) -> Result<Option<Match>, ResourceLimitError> {
-        assert!(start >= text.len() || text.is_char_boundary(start), "start index is not on a char boundary");
+        assert!(
+            start >= text.len() || text.is_char_boundary(start),
+            "start index is not on a char boundary"
+        );
         let input = indexing::Utf8Input::new(text, self.cr.flags.unicode);
         let mut matches = exec::Matches::new(
             classicalbacktrack::BacktrackExecutor::new(
                 input,
-                classicalbacktrack::MatchAttempter::new_bounded(&self.cr, input.left_end(), maximum_steps),
+                classicalbacktrack::MatchAttempter::new_bounded(
+                    &self.cr,
+                    input.left_end(),
+                    maximum_steps,
+                ),
             ),
             start,
         );

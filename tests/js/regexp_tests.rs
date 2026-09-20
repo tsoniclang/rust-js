@@ -19,7 +19,7 @@ fn dense_strings(values: &JsArray<Option<JsString>>) -> Vec<String> {
     values
         .values()
         .into_iter()
-        .map(|value| value.expect("dense capture slot").map_or_else(|| "<undefined>".to_string(), |value| text(&value)))
+        .map(|value| value.map_or_else(|| "<undefined>".to_string(), |value| text(&value)))
         .collect()
 }
 
@@ -113,12 +113,18 @@ fn regexp_result_required_groups_and_replace_all_entry_points_are_exact() {
     let execution = single.exec(&js("ab")).unwrap().unwrap();
     assert_eq!(execution.required_group(1.0), js("a"));
     assert_eq!(execution.group(2), None);
-    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| execution.required_group(2.0))).is_err());
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+        || execution.required_group(2.0)
+    ))
+    .is_err());
 
     let matched = single.match_result(&js("ab")).unwrap().unwrap();
     assert_eq!(matched.required_group(1.0), js("a"));
     assert_eq!(matched.group(2), None);
-    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| matched.required_group(2.0))).is_err());
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| matched.required_group(2.0)))
+            .is_err()
+    );
 
     let global = JsRegExp::new(js("a"), js("g")).unwrap();
     assert_eq!(
@@ -294,13 +300,7 @@ fn regexp_replacement_tokens_and_callback_arguments_are_exact() {
     let callback_observed = Rc::clone(&observed);
     let output = expression
         .replace_with(&input, move |arguments| {
-            callback_observed.borrow_mut().push(
-                arguments
-                    .values()
-                    .into_iter()
-                    .map(|value| value.unwrap())
-                    .collect(),
-            );
+            callback_observed.borrow_mut().push(arguments.values());
             js("#")
         })
         .unwrap();
@@ -379,7 +379,10 @@ fn native_results_use_scalars_while_explicit_utf16_uses_code_units() {
 
     let native_expression = JsRegExp::new(js("."), js("")).unwrap();
     assert_eq!(
-        regexp_exec_native(&native_expression, "😀").unwrap().unwrap().text(),
+        regexp_exec_native(&native_expression, "😀")
+            .unwrap()
+            .unwrap()
+            .text(),
         "😀",
     );
 }

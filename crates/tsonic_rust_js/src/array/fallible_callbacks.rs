@@ -34,7 +34,9 @@ impl<T> JsArray<T> {
         let length = self.len();
         let output = JsArray::with_capacity(length);
         for index in 0..length {
-            let value = self.get(index).expect("Array.map cannot create holes after its source is shortened");
+            let value = self
+                .get(index)
+                .expect("Array.map cannot create holes after its source is shortened");
             output.push(mapper(value, index as f64, self.clone())?);
         }
         Ok(output)

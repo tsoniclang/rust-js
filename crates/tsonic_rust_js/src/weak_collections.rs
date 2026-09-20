@@ -24,7 +24,10 @@ impl<V> WeakMapState<V> {
         if let Some(entry) = self.entries.remove(&key) {
             self.keys.swap_remove(entry.position);
             if let Some(moved) = self.keys.get(entry.position) {
-                self.entries.get_mut(moved).expect("indexed weak key").position = entry.position;
+                self.entries
+                    .get_mut(moved)
+                    .expect("indexed weak key")
+                    .position = entry.position;
             }
         }
     }
@@ -134,9 +137,14 @@ impl<K: ObjectIdentityCarrier, V> JsWeakMap<K, V> {
         } else {
             let position = state.keys.len();
             state.keys.push(identity.key());
-            state.entries.insert(identity.key(), WeakMapEntry {
-                identity: identity.downgrade(), value, position,
-            });
+            state.entries.insert(
+                identity.key(),
+                WeakMapEntry {
+                    identity: identity.downgrade(),
+                    value,
+                    position,
+                },
+            );
         }
     }
 
@@ -205,13 +213,17 @@ pub struct JsWeakSet<K: ObjectIdentityCarrier> {
 
 impl<K: ObjectIdentityCarrier> Clone for JsWeakSet<K> {
     fn clone(&self) -> Self {
-        Self { entries: self.entries.clone() }
+        Self {
+            entries: self.entries.clone(),
+        }
     }
 }
 
 impl<K: ObjectIdentityCarrier> JsWeakSet<K> {
     pub fn new() -> Self {
-        Self { entries: JsWeakMap::new() }
+        Self {
+            entries: JsWeakMap::new(),
+        }
     }
 
     pub fn from_values(values: impl IntoIterator<Item = K>) -> Self {
@@ -249,7 +261,6 @@ impl<K: ObjectIdentityCarrier> JsWeakSet<K> {
     pub fn delete(&self, value: &K) -> bool {
         self.entries.delete(value)
     }
-
 }
 
 impl<K: ObjectIdentityCarrier> Default for JsWeakSet<K> {
