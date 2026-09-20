@@ -13,11 +13,11 @@ fn abort_controller_and_signal_record_reason() {
     let signal = controller.signal();
     assert!(!signal.aborted());
 
-    controller.abort(JsValue::String(JsString::from_utf8("stop")));
+    controller.abort(JsValue::Utf16String(JsString::from_utf8("stop")));
     assert!(signal.aborted());
     assert_eq!(
         signal.reason(),
-        JsValue::String(JsString::from_utf8("stop"))
+        JsValue::Utf16String(JsString::from_utf8("stop"))
     );
     assert!(signal.throw_if_aborted().is_err());
 
@@ -29,7 +29,7 @@ fn abort_controller_and_signal_record_reason() {
     assert!(timeout.aborted());
     assert_eq!(
         timeout.reason(),
-        JsValue::String(JsString::from_utf8("TimeoutError"))
+        JsValue::String(String::from("TimeoutError"))
     );
 }
 

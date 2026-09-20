@@ -30,8 +30,8 @@ mod error_value_tests;
 mod fallible_callback_tests;
 #[path = "js/globals_uri_dataview_tests.rs"]
 mod globals_uri_dataview_tests;
-#[path = "js/js_array_sparse_tests.rs"]
-mod js_array_sparse_tests;
+#[path = "js/js_array_tests.rs"]
+mod js_array_tests;
 #[path = "js/json_tests.rs"]
 mod json_tests;
 #[path = "js/local_date_tests.rs"]
@@ -40,6 +40,8 @@ mod local_date_tests;
 mod map_tests;
 #[path = "js/math_tests.rs"]
 mod math_tests;
+#[path = "js/native_performance_tests.rs"]
+mod native_performance_tests;
 #[path = "js/number_array_like_tests.rs"]
 mod number_array_like_tests;
 #[path = "js/number_tests.rs"]

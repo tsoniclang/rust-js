@@ -14,7 +14,7 @@ fn json_string_input_retains_its_guaranteed_result() {
     ] {
         assert_eq!(json::stringify_string(input).unwrap(), expected);
         assert_eq!(
-            json::stringify(&JsValue::String(JsString::from_utf8(input))).unwrap(),
+            json::stringify(&JsValue::Utf16String(JsString::from_utf8(input))).unwrap(),
             Some(expected.to_owned())
         );
     }
@@ -40,6 +40,59 @@ fn json_parse_and_stringify_closed_values() {
 }
 
 #[test]
+fn json_callbacks_observe_current_values_without_retaining_container_borrows() {
+    let values = tsonic_rust_js::JsArray::from_dense(vec![
+        JsValue::from(String::from("first")),
+        JsValue::from(String::from("old")),
+    ]);
+    let alias = values.clone();
+    let output = json::stringify_with_replacer(&JsValue::Array(values), move |key, value| {
+        if key == "0" {
+            alias.set(1, JsValue::from(String::from("new")));
+            alias.push(JsValue::from(String::from("not in initial length")));
+        }
+        value
+    })
+    .unwrap()
+    .unwrap();
+    assert_eq!(output, "[\"first\",\"new\"]");
+
+    let value = JsValue::object(JsObject::from_pairs([
+        ("first", String::from("one")),
+        ("later", String::from("old")),
+    ]));
+    let alias = value.as_object().unwrap().clone();
+    let output = json::stringify_with_replacer(&value, move |key, value| {
+        if key == "first" {
+            alias.borrow_mut().set("later", String::from("new"));
+            alias
+                .borrow_mut()
+                .set("added", String::from("not in initial keys"));
+        }
+        value
+    })
+    .unwrap()
+    .unwrap();
+    assert_eq!(output, "{\"first\":\"one\",\"later\":\"new\"}");
+
+    let values = tsonic_rust_js::JsArray::from_dense(vec![
+        JsValue::Null,
+        JsValue::from(String::from("old")),
+    ]);
+    let projected =
+        tsonic_rust_js::value::js_value_from_json_projection(values.clone(), |values, _| {
+            values.set(1, JsValue::from(String::from("new")));
+            Ok(JsValue::from(String::from("projected")))
+        });
+    values.set(0, projected);
+    assert_eq!(
+        stringify_text(&JsValue::Array(values.clone())),
+        "[\"projected\",\"new\"]"
+    );
+    values.set(0, JsValue::Null);
+}
+
+#[test]
 fn json_omits_undefined_object_fields_and_nulls_array_slots() {
     assert!(JsValue::Undefined.is_nullish());
     assert!(JsValue::Null.is_nullish());
@@ -55,7 +108,7 @@ fn json_omits_undefined_object_fields_and_nulls_array_slots() {
 
 #[test]
 fn json_round_trips_non_ascii_strings() {
-    let text = js("héllo — ünïcode ✓");
+    let text = String::from("héllo — ünïcode ✓");
     let parsed = json::parse("\"héllo — ünïcode ✓\"").unwrap();
     assert_eq!(parsed, JsValue::String(text.clone()));
 
@@ -136,7 +189,7 @@ fn json_stringify_with_indent_nested_arrays_and_leaves() {
 
     // Scalars are unaffected by the indent.
     assert_eq!(
-        json::stringify_with_indent(&JsValue::String(js("plain")), "  ")
+        json::stringify_with_indent(&JsValue::Utf16String(js("plain")), "  ")
             .unwrap()
             .unwrap(),
         "\"plain\""
@@ -173,7 +226,7 @@ fn json_stringify_with_indent_keeps_undefined_member_rules() {
 
 #[test]
 fn json_quotes_control_characters_like_node() {
-    let value = JsValue::String(js("\u{1}\u{1f}\u{8}\u{c}\"\\"));
+    let value = JsValue::Utf16String(js("\u{1}\u{1f}\u{8}\u{c}\"\\"));
     assert_eq!(stringify_text(&value), "\"\\u0001\\u001f\\b\\f\\\"\\\\\"");
 }
 
@@ -195,7 +248,7 @@ fn json_rejects_cycles_and_borrow_conflicts_but_allows_shared_aliases() {
         json::stringify(&array_cycle).unwrap_err().kind(),
         JsErrorKind::TypeError
     );
-    array_cycle.as_array().unwrap().delete_at(0);
+    array_cycle.as_array().unwrap().set_len(0);
 
     let child = JsValue::object(JsObject::from_pairs([("x", JsValue::Number(1.0))]));
     let shared = JsValue::object(JsObject::from_pairs([("a", child.clone()), ("b", child)]));
@@ -239,14 +292,14 @@ fn json_enforces_resource_limits() {
         JsErrorKind::RangeError
     );
     assert_eq!(
-        json::stringify_with_limits(&JsValue::String(js("\u{1}")), limits)
+        json::stringify_with_limits(&JsValue::Utf16String(js("\u{1}")), limits)
             .unwrap()
             .unwrap(),
         "\"\\u0001\""
     );
     assert_eq!(
         json::stringify_with_limits(
-            &JsValue::String(js("\u{1}")),
+            &JsValue::Utf16String(js("\u{1}")),
             json::JsonLimits {
                 max_output_bytes: 7,
                 ..limits
@@ -291,7 +344,7 @@ fn json_number_grammar_and_output_match_ecmascript() {
 fn json_utf16_escape_policy_is_explicit() {
     assert_eq!(
         json::parse(r#""\uD83D\uDE00""#).unwrap(),
-        JsValue::String(js("😀"))
+        JsValue::String(String::from("😀"))
     );
     assert_eq!(
         json::parse(r#""\u12G4""#).unwrap_err().kind(),
@@ -301,8 +354,11 @@ fn json_utf16_escape_policy_is_explicit() {
         (r#""\uD800""#, 0xD800, r#""\ud800""#),
         (r#""\uDC00""#, 0xDC00, r#""\udc00""#),
     ] {
-        let value = json::parse(source).unwrap();
-        assert_eq!(value, JsValue::String(JsString::from_units(vec![unit])));
+        assert_eq!(
+            json::parse(source).unwrap_err().kind(),
+            JsErrorKind::SyntaxError
+        );
+        let value = JsValue::Utf16String(JsString::from_units(vec![unit]));
         assert_eq!(stringify_text(&value), serialized);
     }
 }

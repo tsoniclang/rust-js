@@ -116,6 +116,57 @@ impl ArrayBuffer {
         })
     }
 
+    fn storage_key(&self) -> (u8, usize) {
+        match &self.storage {
+            BufferStorage::Ordinary(storage) => (0, Rc::as_ptr(storage) as usize),
+            BufferStorage::Shared(storage) => (1, Arc::as_ptr(storage) as usize),
+        }
+    }
+
+    pub fn with_byte_ranges<R>(
+        &self,
+        left: std::ops::Range<usize>,
+        other: &Self,
+        right: std::ops::Range<usize>,
+        operation: impl FnOnce(&[u8], &[u8]) -> R,
+    ) -> R {
+        let left_key = self.storage_key();
+        let right_key = other.storage_key();
+        if left_key == right_key {
+            let bytes = self.as_bytes();
+            operation(&bytes[left], &bytes[right])
+        } else if left_key < right_key {
+            let left_bytes = self.as_bytes();
+            let right_bytes = other.as_bytes();
+            operation(&left_bytes[left], &right_bytes[right])
+        } else {
+            let right_bytes = other.as_bytes();
+            let left_bytes = self.as_bytes();
+            operation(&left_bytes[left], &right_bytes[right])
+        }
+    }
+
+    pub fn copy_bytes_from(
+        &self,
+        destination: usize,
+        source: &Self,
+        range: std::ops::Range<usize>,
+    ) {
+        let destination_key = self.storage_key();
+        let source_key = source.storage_key();
+        if destination_key == source_key {
+            self.as_mut_bytes().copy_within(range, destination);
+        } else if destination_key < source_key {
+            let mut output = self.as_mut_bytes();
+            let input = source.as_bytes();
+            output[destination..destination + range.len()].copy_from_slice(&input[range]);
+        } else {
+            let input = source.as_bytes();
+            let mut output = self.as_mut_bytes();
+            output[destination..destination + range.len()].copy_from_slice(&input[range]);
+        }
+    }
+
     pub fn slice(&self, start: f64, end: Option<f64>) -> Self {
         let bytes = self.as_bytes();
         let max = bytes.len();

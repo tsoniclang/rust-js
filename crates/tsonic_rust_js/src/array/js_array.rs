@@ -1,9 +1,7 @@
 use std::cell::RefCell;
-use std::collections::VecDeque;
 use std::convert::Infallible;
 use std::rc::Rc;
 
-use super::slot::JsSlot;
 use super::statics::JsArrayConcatItem;
 use crate::coercion::{normalize_slice_index, relative_index, to_integer_or_infinity};
 use crate::equality::{hash_identity, JsHash, JsSameValueZero, JsStrictEqual};
@@ -11,19 +9,16 @@ use tsonic_rust_runtime::{JsError, JsErrorKind, ObjectIdentity, ObjectIdentityCa
 
 #[derive(Debug)]
 struct JsArrayState<T> {
-    slots: Vec<JsSlot<T>>,
+    values: Vec<T>,
     numeric_properties: Vec<(String, T)>,
 }
 
 impl<T> JsArrayState<T> {
     fn enumerable_own_keys(&self) -> impl Iterator<Item = String> + '_ {
-        self.slots
+        self.values
             .iter()
             .enumerate()
-            .filter_map(|(index, slot)| match slot {
-                JsSlot::Present(_) => Some(index.to_string()),
-                JsSlot::Hole => None,
-            })
+            .map(|(index, _)| index.to_string())
             .chain(self.numeric_properties.iter().map(|(key, _)| key.clone()))
     }
 }
@@ -76,79 +71,59 @@ impl<T> JsStrictEqual for JsArray<T> {
 
 impl<T> JsArray<T> {
     pub fn new() -> Self {
-        Self::from_slots(Vec::new())
+        Self::from_dense(Vec::new())
     }
 
-    pub fn with_length(length: usize) -> Self {
-        let mut slots = Vec::new();
-        slots.resize_with(length, || JsSlot::Hole);
-        Self::from_slots(slots)
+    pub fn with_length(length: usize) -> Self
+    where
+        T: Default,
+    {
+        Self::from_values(std::iter::repeat_with(T::default).take(length))
+    }
+
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self::from_dense(Vec::with_capacity(capacity))
     }
 
     pub fn from_dense(values: Vec<T>) -> Self {
-        Self::from_values(values)
-    }
-
-    pub(super) fn from_values(values: impl IntoIterator<Item = T>) -> Self {
-        Self::from_slots(values.into_iter().map(JsSlot::Present).collect())
-    }
-
-    pub(super) fn try_from_values<E>(
-        values: impl IntoIterator<Item = Result<T, E>>,
-    ) -> Result<Self, E> {
-        let slots = values
-            .into_iter()
-            .map(|value| value.map(JsSlot::Present))
-            .collect::<Result<_, E>>()?;
-        Ok(Self::from_slots(slots))
-    }
-
-    pub fn from_sparse(length: usize, values: Vec<(usize, T)>) -> Self {
-        let result = Self::with_length(length);
-        for (index, value) in values {
-            assert!(
-                index < length,
-                "sparse array index exceeds its declared length"
-            );
-            result.set(index, value);
-        }
-        result
-    }
-
-    fn from_slots(slots: Vec<JsSlot<T>>) -> Self {
         Self {
             state: Rc::new(RefCell::new(JsArrayState {
-                slots,
+                values,
                 numeric_properties: Vec::new(),
             })),
             identity: ObjectIdentity::new(),
         }
     }
 
-    pub(super) fn copy_materialized(&self, missing: impl Fn() -> T) -> Self
+    pub(super) fn from_values(values: impl IntoIterator<Item = T>) -> Self {
+        Self::from_dense(values.into_iter().collect())
+    }
+
+    pub(super) fn try_from_values<E>(
+        values: impl IntoIterator<Item = Result<T, E>>,
+    ) -> Result<Self, E> {
+        values
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()
+            .map(Self::from_dense)
+    }
+
+    pub(super) fn copy_materialized(&self) -> Self
     where
         T: Clone,
     {
-        let slots = self
-            .state
-            .borrow()
-            .slots
-            .iter()
-            .map(|slot| {
-                JsSlot::Present(match slot {
-                    JsSlot::Present(value) => value.clone(),
-                    JsSlot::Hole => missing(),
-                })
-            })
-            .collect();
-        Self::from_slots(slots)
+        Self::from_dense(self.state.borrow().values.clone())
     }
 
     pub(super) fn replace_present_values(&self, values: Vec<T>) {
         let mut state = self.state.borrow_mut();
-        let length = state.slots.len();
-        state.slots = values.into_iter().map(JsSlot::Present).collect();
-        state.slots.resize_with(length, || JsSlot::Hole);
+        for (index, value) in values.into_iter().enumerate() {
+            if index < state.values.len() {
+                state.values[index] = value;
+            } else {
+                state.values.push(value);
+            }
+        }
     }
 
     pub(super) fn try_sort_present_by<E, F>(&self, mut compare: F) -> Result<Self, E>
@@ -156,7 +131,7 @@ impl<T> JsArray<T> {
         T: Clone,
         F: FnMut(T, T) -> Result<f64, E>,
     {
-        let values = self.values().into_iter().flatten().collect::<Vec<_>>();
+        let values = self.state.borrow().values.clone();
         let values = try_stable_sort(values, &mut compare)?;
         self.replace_present_values(values);
         Ok(self.clone())
@@ -206,7 +181,7 @@ impl<T> JsArray<T> {
     }
 
     pub fn len(&self) -> usize {
-        self.state.borrow().slots.len()
+        self.state.borrow().values.len()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -215,15 +190,15 @@ impl<T> JsArray<T> {
 
     pub fn set_len(&self, len: usize) {
         let mut state = self.state.borrow_mut();
-        state.slots.truncate(len);
-        state.slots.resize_with(len, || JsSlot::Hole);
+        assert!(
+            len <= state.values.len(),
+            "Dense array growth requires initialized values; use push or fill at construction"
+        );
+        state.values.truncate(len);
     }
 
     pub fn has_index(&self, index: usize) -> bool {
-        matches!(
-            self.state.borrow().slots.get(index),
-            Some(JsSlot::Present(_))
-        )
+        index < self.len()
     }
 
     pub fn contains_number_property(index: f64, array: &Self) -> bool {
@@ -240,10 +215,10 @@ impl<T> JsArray<T> {
     }
 
     pub fn delete_at(&self, index: usize) -> bool {
-        let mut state = self.state.borrow_mut();
-        if let Some(slot) = state.slots.get_mut(index) {
-            *slot = JsSlot::Hole;
-        }
+        assert!(
+            index >= self.len(),
+            "Deleting a dense array element would create a hole; use splice"
+        );
         true
     }
 
@@ -251,12 +226,15 @@ impl<T> JsArray<T> {
     where
         T: Clone,
     {
-        self.state
-            .borrow()
-            .slots
-            .get(index)
-            .and_then(JsSlot::as_ref)
-            .cloned()
+        self.state.borrow().values.get(index).cloned()
+    }
+
+    pub(crate) fn with_element<Result>(
+        &self,
+        index: usize,
+        read: impl FnOnce(Option<&T>) -> Result,
+    ) -> Result {
+        read(self.state.borrow().values.get(index))
     }
 
     pub fn get_number(&self, index: f64) -> Option<T>
@@ -283,10 +261,15 @@ impl<T> JsArray<T> {
 
     pub fn set(&self, index: usize, value: T) {
         let mut state = self.state.borrow_mut();
-        if state.slots.len() <= index {
-            state.slots.resize_with(index + 1, || JsSlot::Hole);
+        assert!(
+            index <= state.values.len(),
+            "Array assignment exceeds initialized dense storage"
+        );
+        if index == state.values.len() {
+            state.values.push(value);
+        } else {
+            state.values[index] = value;
         }
-        state.slots[index] = JsSlot::Present(value);
     }
 
     pub fn set_number(&self, index: f64, value: T) {
@@ -321,76 +304,62 @@ impl<T> JsArray<T> {
 
     pub fn push(&self, value: T) -> usize {
         let mut state = self.state.borrow_mut();
-        state.slots.push(JsSlot::Present(value));
-        state.slots.len()
+        state.values.push(value);
+        state.values.len()
     }
 
     pub fn push_many<const N: usize>(&self, items: [T; N]) -> usize {
         let mut state = self.state.borrow_mut();
-        state.slots.extend(items.into_iter().map(JsSlot::Present));
-        state.slots.len()
+        state.values.extend(items);
+        state.values.len()
     }
 
     pub fn push_many_discard<const N: usize>(&self, items: [T; N]) {
-        self.state
-            .borrow_mut()
-            .slots
-            .extend(items.into_iter().map(JsSlot::Present));
+        self.state.borrow_mut().values.extend(items);
     }
 
     pub fn pop(&self) -> Option<T> {
-        match self.state.borrow_mut().slots.pop() {
-            Some(JsSlot::Present(value)) => Some(value),
-            _ => None,
-        }
+        self.state.borrow_mut().values.pop()
     }
 
     pub fn shift(&self) -> Option<T> {
         let mut state = self.state.borrow_mut();
-        if state.slots.is_empty() {
+        if state.values.is_empty() {
             return None;
         }
-        match state.slots.remove(0) {
-            JsSlot::Present(value) => Some(value),
-            JsSlot::Hole => None,
-        }
+        Some(state.values.remove(0))
     }
 
     pub fn unshift(&self, value: T) -> usize {
         let mut state = self.state.borrow_mut();
-        state.slots.insert(0, JsSlot::Present(value));
-        state.slots.len()
+        state.values.insert(0, value);
+        state.values.len()
     }
 
     pub fn unshift_many<const N: usize>(&self, items: [T; N]) -> usize {
         let mut state = self.state.borrow_mut();
-        state
-            .slots
-            .splice(0..0, items.into_iter().map(JsSlot::Present));
-        state.slots.len()
+        state.values.splice(0..0, items);
+        state.values.len()
     }
 
     pub fn unshift_many_discard<const N: usize>(&self, items: [T; N]) {
-        self.state
-            .borrow_mut()
-            .slots
-            .splice(0..0, items.into_iter().map(JsSlot::Present));
+        self.state.borrow_mut().values.splice(0..0, items);
     }
 
     pub fn concat<const N: usize>(&self, items: [JsArrayConcatItem<T>; N]) -> Self
     where
         T: Clone,
     {
-        let mut slots = self.state.borrow().slots.clone();
+        let mut values = self.state.borrow().values.clone();
         for item in items {
             match item {
-                JsArrayConcatItem::Value(value) => slots.push(JsSlot::Present(value)),
+                JsArrayConcatItem::Value(value) => values.push(value),
                 JsArrayConcatItem::Array(array) => {
-                    slots.extend(array.state.borrow().slots.iter().cloned());
+                    values.extend(array.state.borrow().values.iter().cloned());
                 }
             }
         }
-        Self::from_slots(slots)
+        Self::from_dense(values)
     }
 
     pub fn fill_all(&self, value: T) -> Self
@@ -425,8 +394,8 @@ impl<T> JsArray<T> {
             .unwrap_or(length);
         let mut state = self.state.borrow_mut();
         if start < end {
-            for slot in &mut state.slots[start..end] {
-                *slot = JsSlot::Present(value.clone());
+            for slot in &mut state.values[start..end] {
+                *slot = value.clone();
             }
         }
         self.clone()
@@ -457,16 +426,21 @@ impl<T> JsArray<T> {
             .map(|value| normalize_slice_index(value, len))
             .unwrap_or(len);
         let count = end.saturating_sub(from).min(len.saturating_sub(to));
-        let copied = self.state.borrow().slots[from..from + count].to_vec();
         let mut state = self.state.borrow_mut();
-        for (offset, slot) in copied.into_iter().enumerate() {
-            state.slots[to + offset] = slot;
+        if to > from {
+            for offset in (0..count).rev() {
+                state.values[to + offset] = state.values[from + offset].clone();
+            }
+        } else {
+            for offset in 0..count {
+                state.values[to + offset] = state.values[from + offset].clone();
+            }
         }
         self.clone()
     }
 
     pub fn reverse(&self) -> Self {
-        self.state.borrow_mut().slots.reverse();
+        self.state.borrow_mut().values.reverse();
         self.clone()
     }
 
@@ -497,13 +471,10 @@ impl<T> JsArray<T> {
         let removed = self
             .state
             .borrow_mut()
-            .slots
-            .splice(
-                start..start + delete_count,
-                items.into_iter().map(JsSlot::Present),
-            )
+            .values
+            .splice(start..start + delete_count, items)
             .collect();
-        Self::from_slots(removed)
+        Self::from_dense(removed)
     }
 
     pub fn keys(&self) -> Vec<usize> {
@@ -518,16 +489,11 @@ impl<T> JsArray<T> {
         JsArray::from_values(self.state.borrow().enumerable_own_keys())
     }
 
-    pub fn values(&self) -> Vec<Option<T>>
+    pub fn values(&self) -> Vec<T>
     where
         T: Clone,
     {
-        self.state
-            .borrow()
-            .slots
-            .iter()
-            .map(|slot| slot.as_ref().cloned())
-            .collect()
+        self.state.borrow().values.clone()
     }
 
     pub fn entries(&self) -> super::JsArrayEntries<T> {
@@ -546,13 +512,12 @@ impl<T> JsArray<T> {
         T: JsSameValueZero<Query>,
     {
         let state = self.state.borrow();
-        let Some(start) = normalize_search_start(state.slots.len(), from_index) else {
+        let Some(start) = normalize_search_start(state.values.len(), from_index) else {
             return false;
         };
-        state.slots[start..].iter().any(|slot| {
-            slot.as_ref()
-                .is_some_and(|item| item.same_value_zero(value))
-        })
+        state.values[start..]
+            .iter()
+            .any(|item| item.same_value_zero(value))
     }
 
     pub fn includes_from_start<Query: ?Sized>(&self, value: &Query) -> bool
@@ -567,12 +532,12 @@ impl<T> JsArray<T> {
         T: JsStrictEqual<Query>,
     {
         let state = self.state.borrow();
-        let Some(start) = normalize_search_start(state.slots.len(), from_index) else {
+        let Some(start) = normalize_search_start(state.values.len(), from_index) else {
             return -1;
         };
-        state.slots[start..]
+        state.values[start..]
             .iter()
-            .position(|slot| slot.as_ref().is_some_and(|item| item.strict_equal(value)))
+            .position(|item| item.strict_equal(value))
             .map_or(-1, |index| (start + index) as isize)
     }
 
@@ -588,12 +553,12 @@ impl<T> JsArray<T> {
         T: JsStrictEqual<Query>,
     {
         let state = self.state.borrow();
-        let Some(start) = normalize_last_search_start(state.slots.len(), from_index) else {
+        let Some(start) = normalize_last_search_start(state.values.len(), from_index) else {
             return -1;
         };
-        state.slots[..=start]
+        state.values[..=start]
             .iter()
-            .rposition(|slot| slot.as_ref().is_some_and(|item| item.strict_equal(value)))
+            .rposition(|item| item.strict_equal(value))
             .map_or(-1, |index| index as isize)
     }
 
@@ -610,12 +575,9 @@ impl<T> JsArray<T> {
     {
         self.state
             .borrow()
-            .slots
+            .values
             .iter()
-            .map(|slot| {
-                slot.as_ref()
-                    .map_or_else(String::new, |value| value.to_js_string())
-            })
+            .map(|value| value.to_js_string())
             .collect::<Vec<_>>()
             .join(separator)
     }
@@ -632,14 +594,14 @@ impl<T> JsArray<T> {
         T: Clone,
     {
         let state = self.state.borrow();
-        let start = crate::coercion::normalize_slice_index(start, state.slots.len());
+        let start = crate::coercion::normalize_slice_index(start, state.values.len());
         let end = end
-            .map(|value| crate::coercion::normalize_slice_index(value, state.slots.len()))
-            .unwrap_or(state.slots.len());
+            .map(|value| crate::coercion::normalize_slice_index(value, state.values.len()))
+            .unwrap_or(state.values.len());
         if start >= end {
             return Self::new();
         }
-        Self::from_slots(state.slots[start..end].to_vec())
+        Self::from_dense(state.values[start..end].to_vec())
     }
 
     pub fn slice_all(&self) -> Self
@@ -669,11 +631,12 @@ impl<T> JsArray<T> {
         F: FnMut(T, f64, Self) -> U,
     {
         let length = self.len();
-        let output = JsArray::with_length(length);
+        let output = JsArray::with_capacity(length);
         for index in 0..length {
-            if let Some(value) = self.get(index) {
-                output.set(index, mapper(value, index as f64, self.clone()));
-            }
+            let value = self
+                .get(index)
+                .expect("Array.map cannot create holes after its source is shortened");
+            output.push(mapper(value, index as f64, self.clone()));
         }
         output
     }
@@ -1209,19 +1172,10 @@ impl<T> JsArray<T> {
     where
         T: Clone + crate::string::JsToString,
     {
-        let mut state = self.state.borrow_mut();
-        let mut present = state
-            .slots
-            .iter()
-            .filter_map(|slot| slot.as_ref().cloned())
-            .collect::<Vec<_>>();
-        present.sort_by_key(|item| item.to_js_string().encode_utf16().collect::<Vec<_>>());
-        let present_len = present.len();
-        let length = state.slots.len();
-        state.slots = present.into_iter().map(JsSlot::Present).collect();
-        state
-            .slots
-            .resize_with(length.max(present_len), || JsSlot::Hole);
+        self.state
+            .borrow_mut()
+            .values
+            .sort_by_cached_key(|item| item.to_js_string());
         self.clone()
     }
 
@@ -1229,7 +1183,7 @@ impl<T> JsArray<T> {
     where
         T: Clone,
     {
-        let output = Self::from_slots(self.state.borrow().slots.clone());
+        let output = Self::from_dense(self.state.borrow().values.clone());
         output.reverse();
         output
     }
@@ -1243,21 +1197,52 @@ where
     if values.len() <= 1 {
         return Ok(values);
     }
-    let right = values.split_off(values.len() / 2);
-    let mut left = VecDeque::from(try_stable_sort(values, compare)?);
-    let mut right = VecDeque::from(try_stable_sort(right, compare)?);
-    let mut sorted = Vec::with_capacity(left.len() + right.len());
-    while let (Some(left_value), Some(right_value)) = (left.front(), right.front()) {
-        let order = compare(left_value.clone(), right_value.clone())?;
-        if order.is_nan() || order <= 0.0 {
-            sorted.push(left.pop_front().expect("left front exists"));
-        } else {
-            sorted.push(right.pop_front().expect("right front exists"));
+    let length = values.len();
+    let mut order: Vec<usize> = (0..length).collect();
+    let mut scratch = vec![0; length];
+    let mut width = 1usize;
+    while width < length {
+        let mut start = 0;
+        while start < length {
+            let middle = start.saturating_add(width).min(length);
+            let end = middle.saturating_add(width).min(length);
+            let mut left = start;
+            let mut right = middle;
+            let mut output = start;
+            while left < middle && right < end {
+                let comparison =
+                    compare(values[order[left]].clone(), values[order[right]].clone())?;
+                if comparison.is_nan() || comparison <= 0.0 {
+                    scratch[output] = order[left];
+                    left += 1;
+                } else {
+                    scratch[output] = order[right];
+                    right += 1;
+                }
+                output += 1;
+            }
+            let remaining = if left < middle {
+                &order[left..middle]
+            } else {
+                &order[right..end]
+            };
+            scratch[output..end].copy_from_slice(remaining);
+            start = end;
+        }
+        std::mem::swap(&mut order, &mut scratch);
+        width = width.saturating_mul(2);
+    }
+    for (destination, source) in order.into_iter().enumerate() {
+        scratch[source] = destination;
+    }
+    for index in 0..length {
+        while scratch[index] != index {
+            let destination = scratch[index];
+            values.swap(index, destination);
+            scratch.swap(index, destination);
         }
     }
-    sorted.extend(left);
-    sorted.extend(right);
-    Ok(sorted)
+    Ok(values)
 }
 
 pub(super) fn canonical_array_index(value: f64) -> Option<usize> {

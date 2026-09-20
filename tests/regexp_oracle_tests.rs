@@ -1,11 +1,11 @@
 //! Differential RegExp execution against committed Node oracle vectors.
 
-use std::fs;
 use std::path::Path;
+use std::process::Command;
 
 use tsonic_rust_js::json;
 use tsonic_rust_js::regexp::{JsRegExp, JsRegExpExecArray, JsRegExpMatchArray};
-use tsonic_rust_js::{JsString, JsValue};
+use tsonic_rust_js::{JsArray, JsObject, JsString, JsValue};
 use tsonic_rust_runtime::JsErrorKind;
 
 fn object_field(entry: &JsValue, key: &str) -> JsValue {
@@ -18,7 +18,7 @@ fn object_field(entry: &JsValue, key: &str) -> JsValue {
 
 fn string_field(entry: &JsValue, key: &str) -> JsString {
     match object_field(entry, key) {
-        JsValue::String(value) => value,
+        JsValue::Utf16String(value) => value,
         other => panic!("expected string for `{key}`, got {other:?}"),
     }
 }
@@ -31,20 +31,69 @@ fn number_field(entry: &JsValue, key: &str) -> f64 {
 }
 
 fn array_items(value: &JsValue) -> Vec<JsValue> {
-    value
-        .as_array()
-        .expect("oracle array")
-        .values()
-        .into_iter()
-        .map(|item| item.expect("dense oracle array item"))
-        .collect()
+    value.as_array().expect("oracle array").values()
 }
 
 fn load_vectors() -> Vec<JsValue> {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/oracle/regexp-vectors.json");
-    let source = fs::read_to_string(path).expect("read RegExp oracle vectors");
-    let parsed = json::parse(&source).expect("parse RegExp oracle vectors");
-    array_items(&parsed)
+    let output = Command::new("node")
+        .args([
+            "--input-type=module",
+            "-e",
+            r#"
+import { readFileSync } from 'node:fs';
+const vectors = JSON.parse(readFileSync(process.argv[1], 'utf8'));
+process.stdout.write(JSON.stringify(vectors, (_, value) => typeof value === 'string'
+  ? { __oracle_utf16: Array.from({ length: value.length }, (_, index) => value.charCodeAt(index)) }
+  : value));
+"#,
+        ])
+        .arg(path)
+        .output()
+        .expect("encode exact UTF-16 oracle strings");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let parsed =
+        json::parse(std::str::from_utf8(&output.stdout).unwrap()).expect("parse oracle transport");
+    array_items(&restore_exact_strings(parsed))
+}
+
+fn restore_exact_strings(value: JsValue) -> JsValue {
+    match value {
+        JsValue::Array(values) => JsValue::array(JsArray::from_dense(
+            array_items(&JsValue::Array(values))
+                .into_iter()
+                .map(restore_exact_strings)
+                .collect(),
+        )),
+        JsValue::Object(object) => {
+            let object = object.borrow();
+            if let Some(units) = object.get("__oracle_utf16").as_array() {
+                assert_eq!(object.keys().unwrap(), ["__oracle_utf16"]);
+                let units: Vec<u16> = array_items(&JsValue::Array(units.clone()))
+                    .into_iter()
+                    .map(|value| {
+                        let JsValue::Number(unit) = value else {
+                            panic!("oracle unit must be numeric");
+                        };
+                        assert!(unit >= 0.0 && unit <= 65535.0 && unit.fract() == 0.0);
+                        unit as u16
+                    })
+                    .collect();
+                JsValue::Utf16String(JsString::from_units(units))
+            } else {
+                let mut restored = JsObject::new();
+                for (key, value) in object.entries().unwrap() {
+                    restored.set(&key, restore_exact_strings(value));
+                }
+                JsValue::object(restored)
+            }
+        }
+        value => value,
+    }
 }
 
 #[derive(Debug)]
@@ -59,7 +108,7 @@ fn expected_match(value: &JsValue) -> ExpectedMatch {
         .into_iter()
         .map(|group| match group {
             JsValue::Null => None,
-            JsValue::String(value) => Some(value),
+            JsValue::Utf16String(value) => Some(value),
             other => panic!("invalid oracle capture {other:?}"),
         })
         .collect();
@@ -257,7 +306,7 @@ fn regexp_runtime_matches_all_committed_node_vectors() {
             "replace" => {
                 let replacement = string_field(entry, "replacement");
                 match expected {
-                    JsValue::String(expected) => expression
+                    JsValue::Utf16String(expected) => expression
                         .replace(&input, &replacement)
                         .map_err(|error| format!("{label}: {error:?}"))
                         .and_then(|actual| {
@@ -272,7 +321,8 @@ fn regexp_runtime_matches_all_committed_node_vectors() {
                 let expected = array_items(&expected)
                     .into_iter()
                     .map(|value| match value {
-                        JsValue::String(value) => Ok(value),
+                        JsValue::Utf16String(value) => Ok(Some(value)),
+                        JsValue::Null => Ok(None),
                         other => Err(format!("{label}: invalid split value {other:?}")),
                     })
                     .collect::<Result<Vec<_>, _>>();
@@ -281,7 +331,7 @@ fn regexp_runtime_matches_all_committed_node_vectors() {
                         .split_all(&input)
                         .map_err(|error| format!("{label}: {error:?}"))
                         .and_then(|actual| {
-                            let actual = actual.values().into_iter().flatten().collect::<Vec<_>>();
+                            let actual = actual.values();
                             (actual == expected).then_some(()).ok_or_else(|| {
                                 format!("{label}: expected {expected:?}, got {actual:?}")
                             })
@@ -298,7 +348,9 @@ fn regexp_runtime_matches_all_committed_node_vectors() {
                 let result = object_field(&expected, "result");
                 let comparison = match (result, actual) {
                     (JsValue::Null, Ok(None)) => Ok(()),
-                    (JsValue::String(expected), Ok(Some(actual))) if actual.text() == expected => {
+                    (JsValue::Utf16String(expected), Ok(Some(actual)))
+                        if actual.text() == expected =>
+                    {
                         Ok(())
                     }
                     (_, Err(error)) => Err(format!("{label}: {error:?}")),
@@ -325,7 +377,7 @@ fn regexp_runtime_matches_all_committed_node_vectors() {
                         array_items(&value)
                             .into_iter()
                             .map(|item| match item {
-                                JsValue::String(value) => value,
+                                JsValue::Utf16String(value) => Some(value),
                                 other => panic!("{label}: invalid match item {other:?}"),
                             })
                             .collect::<Vec<_>>(),
@@ -335,14 +387,7 @@ fn regexp_runtime_matches_all_committed_node_vectors() {
                     .match_result(&input)
                     .map_err(|error| format!("{label}: {error:?}"))
                     .and_then(|actual| {
-                        let actual = actual.map(|array| {
-                            array
-                                .array()
-                                .values()
-                                .into_iter()
-                                .flatten()
-                                .collect::<Vec<_>>()
-                        });
+                        let actual = actual.map(|array| array.array().values());
                         (actual == expected).then_some(()).ok_or_else(|| {
                             format!("{label}: expected {expected:?}, got {actual:?}")
                         })

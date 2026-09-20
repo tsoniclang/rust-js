@@ -2,7 +2,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::ops::Deref;
 use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use regress::{Flags, Match, Regex};
 use tsonic_rust_runtime::{ObjectIdentity, ObjectIdentityCarrier, Undefined};
@@ -135,13 +135,13 @@ impl JsRegExpNamedIndices {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct JsRegExpIndices {
-    values: JsArray<JsRegExpIndexPair>,
+    values: JsArray<Option<JsRegExpIndexPair>>,
     groups: Option<JsRegExpNamedIndices>,
 }
 
 impl JsRegExpIndices {
     pub fn at(&self, index: usize) -> Option<JsRegExpIndexPair> {
-        self.values.get(index)
+        self.values.get(index).flatten()
     }
 
     pub fn len(&self) -> usize {
@@ -156,13 +156,13 @@ impl JsRegExpIndices {
         self.groups.clone()
     }
 
-    pub fn iter_values(&self) -> std::vec::IntoIter<Option<JsRegExpIndexPair>> {
+    pub fn iter_values(&self) -> impl Iterator<Item = Option<JsRegExpIndexPair>> {
         self.values.values().into_iter()
     }
 }
 
 impl Deref for JsRegExpIndices {
-    type Target = JsArray<JsRegExpIndexPair>;
+    type Target = JsArray<Option<JsRegExpIndexPair>>;
 
     fn deref(&self) -> &Self::Target {
         &self.values
@@ -171,7 +171,7 @@ impl Deref for JsRegExpIndices {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct JsRegExpMatchArray {
-    values: JsArray<JsString>,
+    values: JsArray<Option<JsString>>,
     index: Option<f64>,
     input: Option<JsString>,
     groups: Option<JsRegExpNamedGroups>,
@@ -181,11 +181,17 @@ pub struct JsRegExpMatchArray {
 
 impl JsRegExpMatchArray {
     pub fn required_group(&self, index: f64) -> JsString {
-        self.values.get_number(index).unwrap_or_default()
+        self.values
+            .get_number(index)
+            .flatten()
+            .expect("required whole-match capture")
     }
 
     pub fn text(&self) -> JsString {
-        self.values.get(0).unwrap_or_default()
+        self.values
+            .get(0)
+            .flatten()
+            .expect("required whole-match capture")
     }
 
     pub fn value(&self) -> JsString {
@@ -201,7 +207,7 @@ impl JsRegExpMatchArray {
     }
 
     pub fn group(&self, index: usize) -> Option<JsString> {
-        self.values.get(index)
+        self.values.get(index).flatten()
     }
 
     pub fn group_count(&self) -> usize {
@@ -224,17 +230,17 @@ impl JsRegExpMatchArray {
         self.indices.clone()
     }
 
-    pub fn array(&self) -> JsArray<JsString> {
+    pub fn array(&self) -> JsArray<Option<JsString>> {
         self.values.clone()
     }
 
-    pub fn iter_values(&self) -> std::vec::IntoIter<Option<JsString>> {
+    pub fn iter_values(&self) -> impl Iterator<Item = Option<JsString>> {
         self.values.values().into_iter()
     }
 }
 
 impl Deref for JsRegExpMatchArray {
-    type Target = JsArray<JsString>;
+    type Target = JsArray<Option<JsString>>;
 
     fn deref(&self) -> &Self::Target {
         &self.values
@@ -243,7 +249,7 @@ impl Deref for JsRegExpMatchArray {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct JsRegExpExecArray {
-    values: JsArray<JsString>,
+    values: JsArray<Option<JsString>>,
     index: f64,
     input: JsString,
     groups: Option<JsRegExpNamedGroups>,
@@ -253,11 +259,17 @@ pub struct JsRegExpExecArray {
 
 impl JsRegExpExecArray {
     pub fn required_group(&self, index: f64) -> JsString {
-        self.values.get_number(index).unwrap_or_default()
+        self.values
+            .get_number(index)
+            .flatten()
+            .expect("required whole-match capture")
     }
 
     pub fn text(&self) -> JsString {
-        self.values.get(0).unwrap_or_default()
+        self.values
+            .get(0)
+            .flatten()
+            .expect("required whole-match capture")
     }
 
     pub fn value(&self) -> JsString {
@@ -273,7 +285,7 @@ impl JsRegExpExecArray {
     }
 
     pub fn group(&self, index: usize) -> Option<JsString> {
-        self.values.get(index)
+        self.values.get(index).flatten()
     }
 
     pub fn group_count(&self) -> usize {
@@ -296,7 +308,7 @@ impl JsRegExpExecArray {
         self.indices.clone()
     }
 
-    pub fn iter_values(&self) -> std::vec::IntoIter<Option<JsString>> {
+    pub fn iter_values(&self) -> impl Iterator<Item = Option<JsString>> {
         self.values.values().into_iter()
     }
 
@@ -317,7 +329,7 @@ pub fn regexp_exec_into_match_array(value: JsRegExpExecArray) -> JsRegExpMatchAr
 }
 
 impl Deref for JsRegExpExecArray {
-    type Target = JsArray<JsString>;
+    type Target = JsArray<Option<JsString>>;
 
     fn deref(&self) -> &Self::Target {
         &self.values
@@ -427,6 +439,7 @@ struct CompiledRegExp {
     flags: JsString,
     parsed_flags: ParsedFlags,
     regex: Regex,
+    native_regex: OnceLock<JsResult<Regex>>,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -563,6 +576,7 @@ impl JsRegExp {
             flags,
             parsed_flags,
             regex,
+            native_regex: OnceLock::new(),
         });
         COMPILED_REGEXP_CACHE.with(|cache| {
             cache.borrow_mut().insert(key, Arc::clone(&compiled));
@@ -685,6 +699,12 @@ impl JsRegExp {
     }
 
     pub fn exec(&self, input: &JsString) -> JsResult<Option<JsRegExpExecArray>> {
+        Ok(self
+            .execute_match(input)?
+            .map(|found| self.build_match(input, found)))
+    }
+
+    fn execute_match(&self, input: &JsString) -> JsResult<Option<Match>> {
         let stateful = self.global() || self.sticky();
         let start = if stateful {
             to_length(self.last_index())
@@ -703,15 +723,14 @@ impl JsRegExp {
             }
             return Ok(None);
         };
-        let result = self.build_match(input, found);
         if stateful {
-            self.set_last_index(result.end as f64);
+            self.set_last_index(found.end() as f64);
         }
-        Ok(Some(result))
+        Ok(Some(found))
     }
 
     pub fn test(&self, input: &JsString) -> JsResult<bool> {
-        Ok(self.exec(input)?.is_some())
+        Ok(self.execute_match(input)?.is_some())
     }
 
     pub fn match_result(&self, input: &JsString) -> JsResult<Option<JsRegExpMatchArray>> {
@@ -823,7 +842,11 @@ impl JsRegExp {
         self.try_replace_with(input, replacer)
     }
 
-    pub fn split(&self, input: &JsString, limit: Option<f64>) -> JsResult<JsArray<JsString>> {
+    pub fn split(
+        &self,
+        input: &JsString,
+        limit: Option<f64>,
+    ) -> JsResult<JsArray<Option<JsString>>> {
         let maximum = to_uint32(limit.unwrap_or(u32::MAX as f64));
         let mut output = Vec::new();
         if maximum == 0 {
@@ -869,11 +892,15 @@ impl JsRegExp {
         Ok(array_from_optional(output))
     }
 
-    pub fn split_all(&self, input: &JsString) -> JsResult<JsArray<JsString>> {
+    pub fn split_all(&self, input: &JsString) -> JsResult<JsArray<Option<JsString>>> {
         self.split(input, None)
     }
 
-    pub fn split_with_limit(&self, input: &JsString, limit: f64) -> JsResult<JsArray<JsString>> {
+    pub fn split_with_limit(
+        &self,
+        input: &JsString,
+        limit: f64,
+    ) -> JsResult<JsArray<Option<JsString>>> {
         self.split(input, Some(limit))
     }
 
@@ -1176,7 +1203,10 @@ pub fn string_search_regexp(input: &JsString, expression: &JsRegExp) -> JsResult
     expression.search(input)
 }
 
-pub fn string_split_regexp(input: &JsString, expression: &JsRegExp) -> JsResult<JsArray<JsString>> {
+pub fn string_split_regexp(
+    input: &JsString,
+    expression: &JsRegExp,
+) -> JsResult<JsArray<Option<JsString>>> {
     expression.split_all(input)
 }
 
@@ -1184,13 +1214,13 @@ pub fn string_split_regexp_with_limit(
     input: &JsString,
     expression: &JsRegExp,
     limit: f64,
-) -> JsResult<JsArray<JsString>> {
+) -> JsResult<JsArray<Option<JsString>>> {
     expression.split_with_limit(input, limit)
 }
 
 pub fn regexp_replacement_argument_string(arguments: &JsArray<JsValue>, index: usize) -> JsString {
     match arguments.get(index) {
-        Some(JsValue::String(value)) => value,
+        Some(JsValue::Utf16String(value)) => value,
         _ => unreachable!("replacement callback string slot violates its closed runtime ABI"),
     }
 }
@@ -1280,24 +1310,24 @@ pub(crate) fn string_replacement_arguments(
     input: &JsString,
 ) -> JsArray<JsValue> {
     JsArray::from_dense(vec![
-        JsValue::String(matched.clone()),
+        JsValue::Utf16String(matched.clone()),
         JsValue::Number(offset as f64),
-        JsValue::String(input.clone()),
+        JsValue::Utf16String(input.clone()),
     ])
 }
 
 fn regexp_replacement_arguments(matched: &JsRegExpExecArray, input: &JsString) -> JsArray<JsValue> {
     let mut values =
         Vec::with_capacity(matched.len() + 2 + usize::from(matched.groups().is_some()));
-    values.push(JsValue::String(matched.text()));
+    values.push(JsValue::Utf16String(matched.text()));
     for capture_index in 1..matched.len() {
         values.push(match matched.group(capture_index) {
-            Some(capture) => JsValue::String(capture),
+            Some(capture) => JsValue::Utf16String(capture),
             None => JsValue::Undefined,
         });
     }
     values.push(JsValue::Number(matched.index()));
-    values.push(JsValue::String(input.clone()));
+    values.push(JsValue::Utf16String(input.clone()));
     if let Some(groups) = matched.groups() {
         let entries = groups
             .values
@@ -1306,9 +1336,9 @@ fn regexp_replacement_arguments(matched: &JsRegExpExecArray, input: &JsString) -
             .map(|(name, value)| {
                 (
                     name.clone(),
-                    value
-                        .as_ref()
-                        .map_or(JsValue::Undefined, |value| JsValue::String(value.clone())),
+                    value.as_ref().map_or(JsValue::Undefined, |value| {
+                        JsValue::Utf16String(value.clone())
+                    }),
                 )
             })
             .collect::<Vec<_>>();
@@ -1387,14 +1417,8 @@ fn get_substitution(
     JsString::from_units(output)
 }
 
-fn array_from_optional<T>(values: Vec<Option<T>>) -> JsArray<T> {
-    let length = values.len();
-    let present = values
-        .into_iter()
-        .enumerate()
-        .filter_map(|(index, value)| value.map(|value| (index, value)))
-        .collect();
-    JsArray::from_sparse(length, present)
+fn array_from_optional<T>(values: Vec<Option<T>>) -> JsArray<Option<T>> {
+    JsArray::from_dense(values)
 }
 
 fn pattern_code_points(pattern: &JsString, unicode: bool) -> Vec<u32> {

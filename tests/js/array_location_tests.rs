@@ -27,7 +27,9 @@ fn array_locations_preserve_aliases_keys_and_live_storage() {
     assert_eq!(alias.get(0), Some(7));
     alias.set(0, 9);
     assert_eq!(same.load(), 9);
-    values.delete_at(0);
+    assert!(catch_unwind(AssertUnwindSafe(|| values.delete_at(0))).is_err());
+    assert_eq!(first.load(), 9);
+    values.set_len(0);
     assert!(catch_unwind(AssertUnwindSafe(|| first.load())).is_err());
     first.store(11);
     assert_eq!(same.load(), 11);

@@ -2,6 +2,7 @@ use crate::classicalbacktrack;
 use crate::emit;
 use crate::exec;
 use crate::indexing;
+use crate::indexing::InputIndexer;
 use crate::insn::CompiledRegex;
 use crate::optimizer;
 use crate::parse;
@@ -10,7 +11,7 @@ use crate::types::MAX_CAPTURE_GROUPS;
 #[cfg(feature = "utf16")]
 use crate::{
     classicalbacktrack::MatchAttempter,
-    indexing::{InputIndexer, Ucs2Input, Utf16Input},
+    indexing::{Ucs2Input, Utf16Input},
 };
 
 #[cfg(feature = "backend-pikevm")]
@@ -454,6 +455,36 @@ impl Regex {
             "start index is not on a char boundary"
         );
         backends::find(self, text, start)
+    }
+
+    pub fn try_find_from(
+        &self,
+        text: &str,
+        start: usize,
+        maximum_steps: u64,
+    ) -> Result<Option<Match>, ResourceLimitError> {
+        assert!(
+            start >= text.len() || text.is_char_boundary(start),
+            "start index is not on a char boundary"
+        );
+        let input = indexing::Utf8Input::new(text, self.cr.flags.unicode);
+        let mut matches = exec::Matches::new(
+            classicalbacktrack::BacktrackExecutor::new(
+                input,
+                classicalbacktrack::MatchAttempter::new_bounded(
+                    &self.cr,
+                    input.left_end(),
+                    maximum_steps,
+                ),
+            ),
+            start,
+        );
+        let matched = matches.next();
+        if matches.resource_limit_exceeded() {
+            Err(ResourceLimitError { maximum_steps })
+        } else {
+            Ok(matched)
+        }
     }
 
     /// Searches `text` to find the first match.

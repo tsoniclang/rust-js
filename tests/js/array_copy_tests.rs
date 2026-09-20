@@ -1,9 +1,8 @@
 use std::cell::Cell;
 use std::rc::Rc;
 use tsonic_rust_js::abi::{
-    array_from_dense_array, array_from_optional_array, array_from_string_map_with_index,
-    array_from_string_try_map, array_from_undefined_array, array_from_vec_map_with_index,
-    array_from_vec_try_map, JsArray,
+    array_from_dense_array, array_from_string_map_with_index, array_from_string_try_map,
+    array_from_vec_map_with_index, array_from_vec_try_map, JsArray,
 };
 use tsonic_rust_runtime::Undefined;
 
@@ -16,7 +15,7 @@ fn copies_preserve_element_identity_and_create_independent_array_storage() {
     assert!(Rc::ptr_eq(&original.get(0).unwrap(), &copy.get(0).unwrap()));
     object.set(7);
     assert_eq!(copy.get(0).unwrap().get(), 7);
-    copy.delete_at(0);
+    copy.set_len(0);
     assert!(original.has_index(0));
 }
 
@@ -44,27 +43,29 @@ fn dense_copy_clones_each_element_once_without_copying_numeric_properties() {
 }
 
 #[test]
-fn sparse_copies_create_present_undefined_without_mutating_the_source() {
-    let source = JsArray::from_sparse(3, vec![(0, Some(4)), (2, None)]);
-    let copy = array_from_optional_array(&source);
+fn optional_copies_retain_explicit_undefined_without_mutating_the_source() {
+    let source = JsArray::from_dense(vec![Some(4), None, None]);
+    let copy = array_from_dense_array(&source);
     assert_eq!(copy.len(), 3);
-    assert!(!source.has_index(1));
+    assert!(source.has_index(1));
     assert!(copy.has_index(1));
     assert_eq!(copy.get(0), Some(Some(4)));
     assert_eq!(copy.get(1), Some(None));
     assert_eq!(copy.get(2), Some(None));
     let undefined = JsArray::<Undefined>::with_length(2);
-    let present = array_from_undefined_array(&undefined);
+    let present = array_from_dense_array(&undefined);
     assert!(present.has_index(0) && present.has_index(1));
     assert!(present.get(0).is_some());
-    assert!(!undefined.has_index(0));
-    assert!(array_from_optional_array(&JsArray::<Option<i32>>::new()).is_empty());
+    assert!(undefined.has_index(0));
+    assert!(array_from_dense_array(&JsArray::<Option<i32>>::new()).is_empty());
 }
 
 #[test]
-#[should_panic(expected = "checked array density invariant violated")]
-fn dense_copy_defends_its_compiler_proved_presence_invariant() {
-    array_from_dense_array(&JsArray::<i32>::with_length(1));
+fn dense_copy_retains_initialized_native_defaults() {
+    assert_eq!(
+        array_from_dense_array(&JsArray::<i32>::with_length(1)).get(0),
+        Some(0)
+    );
 }
 
 #[test]
@@ -75,16 +76,12 @@ fn mapped_copies_collect_each_requested_value_in_order() {
         value * 2
     });
     assert_eq!(visited, vec![(4, 0.0), (7, 1.0), (9, 2.0)]);
-    assert_eq!(copy.values(), vec![Some(8), Some(14), Some(18)]);
+    assert_eq!(copy.values(), vec![8, 14, 18]);
     let text =
         array_from_string_map_with_index("a😀b", |value, index| format!("{index}:{value}"));
     assert_eq!(
         text.values(),
-        vec![
-            Some("0:a".to_owned()),
-            Some("1:😀".to_owned()),
-            Some("2:b".to_owned())
-        ]
+        vec!["0:a".to_owned(), "1:😀".to_owned(), "2:b".to_owned()]
     );
 }
 

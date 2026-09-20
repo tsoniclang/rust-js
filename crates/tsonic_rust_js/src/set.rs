@@ -1,35 +1,16 @@
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::rc::Rc;
 use tsonic_rust_runtime::{ObjectIdentity, ObjectIdentityCarrier, TsonicResult};
 
-use crate::equality::{hash_identity, JsHash, JsSameValueZero, JsStrictEqual};
-
-#[derive(Debug)]
-struct SetEntry<T> {
-    value: T,
-    hash: u64,
-    present: bool,
-}
-
-#[derive(Debug)]
-struct JsSetState<T> {
-    entries: Vec<SetEntry<T>>,
-    indices_by_hash: HashMap<u64, Vec<usize>>,
-    size: usize,
-}
+use crate::equality::{JsHash, JsSameValueZero, JsStrictEqual};
 
 #[derive(Debug)]
 pub struct JsSet<T> {
-    state: Rc<RefCell<JsSetState<T>>>,
-    identity: ObjectIdentity,
+    entries: crate::map::JsMap<T, ()>,
 }
 
 impl<T> Clone for JsSet<T> {
     fn clone(&self) -> Self {
         Self {
-            state: Rc::clone(&self.state),
-            identity: self.identity.clone(),
+            entries: self.entries.clone(),
         }
     }
 }
@@ -50,7 +31,7 @@ impl<T> JsSameValueZero for JsSet<T> {
 
 impl<T> JsHash for JsSet<T> {
     fn js_hash(&self) -> u64 {
-        hash_identity(Rc::as_ptr(&self.state) as usize)
+        self.entries.js_hash()
     }
 }
 
@@ -63,12 +44,7 @@ impl<T> JsStrictEqual for JsSet<T> {
 impl<T> JsSet<T> {
     pub fn new() -> Self {
         Self {
-            state: Rc::new(RefCell::new(JsSetState {
-                entries: Vec::new(),
-                indices_by_hash: HashMap::new(),
-                size: 0,
-            })),
-            identity: ObjectIdentity::new(),
+            entries: crate::map::JsMap::new(),
         }
     }
 
@@ -98,11 +74,11 @@ impl<T> JsSet<T> {
     }
 
     pub fn ptr_eq(&self, other: &Self) -> bool {
-        Rc::ptr_eq(&self.state, &other.state)
+        self.entries.ptr_eq(&other.entries)
     }
 
     pub fn len(&self) -> usize {
-        self.state.borrow().size
+        self.entries.len()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -110,12 +86,7 @@ impl<T> JsSet<T> {
     }
 
     pub fn clear(&self) {
-        let mut state = self.state.borrow_mut();
-        for entry in &mut state.entries {
-            entry.present = false;
-        }
-        state.indices_by_hash.clear();
-        state.size = 0;
+        self.entries.clear();
     }
 
     pub fn has<Q>(&self, value: &Q) -> bool
@@ -123,18 +94,14 @@ impl<T> JsSet<T> {
         T: JsSameValueZero<Q>,
         Q: JsHash + ?Sized,
     {
-        find_index(&self.state.borrow(), value.js_hash(), value).is_some()
+        self.entries.has(value)
     }
 
     pub fn has_eq(&self, value: &T) -> bool
     where
         T: PartialEq,
     {
-        self.state
-            .borrow()
-            .entries
-            .iter()
-            .any(|entry| entry.present && entry.value == *value)
+        self.entries.has_eq(value)
     }
 
     pub fn add(&self, value: T) -> Self
@@ -149,18 +116,7 @@ impl<T> JsSet<T> {
     where
         T: JsHash + JsSameValueZero,
     {
-        let hash = value.js_hash();
-        let mut state = self.state.borrow_mut();
-        if find_index(&state, hash, &value).is_none() {
-            let index = state.entries.len();
-            state.entries.push(SetEntry {
-                value,
-                hash,
-                present: true,
-            });
-            state.indices_by_hash.entry(hash).or_default().push(index);
-            state.size += 1;
-        }
+        self.entries.set_discard(value, ());
     }
 
     pub fn add_eq(&self, value: T) -> Self
@@ -175,15 +131,7 @@ impl<T> JsSet<T> {
     where
         T: PartialEq,
     {
-        if !self.has_eq(&value) {
-            let mut state = self.state.borrow_mut();
-            state.entries.push(SetEntry {
-                value,
-                hash: 0,
-                present: true,
-            });
-            state.size += 1;
-        }
+        self.entries.set_eq_discard(value, ());
     }
 
     pub fn delete<Q>(&self, value: &Q) -> bool
@@ -191,32 +139,14 @@ impl<T> JsSet<T> {
         T: JsSameValueZero<Q>,
         Q: JsHash + ?Sized,
     {
-        let hash = value.js_hash();
-        let mut state = self.state.borrow_mut();
-        if let Some(index) = find_index(&state, hash, value) {
-            state.entries[index].present = false;
-            remove_hash_index(&mut state.indices_by_hash, hash, index);
-            state.size -= 1;
-            return true;
-        }
-        false
+        self.entries.delete(value)
     }
 
     pub fn delete_eq(&self, value: &T) -> bool
     where
         T: PartialEq,
     {
-        let mut state = self.state.borrow_mut();
-        if let Some(entry) = state
-            .entries
-            .iter_mut()
-            .find(|entry| entry.present && entry.value == *value)
-        {
-            entry.present = false;
-            state.size -= 1;
-            return true;
-        }
-        false
+        self.entries.delete_eq(value)
     }
 
     pub fn keys(&self) -> Vec<T>
@@ -230,13 +160,7 @@ impl<T> JsSet<T> {
     where
         T: Clone,
     {
-        self.state
-            .borrow()
-            .entries
-            .iter()
-            .filter(|entry| entry.present)
-            .map(|entry| entry.value.clone())
-            .collect()
+        self.entries.keys()
     }
 
     pub fn entries(&self) -> Vec<(T, T)>
@@ -278,21 +202,8 @@ impl<T> JsSet<T> {
         T: Clone,
         F: FnMut(T, T, Self),
     {
-        let mut index = 0;
-        loop {
-            let next = {
-                let state = self.state.borrow();
-                while index < state.entries.len() && !state.entries[index].present {
-                    index += 1;
-                }
-                state.entries.get(index).map(|entry| entry.value.clone())
-            };
-            let Some(value) = next else {
-                break;
-            };
-            index += 1;
-            callback(value.clone(), value, self.clone());
-        }
+        self.entries
+            .for_each(|(), value, _| callback(value.clone(), value, self.clone()));
     }
 
     pub fn difference(&self, other: &Self) -> Self
@@ -359,22 +270,8 @@ impl<T> JsSet<T> {
         T: Clone,
         F: FnMut(T, T, Self) -> TsonicResult<()>,
     {
-        let mut index = 0;
-        loop {
-            let next = {
-                let state = self.state.borrow();
-                while index < state.entries.len() && !state.entries[index].present {
-                    index += 1;
-                }
-                state.entries.get(index).map(|entry| entry.value.clone())
-            };
-            let Some(value) = next else {
-                break;
-            };
-            index += 1;
-            callback(value.clone(), value, self.clone())?;
-        }
-        Ok(())
+        self.entries
+            .try_for_each(|(), value, _| callback(value.clone(), value, self.clone()))
     }
 
     pub fn try_for_each_zero<F>(&self, mut callback: F) -> TsonicResult<()>
@@ -410,36 +307,9 @@ impl<T> JsSet<T> {
     }
 }
 
-fn find_index<T, Q: ?Sized>(state: &JsSetState<T>, hash: u64, value: &Q) -> Option<usize>
-where
-    T: JsSameValueZero<Q>,
-{
-    state
-        .indices_by_hash
-        .get(&hash)?
-        .iter()
-        .copied()
-        .find(|index| {
-            let entry = &state.entries[*index];
-            entry.present && entry.hash == hash && entry.value.same_value_zero(value)
-        })
-}
-
-fn remove_hash_index(indices_by_hash: &mut HashMap<u64, Vec<usize>>, hash: u64, index: usize) {
-    let remove_bucket = if let Some(indices) = indices_by_hash.get_mut(&hash) {
-        indices.retain(|candidate| *candidate != index);
-        indices.is_empty()
-    } else {
-        false
-    };
-    if remove_bucket {
-        indices_by_hash.remove(&hash);
-    }
-}
-
 impl<T> ObjectIdentityCarrier for JsSet<T> {
     fn object_identity(&self) -> &ObjectIdentity {
-        &self.identity
+        self.entries.object_identity()
     }
 }
 

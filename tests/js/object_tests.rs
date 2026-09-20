@@ -56,7 +56,7 @@ fn exact_object_keys_remain_utf16_and_native_projection_fails_closed() {
     assert_eq!(object.entries().unwrap_err().kind(), JsErrorKind::TypeError);
     assert_eq!(object.inspect(), r"{\ud800: 1}");
     assert_eq!(
-        JsValue::String(JsString::from_units(vec![0xD800])).inspect(),
+        JsValue::Utf16String(JsString::from_units(vec![0xD800])).inspect(),
         r#""\ud800""#,
     );
 }
@@ -69,8 +69,8 @@ fn object_is_uses_same_value_semantics() {
     ]));
     assert!(!object::is([JsValue::Number(0.0), JsValue::Number(-0.0),]));
     assert!(object::is([
-        JsValue::String(JsString::from_utf8("same")),
-        JsValue::String(JsString::from_utf8("same")),
+        JsValue::Utf16String(JsString::from_utf8("same")),
+        JsValue::Utf16String(JsString::from_utf8("same")),
     ]));
 
     let object = JsValue::object(JsObject::new());

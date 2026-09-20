@@ -5,7 +5,7 @@ use std::task::{Context, Poll, Waker};
 use tsonic_rust_js::abi::{promise_all_settled, promise_any, promise_race};
 use tsonic_rust_js::{
     json, ArrayBuffer, IntlCollator, IntlDateTimeFormat, IntlNumberFormat, JsArray, JsObject,
-    JsPromise, JsString, JsSymbol, JsValue, JsWeakMap, JsWeakSet, PromiseSettledResult,
+    JsPromise, JsSymbol, JsValue, JsWeakMap, JsWeakSet, PromiseSettledResult,
 };
 use tsonic_rust_runtime::{Callable, Null, TsonicError, Undefined};
 
@@ -121,7 +121,6 @@ fn intl_number_precision_grouping_and_exact_integers() {
             .format_to_parts(value)
             .values()
             .into_iter()
-            .flatten()
             .map(|part| part.value())
             .collect::<Vec<_>>()
             .concat();
@@ -360,7 +359,7 @@ fn json_replacer_and_property_list_traverse_only_closed_values() {
 }
 
 fn string_value(value: &str) -> JsValue {
-    JsValue::String(JsString::from_utf8(value))
+    JsValue::String(value.to_owned())
 }
 
 fn block_on<T>(future: impl Future<Output = T>) -> T {

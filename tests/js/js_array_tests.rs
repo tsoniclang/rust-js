@@ -1,4 +1,4 @@
-use tsonic_rust_js::array::{statics, JsArray, JsSlot};
+use tsonic_rust_js::array::{statics, JsArray};
 
 #[test]
 fn array_search_borrows_string_queries_without_materializing_owned_values() {
@@ -15,7 +15,7 @@ fn array_search_borrows_string_queries_without_materializing_owned_values() {
     assert_eq!(values.last_index_of_from_end("café😀"), 3);
     assert_eq!(values.last_index_of("café😀", -3.0), 1);
     assert!(!values.includes_from_start("missing"));
-    assert_eq!(values.index_of_from_start(""), -1);
+    assert_eq!(values.index_of_from_start(""), 0);
     assert_eq!(values.last_index_of_from_end("missing"), -1);
     assert_eq!(values.get(1).as_deref(), Some("café😀"));
 }
@@ -23,20 +23,18 @@ fn array_search_borrows_string_queries_without_materializing_owned_values() {
 #[test]
 fn object_keys_returns_an_independent_dense_array_without_cloning_source_values() {
     struct Token;
-    let values = JsArray::with_length(4);
-    values.set(2, Token);
-    values.set(0, Token);
+    let values = JsArray::from_dense(vec![Token, Token, Token]);
     values.set_number(-1.0, Token);
     values.set_number(f64::NAN, Token);
     let keys = values.object_keys();
-    assert_eq!(keys.join("|"), "0|2|-1|NaN");
-    assert_eq!(keys.len(), 4);
+    assert_eq!(keys.join("|"), "0|1|2|-1|NaN");
+    assert_eq!(keys.len(), 5);
     assert!((0..keys.len()).all(|index| keys.has_index(index)));
-    values.delete_at(0);
+    values.set_len(1);
     values.delete_number(-1.0);
     values.set_number(-1.0, Token);
-    assert_eq!(values.object_keys().join("|"), "2|NaN|-1");
-    assert_eq!(keys.join("|"), "0|2|-1|NaN");
+    assert_eq!(values.object_keys().join("|"), "0|NaN|-1");
+    assert_eq!(keys.join("|"), "0|1|2|-1|NaN");
 }
 
 #[test]
@@ -45,7 +43,7 @@ fn numeric_membership_preserves_presence_without_cloning_values() {
     let values = JsArray::from_dense(vec![Token]);
     assert!(JsArray::contains_number_property(-0.0, &values));
     assert!(!JsArray::contains_number_property(1.0, &values));
-    values.set_len(3);
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| values.set_len(3))).is_err());
     assert!(!JsArray::contains_number_property(2.0, &values));
     for index in [-1.0, 0.5, f64::NAN, f64::INFINITY, 4_294_967_295.0] {
         assert!(!JsArray::contains_number_property(index, &values));
@@ -54,31 +52,28 @@ fn numeric_membership_preserves_presence_without_cloning_values() {
         values.delete_number(index);
         assert!(!JsArray::contains_number_property(index, &values));
     }
-    values.delete_at(0);
+    values.set_len(0);
     assert!(!JsArray::contains_number_property(0.0, &values));
     let optional = JsArray::from_dense(vec![None::<Token>]);
     assert!(JsArray::contains_number_property(0.0, &optional));
-    optional.delete_at(0);
+    optional.set_len(0);
     assert!(!JsArray::contains_number_property(0.0, &optional));
     optional.set(0, None);
     assert!(JsArray::contains_number_property(0.0, &optional));
 }
 
 #[test]
-fn sparse_array_length_delete_and_holes() {
-    assert_eq!(JsSlot::Present(1).as_ref(), Some(&1));
-    assert_eq!(JsSlot::<i32>::Hole.as_ref(), None);
+fn dense_array_rejects_hole_creation_without_mutation() {
     let xs = JsArray::from_dense(vec![1, 2]);
-    xs.set_len(5);
-    assert_eq!(xs.len(), 5);
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| xs.set_len(5))).is_err());
+    assert_eq!(xs.len(), 2);
     assert!(xs.has_index(1));
     assert!(!xs.has_index(3));
-    assert!(xs.delete_at(1));
-    assert!(xs.delete_at(1));
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| xs.delete_at(1))).is_err());
     assert!(xs.delete_at(100));
-    assert_eq!(xs.len(), 5);
-    assert!(!xs.has_index(1));
-    assert_eq!(xs.get(1), None);
+    assert_eq!(xs.len(), 2);
+    assert!(xs.has_index(1));
+    assert_eq!(xs.get(1), Some(2));
 }
 
 #[test]
@@ -92,7 +87,7 @@ fn number_indexes_preserve_array_slots_and_non_index_properties() {
     values.set_number(2.0, 30);
     values.set_number(2.5, 25);
     values.set_number(f64::NAN, 99);
-    assert_eq!(values.values(), vec![Some(10), Some(20), Some(30)]);
+    assert_eq!(values.values(), vec![10, 20, 30]);
     assert_eq!(values.get_number(2.5), Some(25));
     assert_eq!(values.get_number(f64::NAN), Some(99));
     assert_eq!(
@@ -106,34 +101,34 @@ fn number_indexes_preserve_array_slots_and_non_index_properties() {
 }
 
 #[test]
-fn sparse_array_mutation_helpers_preserve_holes() {
+fn dense_array_mutation_helpers_preserve_initialized_values() {
     let xs = JsArray::with_length(4);
     xs.set(0, 1);
     xs.set(2, 3);
     xs.fill_to(9, 1.0, 3.0);
-    assert_eq!(xs.values(), vec![Some(1), Some(9), Some(9), None]);
+    assert_eq!(xs.values(), vec![1, 9, 9, 0]);
 
-    xs.delete_at(1);
+    xs.set(1, 0);
     xs.copy_within_to(2.0, 0.0, 2.0);
-    assert_eq!(xs.values(), vec![Some(1), None, Some(1), None]);
+    assert_eq!(xs.values(), vec![1, 0, 1, 0]);
 
     xs.reverse();
-    assert_eq!(xs.values(), vec![None, Some(1), None, Some(1)]);
+    assert_eq!(xs.values(), vec![0, 1, 0, 1]);
 }
 
 #[test]
-fn sparse_array_splice_shift_unshift_and_entries() {
+fn dense_array_splice_shift_unshift_and_entries() {
     let xs = JsArray::from_dense(vec![1, 2, 3]);
     let removed = xs.splice_many(1.0, 1.0, [9, 10]);
-    assert_eq!(removed.values(), vec![Some(2)]);
-    assert_eq!(xs.values(), vec![Some(1), Some(9), Some(10), Some(3)]);
+    assert_eq!(removed.values(), vec![2]);
+    assert_eq!(xs.values(), vec![1, 9, 10, 3]);
     assert_eq!(xs.shift(), Some(1));
     assert_eq!(xs.unshift(0), 4);
     assert_eq!(xs.pop(), Some(3));
     assert_eq!(xs.keys(), vec![0, 1, 2]);
     assert_eq!(
         xs.entries().collect::<Vec<_>>(),
-        vec![(0.0, Some(0)), (1.0, Some(9)), (2.0, Some(10))]
+        vec![(0.0, 0), (1.0, 9), (2.0, 10)]
     );
 }
 
@@ -145,45 +140,27 @@ fn variadic_mutations_move_values_in_source_order_and_preserve_identity() {
     assert_eq!(values.unshift_many([0, 1]), 3);
     assert_eq!(values.push_many([3, 4]), 5);
     assert_eq!(values.push_many([]), 5);
-    assert_eq!(
-        values.values(),
-        vec![Some(0), Some(1), Some(2), Some(3), Some(4)]
-    );
+    assert_eq!(values.values(), vec![0, 1, 2, 3, 4]);
 
     let filled = values.fill_to(9, -3.9, f64::INFINITY);
     assert!(values.ptr_eq(&filled));
-    assert_eq!(
-        alias.values(),
-        vec![Some(0), Some(1), Some(9), Some(9), Some(9)]
-    );
+    assert_eq!(alias.values(), vec![0, 1, 9, 9, 9]);
 
     let copied = values.copy_within_from(-2.0, 0.0);
     assert!(values.ptr_eq(&copied));
-    assert_eq!(
-        values.values(),
-        vec![Some(0), Some(1), Some(9), Some(0), Some(1)]
-    );
+    assert_eq!(values.values(), vec![0, 1, 9, 0, 1]);
 
     let reversed = values.reverse();
     assert!(values.ptr_eq(&reversed));
-    assert_eq!(
-        values.values(),
-        vec![Some(1), Some(0), Some(9), Some(1), Some(0)]
-    );
+    assert_eq!(values.values(), vec![1, 0, 9, 1, 0]);
 
     let filled_all = values.fill_all(6);
     assert!(values.ptr_eq(&filled_all));
-    assert_eq!(
-        values.values(),
-        vec![Some(6), Some(6), Some(6), Some(6), Some(6)]
-    );
+    assert_eq!(values.values(), vec![6, 6, 6, 6, 6]);
 
     let filled_from = values.fill_from(7, -2.0);
     assert!(values.ptr_eq(&filled_from));
-    assert_eq!(
-        values.values(),
-        vec![Some(6), Some(6), Some(6), Some(7), Some(7)]
-    );
+    assert_eq!(values.values(), vec![6, 6, 6, 7, 7]);
 }
 
 #[test]
@@ -195,10 +172,7 @@ fn discarded_variadic_mutations_preserve_order_and_shared_identity() {
     values.push_many_discard([3, 4]);
     values.push_many_discard([]);
 
-    assert_eq!(
-        alias.values(),
-        vec![Some(0), Some(1), Some(2), Some(3), Some(4)]
-    );
+    assert_eq!(alias.values(), vec![0, 1, 2, 3, 4]);
     assert!(values.ptr_eq(&alias));
 }
 
@@ -207,27 +181,24 @@ fn splice_uses_js_numeric_bounds_and_returns_a_distinct_removed_array() {
     let values = JsArray::from_dense(vec![0, 1, 2, 3]);
     let removed = values.splice_many(-3.8, 1.9, [8, 9]);
     assert!(!values.ptr_eq(&removed));
-    assert_eq!(removed.values(), vec![Some(1)]);
-    assert_eq!(
-        values.values(),
-        vec![Some(0), Some(8), Some(9), Some(2), Some(3)]
-    );
+    assert_eq!(removed.values(), vec![1]);
+    assert_eq!(values.values(), vec![0, 8, 9, 2, 3]);
 
     let tail = values.splice_from(3.0);
-    assert_eq!(tail.values(), vec![Some(2), Some(3)]);
-    assert_eq!(values.values(), vec![Some(0), Some(8), Some(9)]);
+    assert_eq!(tail.values(), vec![2, 3]);
+    assert_eq!(values.values(), vec![0, 8, 9]);
 
     let none = values.splice_many(f64::NAN, f64::NAN, []);
     assert!(none.is_empty());
-    assert_eq!(values.values(), vec![Some(0), Some(8), Some(9)]);
+    assert_eq!(values.values(), vec![0, 8, 9]);
 }
 
 #[test]
-fn js_array_at_supports_negative_indices_and_holes() {
+fn js_array_at_supports_negative_indices_and_initialized_growth() {
     let values: JsArray<f64> = JsArray::from_dense(vec![1.0, 2.0, 3.0]);
-    values.set_len(5);
+    values.push_many([0.0, 0.0]);
     assert_eq!(values.at(0.0), Some(1.0));
-    assert_eq!(values.at(-1.0), None);
+    assert_eq!(values.at(-1.0), Some(0.0));
     assert_eq!(values.at(-5.0), Some(1.0));
     assert_eq!(values.at(-3.0), Some(3.0));
     assert_eq!(values.at(5.0), None);
@@ -241,28 +212,29 @@ fn js_array_at_supports_negative_indices_and_holes() {
 }
 
 #[test]
-fn sparse_array_enumerable_keys_include_only_present_own_indices() {
+fn dense_array_enumerable_keys_include_all_initialized_indices() {
     let values = JsArray::with_length(5);
     values.set(3, 4);
     values.set(1, 2);
-    assert_eq!(values.enumerable_own_keys(), vec!["1", "3"]);
-    values.delete_at(1);
-    assert_eq!(values.enumerable_own_keys(), vec!["3"]);
+    assert_eq!(values.enumerable_own_keys(), vec!["0", "1", "2", "3", "4"]);
+    values.set_len(2);
+    assert_eq!(values.enumerable_own_keys(), vec!["0", "1"]);
 }
 
 #[test]
-fn dense_and_sparse_arrays_share_reference_identity() {
+fn dense_arrays_share_reference_identity() {
     let dense = JsArray::from_dense(vec![1]);
     let dense_alias = dense.clone();
     dense_alias.push(2);
     assert!(dense.ptr_eq(&dense_alias));
-    assert_eq!(dense.values(), vec![Some(1), Some(2)]);
+    assert_eq!(dense.values(), vec![1, 2]);
 
-    let sparse = JsArray::from_sparse(3, vec![(1, 4)]);
-    let sparse_alias = sparse.clone();
-    sparse_alias.set(2, 5);
-    assert!(sparse.ptr_eq(&sparse_alias));
-    assert_eq!(sparse.values(), vec![None, Some(4), Some(5)]);
+    let initialized = JsArray::with_length(3);
+    initialized.set(1, 4);
+    let alias = initialized.clone();
+    alias.set(2, 5);
+    assert!(initialized.ptr_eq(&alias));
+    assert_eq!(initialized.values(), vec![0, 4, 5]);
 }
 
 #[test]
@@ -274,16 +246,13 @@ fn canonical_array_receiver_entrypoints_preserve_js_results() {
     assert_eq!(values.index_of_from_start(&3), 2);
     assert_eq!(values.join_default(), "1,2,3");
     assert_eq!(values.slice_all().values(), values.values());
-    assert_eq!(values.slice_from(1.0).values(), vec![Some(2), Some(3)]);
+    assert_eq!(values.slice_from(1.0).values(), vec![2, 3]);
     assert_eq!(values.reduce(0, |sum, value| sum + value), 6);
-    assert_eq!(
-        values.to_reversed().values(),
-        vec![Some(3), Some(2), Some(1)]
-    );
+    assert_eq!(values.to_reversed().values(), vec![3, 2, 1]);
 
     let sortable = JsArray::from_dense(vec![10, 2, 1]);
     sortable.sort_by_js_string();
-    assert_eq!(sortable.values(), vec![Some(1), Some(10), Some(2)]);
+    assert_eq!(sortable.values(), vec![1, 10, 2]);
 
     assert!(statics::is_array_value(&tsonic_rust_js::JsValue::from(
         vec![tsonic_rust_js::JsValue::Number(1.0)]
@@ -310,31 +279,25 @@ fn array_join_formats_floating_numbers_with_javascript_semantics() {
 #[test]
 fn array_static_factories_preserve_values_and_array_brand() {
     let values = statics::of([1, 2, 3]);
-    assert_eq!(values.values(), vec![Some(1), Some(2), Some(3)]);
+    assert_eq!(values.values(), vec![1, 2, 3]);
 
     let vector = vec![2, 4, 6];
-    assert_eq!(
-        statics::from_vec(&vector).values(),
-        vec![Some(2), Some(4), Some(6)]
-    );
+    assert_eq!(statics::from_vec(&vector).values(), vec![2, 4, 6]);
     assert_eq!(
         statics::from_vec_map_zero(&vector, || 7).values(),
-        vec![Some(7), Some(7), Some(7)]
+        vec![7, 7, 7]
     );
     assert_eq!(
         statics::from_vec_map(&vector, |value| value / 2).values(),
-        vec![Some(1), Some(2), Some(3)]
+        vec![1, 2, 3]
     );
     assert_eq!(
         statics::from_vec_map_with_index(&vector, |value, index| value + index as i32).values(),
-        vec![Some(2), Some(5), Some(8)]
+        vec![2, 5, 8]
     );
 
     let text = statics::from_string("a😀");
-    assert_eq!(
-        text.values(),
-        vec![Some("a".to_owned()), Some("😀".to_owned())]
-    );
+    assert_eq!(text.values(), vec!["a".to_owned(), "😀".to_owned()]);
 
     assert!(statics::is_array(&values));
     assert!(statics::is_array_value(&tsonic_rust_js::JsValue::from(
@@ -348,24 +311,16 @@ fn mapped_string_construction_preserves_scalars_indices_and_empty_input() {
     let input = "a😀é";
     assert_eq!(
         statics::from_string_map_zero(input, || 7).values(),
-        vec![Some(7); 3]
+        vec![7; 3]
     );
     assert_eq!(
         statics::from_string_map(input, |part| part).values(),
-        vec![
-            Some("a".to_owned()),
-            Some("😀".to_owned()),
-            Some("é".to_owned())
-        ]
+        vec!["a".to_owned(), "😀".to_owned(), "é".to_owned()]
     );
     assert_eq!(
         statics::from_string_map_with_index(input, |part, index| format!("{part}:{index}"))
             .values(),
-        vec![
-            Some("a:0".to_owned()),
-            Some("😀:1".to_owned()),
-            Some("é:2".to_owned())
-        ]
+        vec!["a:0".to_owned(), "😀:1".to_owned(), "é:2".to_owned()]
     );
     let mut calls = 0;
     let empty = statics::from_string_map_zero("", || {
@@ -377,7 +332,7 @@ fn mapped_string_construction_preserves_scalars_indices_and_empty_input() {
     let exact = statics::from_string_try_map("Aÿ", |part| {
         u8::try_from(part.chars().next().unwrap() as u32)
     });
-    assert_eq!(exact.unwrap().values(), vec![Some(65), Some(255)]);
+    assert_eq!(exact.unwrap().values(), vec![65, 255]);
 }
 
 #[test]
@@ -418,9 +373,9 @@ fn mapped_string_construction_stops_at_each_callback_failure() {
 }
 
 #[test]
-fn concat_preserves_holes_values_order_and_source_identity() {
-    let left = JsArray::from_sparse(3, vec![(0, 1), (2, 3)]);
-    let right = JsArray::from_sparse(2, vec![(1, 5)]);
+fn concat_preserves_values_order_and_source_identity() {
+    let left = JsArray::from_dense(vec![1, 0, 3]);
+    let right = JsArray::from_dense(vec![0, 5]);
 
     let joined = left.concat([
         statics::JsArrayConcatItem::Value(4),
@@ -429,10 +384,10 @@ fn concat_preserves_holes_values_order_and_source_identity() {
 
     assert_eq!(joined.len(), 6);
     assert_eq!(joined.get(0), Some(1));
-    assert!(!joined.has_index(1));
+    assert_eq!(joined.get(1), Some(0));
     assert_eq!(joined.get(2), Some(3));
     assert_eq!(joined.get(3), Some(4));
-    assert!(!joined.has_index(4));
+    assert_eq!(joined.get(4), Some(0));
     assert_eq!(joined.get(5), Some(5));
 
     left.set(0, 9);
@@ -450,10 +405,10 @@ fn array_callbacks_receive_exact_declared_argument_shapes() {
         assert!(array.ptr_eq(&alias));
         value + index as i32
     });
-    assert_eq!(mapped.values(), vec![Some(2), Some(5), Some(8)]);
+    assert_eq!(mapped.values(), vec![2, 5, 8]);
 
     let filtered = values.filter_with_index(|value, index| value as f64 > index + 1.0);
-    assert_eq!(filtered.values(), vec![Some(2), Some(4), Some(6)]);
+    assert_eq!(filtered.values(), vec![2, 4, 6]);
 
     let mut visits = Vec::new();
     values.for_each(|value, index, array| {
@@ -490,20 +445,20 @@ fn every_array_callback_arity_has_executable_runtime_coverage() {
                 map_calls
             })
             .values(),
-        vec![Some(1), Some(2), Some(3)]
+        vec![1, 2, 3]
     );
     assert_eq!(
         values
             .map_with_index(|value, index| value + index as i32)
             .values(),
-        vec![Some(2), Some(5), Some(8)]
+        vec![2, 5, 8]
     );
     assert_eq!(values.filter_zero(|| true).values(), values.values());
     assert_eq!(
         values
             .filter_with_array(|value, _, array| array.ptr_eq(&alias) && value > 2)
             .values(),
-        vec![Some(4), Some(6)]
+        vec![4, 6]
     );
 
     assert_eq!(values.reduce_zero(0, || 7), 7);
@@ -583,8 +538,8 @@ fn every_array_callback_arity_has_executable_runtime_coverage() {
 }
 
 #[test]
-fn array_reduce_without_initial_uses_first_present_slot_and_rejects_empty_input() {
-    let sparse = JsArray::from_sparse(5, vec![(2, 4), (4, 6)]);
+fn array_reduce_without_initial_uses_first_value_and_rejects_empty_input() {
+    let sparse = JsArray::from_dense(vec![0, 0, 4, 0, 6]);
     assert_eq!(
         sparse
             .reduce_from_first(|sum, value| sum + value)
@@ -592,10 +547,16 @@ fn array_reduce_without_initial_uses_first_present_slot_and_rejects_empty_input(
         10
     );
 
-    let empty = JsArray::<i32>::with_length(3);
+    assert_eq!(
+        JsArray::<i32>::with_length(3)
+            .reduce_from_first(|left, right| left + right)
+            .unwrap(),
+        0
+    );
+    let empty = JsArray::<i32>::new();
     let error = empty
         .reduce_from_first(|sum, value| sum + value)
-        .expect_err("an array containing only holes has no initial accumulator");
+        .expect_err("an empty array has no initial accumulator");
     assert_eq!(error.kind(), tsonic_rust_runtime::JsErrorKind::TypeError);
 }
 
@@ -614,12 +575,12 @@ fn array_search_indexes_follow_ecmascript_number_rules() {
 }
 
 #[test]
-fn default_array_sort_compares_utf16_code_units() {
+fn default_array_sort_compares_native_strings() {
     let values = JsArray::from_dense(vec!["\u{10000}".to_string(), "\u{e000}".to_string()]);
     values.sort_by_js_string();
     assert_eq!(
         values.values(),
-        vec![Some("\u{10000}".to_string()), Some("\u{e000}".to_string())]
+        vec!["\u{e000}".to_string(), "\u{10000}".to_string()]
     );
 }
 
@@ -629,7 +590,7 @@ fn comparator_sort_entrypoints_preserve_callback_arity_and_identity() {
     let binary_alias = binary.clone();
     let sorted = binary.sort(|left, right| f64::from(left - right));
     assert!(sorted.ptr_eq(&binary_alias));
-    assert_eq!(binary.values(), vec![Some(1), Some(2), Some(3)]);
+    assert_eq!(binary.values(), vec![1, 2, 3]);
 
     let unary = JsArray::from_dense(vec![3, 1, 2]);
     unary.sort_value(|left| f64::from(left - 2));
@@ -637,5 +598,5 @@ fn comparator_sort_entrypoints_preserve_callback_arity_and_identity() {
 
     let zero = JsArray::from_dense(vec![3, 1, 2]);
     zero.sort_zero(|| 0.0);
-    assert_eq!(zero.values(), vec![Some(3), Some(1), Some(2)]);
+    assert_eq!(zero.values(), vec![3, 1, 2]);
 }

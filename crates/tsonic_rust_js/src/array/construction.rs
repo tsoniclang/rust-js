@@ -5,7 +5,7 @@ pub trait ArrayLength {
     fn array_length(self) -> JsResult<usize>;
 }
 
-pub fn construct_length<T>(length: impl ArrayLength) -> JsResult<JsArray<T>> {
+pub fn construct_length<T: Default>(length: impl ArrayLength) -> JsResult<JsArray<T>> {
     Ok(JsArray::with_length(length.array_length()?))
 }
 

@@ -71,6 +71,27 @@ impl<'a, T> JsPromise<'a, T> {
 }
 
 impl<'a, T: Clone + 'a> JsPromise<'a, T> {
+    pub async fn into_result(self) -> TsonicResult<T> {
+        match Rc::try_unwrap(self.state) {
+            Ok(state) => match state.into_inner() {
+                PromiseState::Settled(result) => result,
+                PromiseState::Pending { future, .. } => {
+                    future
+                        .expect("an exclusively owned Promise cannot be polling")
+                        .await
+                }
+            },
+            Err(state) => Self { state }.await_result().await,
+        }
+    }
+
+    pub async fn into_value(self) -> T {
+        match self.into_result().await {
+            Ok(value) => value,
+            Err(error) => panic!("compiler-proven infallible Promise rejected: {error}"),
+        }
+    }
+
     fn poll_result(&self, context: &mut Context<'_>) -> Poll<TsonicResult<T>> {
         let future = {
             let mut state = self.state.borrow_mut();
@@ -188,11 +209,6 @@ pub fn promise_race<'a, T: Clone + 'a>(values: &JsArray<JsPromise<'a, T>>) -> Js
     JsPromise::from_fallible_factory(move || async move {
         poll_fn(move |context| {
             for value in &values {
-                let Some(value) = value else {
-                    return Poll::Ready(Err(TsonicError::unsupported(
-                        "Promise.race cannot consume an unproven sparse Promise array",
-                    )));
-                };
                 if let Poll::Ready(result) = value.poll_result(context) {
                     return Poll::Ready(result);
                 }
@@ -214,11 +230,6 @@ pub fn promise_any<'a, T: Clone + 'a>(values: &JsArray<JsPromise<'a, T>>) -> JsP
         let mut rejected = vec![false; values.len()];
         poll_fn(move |context| {
             for (index, value) in values.iter().enumerate() {
-                let Some(value) = value else {
-                    return Poll::Ready(Err(TsonicError::unsupported(
-                        "Promise.any cannot consume an unproven sparse Promise array",
-                    )));
-                };
                 if rejected[index] {
                     continue;
                 }
@@ -251,30 +262,20 @@ pub fn promise_all_settled<'a, T: Clone + 'a>(
                 if settled[index].is_some() {
                     continue;
                 }
-                settled[index] = match value {
-                    None => Some(PromiseSettledResult::Rejected(PromiseRejectedResult {
-                        status: "rejected".to_string(),
-                        reason: JsValue::String(crate::JsString::from_utf8(
-                            "Promise.allSettled received a sparse Promise array",
-                        )),
-                    })),
-                    Some(value) => match value.poll_result(context) {
-                        Poll::Pending => None,
-                        Poll::Ready(Ok(value)) => {
-                            Some(PromiseSettledResult::Fulfilled(PromiseFulfilledResult {
-                                status: "fulfilled".to_string(),
-                                value,
-                            }))
-                        }
-                        Poll::Ready(Err(error)) => {
-                            Some(PromiseSettledResult::Rejected(PromiseRejectedResult {
-                                status: "rejected".to_string(),
-                                reason: JsValue::String(crate::JsString::from_utf8(
-                                    &error.to_string(),
-                                )),
-                            }))
-                        }
-                    },
+                settled[index] = match value.poll_result(context) {
+                    Poll::Pending => None,
+                    Poll::Ready(Ok(value)) => {
+                        Some(PromiseSettledResult::Fulfilled(PromiseFulfilledResult {
+                            status: "fulfilled".to_string(),
+                            value,
+                        }))
+                    }
+                    Poll::Ready(Err(error)) => {
+                        Some(PromiseSettledResult::Rejected(PromiseRejectedResult {
+                            status: "rejected".to_string(),
+                            reason: JsValue::String(error.to_string()),
+                        }))
+                    }
                 };
             }
             if settled.iter().all(Option::is_some) {

@@ -1,10 +1,11 @@
 //! Closed JSON parser/stringifier for supported carrier values.
 
+use std::borrow::Cow;
 use std::collections::HashSet;
 use std::rc::Rc;
 
 use crate::errors::{range_error, syntax_error, type_error, JsResult};
-use crate::object::JsObject;
+use crate::object::{JsObject, PropertyKey};
 use crate::value::JsValue;
 use crate::JsString;
 use tsonic_rust_runtime::{TsonicError, TsonicResult};
@@ -44,8 +45,7 @@ pub fn parse_with_limits(text: &str, limits: JsonLimits) -> JsResult<JsValue> {
     if text.len() > limits.max_input_bytes {
         return Err(range_error("JSON input exceeds the configured byte limit"));
     }
-    let exact = JsString::from_utf8(text);
-    let mut parser = Parser::new(&exact, limits);
+    let mut parser = Parser::new(text, limits);
     let value = parser.parse_value(0)?;
     parser.skip_ws();
     if parser.is_done() {
@@ -70,8 +70,15 @@ pub fn stringify_pretty(value: &JsValue) -> JsResult<Option<String>> {
 }
 
 pub fn stringify_string(value: &str) -> JsResult<String> {
-    stringify(&JsValue::String(JsString::from_utf8(value)))?
-        .ok_or_else(|| type_error("JSON string serialization did not produce a value"))
+    let mut serializer = Serializer::<tsonic_rust_runtime::JsError>::new(
+        String::new(),
+        JsonLimits::default(),
+        None,
+        None,
+    );
+    serializer.count_node(0)?;
+    serializer.push_quoted_native(value)?;
+    Ok(serializer.output)
 }
 
 pub fn stringify_with_indent(value: &JsValue, indent: &str) -> JsResult<Option<String>> {
@@ -224,26 +231,20 @@ fn stringify_with_options<'a, E>(
     indent: &str,
     limits: JsonLimits,
     replacer: Option<&'a mut dyn FnMut(String, JsValue) -> Result<JsValue, E>>,
-    property_list: Option<&'a [JsString]>,
+    property_list: Option<&'a [PropertyKey]>,
 ) -> Result<Option<String>, E>
 where
     E: From<tsonic_rust_runtime::JsError>,
 {
-    let indent = JsString::from_utf8(indent);
     if indent.len() > 10 {
         return Err(type_error(
-            "JSON indentation must be pre-resolved to at most 10 UTF-16 code units",
+            "JSON indentation must be pre-resolved to at most 10 native UTF-8 bytes",
         )
         .into());
     }
-    let mut serializer = Serializer::new(indent, limits, replacer, property_list);
-    if serializer.serialize_property(&JsString::from_utf8(""), value, 0)? {
-        let output = String::from_utf16(&serializer.output).map_err(|_| {
-            E::from(type_error(
-                "JSON serialization produced an invalid native Rust string",
-            ))
-        })?;
-        Ok(Some(output))
+    let mut serializer = Serializer::new(indent.to_owned(), limits, replacer, property_list);
+    if serializer.serialize_property(&PropertyKey::Native(String::new()), value, 0)? {
+        Ok(Some(serializer.output))
     } else {
         Ok(None)
     }
@@ -254,20 +255,22 @@ fn number_indent(space: f64) -> String {
 }
 
 fn string_indent(space: &str) -> JsResult<String> {
-    let units = space.encode_utf16().take(10).collect::<Vec<_>>();
-    String::from_utf16(&units)
-        .map_err(|_| type_error("JSON indentation truncated through a Unicode scalar boundary"))
+    space
+        .get(..space.len().min(10))
+        .map(str::to_owned)
+        .ok_or_else(|| type_error("JSON indentation ends inside a native UTF-8 character"))
 }
 
-fn normalize_property_list(values: &JsValue) -> JsResult<Vec<JsString>> {
+fn normalize_property_list(values: &JsValue) -> JsResult<Vec<PropertyKey>> {
     let values = values.as_array().ok_or_else(|| {
         type_error("JSON property-list replacer requires an exact JavaScript array value")
     })?;
     let mut properties = Vec::new();
-    for value in values.values().into_iter().flatten() {
+    for value in values.values() {
         let key = match value {
-            JsValue::String(value) => value,
-            JsValue::Number(value) => JsString::from_utf8(&crate::number::to_string(value)),
+            JsValue::String(value) => PropertyKey::Native(value),
+            JsValue::Utf16String(value) => PropertyKey::exact(value),
+            JsValue::Number(value) => PropertyKey::Native(crate::number::to_string(value)),
             _ => continue,
         };
         if !properties.contains(&key) {
@@ -286,15 +289,15 @@ enum ContainerId {
 }
 
 struct Serializer<'a, E> {
-    indent: JsString,
+    indent: String,
     limits: JsonLimits,
-    output: Vec<u16>,
+    output: String,
     output_bytes: usize,
     active: HashSet<ContainerId>,
     nodes: usize,
     members: usize,
     replacer: Option<&'a mut dyn FnMut(String, JsValue) -> Result<JsValue, E>>,
-    property_list: Option<&'a [JsString]>,
+    property_list: Option<&'a [PropertyKey]>,
 }
 
 impl<'a, E> Serializer<'a, E>
@@ -302,15 +305,15 @@ where
     E: From<tsonic_rust_runtime::JsError>,
 {
     fn new(
-        indent: JsString,
+        indent: String,
         limits: JsonLimits,
         replacer: Option<&'a mut dyn FnMut(String, JsValue) -> Result<JsValue, E>>,
-        property_list: Option<&'a [JsString]>,
+        property_list: Option<&'a [PropertyKey]>,
     ) -> Self {
         Self {
             indent,
             limits,
-            output: Vec::new(),
+            output: String::new(),
             output_bytes: 0,
             active: HashSet::new(),
             nodes: 0,
@@ -322,7 +325,7 @@ where
 
     fn serialize_property(
         &mut self,
-        key: &JsString,
+        key: &PropertyKey,
         value: &JsValue,
         depth: usize,
     ) -> Result<bool, E> {
@@ -347,27 +350,31 @@ where
         result
     }
 
-    fn replaced_value(&mut self, key: &JsString, value: &JsValue) -> Result<JsValue, E> {
+    fn replaced_value<'value>(
+        &mut self,
+        key: &PropertyKey,
+        value: &'value JsValue,
+    ) -> Result<Cow<'value, JsValue>, E> {
         let value = match value {
-            JsValue::Closed(value) => value.project_json().map_err(E::from)?,
+            JsValue::Closed(value) => Cow::Owned(value.project_json().map_err(E::from)?),
             JsValue::JsonProjection(projection) => {
-                let key = key.to_utf8().map_err(|_| {
+                let key = key.to_native().map_err(|_| {
                     E::from(type_error(
                         "JSON projection key cannot be represented by the native Rust string carrier",
                     ))
                 })?;
-                projection.project(key).map_err(E::from)?
+                Cow::Owned(projection.project(key).map_err(E::from)?)
             }
-            _ => value.clone(),
+            _ => Cow::Borrowed(value),
         };
         Ok(match self.replacer.as_mut() {
             Some(replacer) => {
-                let key = key.to_utf8().map_err(|_| {
+                let key = key.to_native().map_err(|_| {
                     E::from(type_error(
                         "JSON replacer key cannot be represented by the native Rust string carrier",
                     ))
                 })?;
-                replacer(key, value)?
+                Cow::Owned(replacer(key, value.into_owned())?)
             }
             None => value,
         })
@@ -390,6 +397,10 @@ where
                 Ok(true)
             }
             JsValue::String(value) => {
+                self.push_quoted_native(value)?;
+                Ok(true)
+            }
+            JsValue::Utf16String(value) => {
                 self.push_quoted(value)?;
                 Ok(true)
             }
@@ -398,16 +409,26 @@ where
                 self.with_container(id, |serializer| {
                     serializer.push_char('[')?;
                     let mut first = true;
-                    for (index, value) in values.values().into_iter().enumerate() {
+                    for index in 0..values.len() {
                         serializer.count_member()?;
                         serializer.member_prefix(depth, &mut first)?;
-                        let value = value.unwrap_or(JsValue::Undefined);
-                        if !serializer.serialize_property(
-                            &JsString::from_utf8(&index.to_string()),
-                            &value,
-                            depth + 1,
-                        )? {
-                            serializer.push_str("null")?;
+                        let pending = values.with_element(index, |value| -> Result<_, E> {
+                            let value = value.unwrap_or(&JsValue::Undefined);
+                            if serializer.can_borrow_leaf(value) {
+                                if !serializer.serialize_value(value, depth + 1)? {
+                                    serializer.push_str("null")?;
+                                }
+                                Ok(None)
+                            } else {
+                                Ok(Some(value.clone()))
+                            }
+                        })?;
+                        if let Some(value) = pending {
+                            if !serializer.serialize_property(
+                                &PropertyKey::Native(index.to_string()), &value, depth + 1,
+                            )? {
+                                serializer.push_str("null")?;
+                            }
                         }
                     }
                     serializer.container_suffix(']', depth, first)?;
@@ -417,38 +438,35 @@ where
             JsValue::Object(object) => {
                 let id = ContainerId::Object(Rc::as_ptr(object) as usize);
                 self.with_container(id, |serializer| {
-                    let entries = object
+                    let keys = object
                         .try_borrow()
                         .map_err(|_| {
                             type_error("JSON.stringify cannot read a mutably borrowed object")
                         })?
-                        .entries_exact();
+                        .serialization_keys();
                     serializer.push_char('{')?;
                     let mut first = true;
-                    for (key, value) in entries {
+                    for key in keys {
                         if serializer
                             .property_list
                             .is_some_and(|properties| !properties.contains(&key))
                         {
                             continue;
                         }
-                        let value = serializer.replaced_value(&key, &value)?;
-                        if matches!(value, JsValue::Undefined) {
-                            continue;
-                        }
-                        serializer.count_member()?;
-                        serializer.member_prefix(depth, &mut first)?;
-                        serializer.push_quoted(&key)?;
-                        serializer.push_str(if serializer.indent.is_empty() {
-                            ":"
-                        } else {
-                            ": "
-                        })?;
-                        if !serializer.serialize_value(&value, depth + 1)? {
-                            return Err(type_error(
-                                "JSON object member unexpectedly had no serialized value",
-                            )
-                            .into());
+                        let pending = {
+                            let object = object.try_borrow().map_err(|_| {
+                                type_error("JSON.stringify cannot read a mutably borrowed object")
+                            })?;
+                            let value = object.get_key_ref(&key).unwrap_or(&JsValue::Undefined);
+                            if serializer.can_borrow_leaf(value) {
+                                serializer.serialize_object_member(&key, value, depth, &mut first)?;
+                                None
+                            } else {
+                                Some(value.clone())
+                            }
+                        };
+                        if let Some(value) = pending {
+                            serializer.serialize_object_member(&key, &value, depth, &mut first)?;
                         }
                     }
                     serializer.container_suffix('}', depth, first)?;
@@ -527,7 +545,7 @@ where
     fn push_indent(&mut self, depth: usize) -> Result<(), E> {
         let indent = self.indent.clone();
         for _ in 0..depth {
-            self.push_js_string(&indent)?;
+            self.push_str(&indent)?;
         }
         Ok(())
     }
@@ -559,25 +577,75 @@ where
         self.push_char('"')
     }
 
+    fn push_quoted_native(&mut self, value: &str) -> Result<(), E> {
+        self.push_char('"')?;
+        let mut start = 0;
+        for (offset, byte) in value.bytes().enumerate() {
+            if byte == b'"' || byte == b'\\' || byte < 0x20 {
+                self.push_str(&value[start..offset])?;
+                match byte {
+                    b'"' => self.push_str("\\\"")?,
+                    b'\\' => self.push_str("\\\\")?,
+                    b'\n' => self.push_str("\\n")?,
+                    b'\r' => self.push_str("\\r")?,
+                    b'\t' => self.push_str("\\t")?,
+                    8 => self.push_str("\\b")?,
+                    12 => self.push_str("\\f")?,
+                    _ => self.push_str(&format!("\\u{byte:04x}"))?,
+                }
+                start = offset + 1;
+            }
+        }
+        self.push_str(&value[start..])?;
+        self.push_char('"')
+    }
+
     fn push_char(&mut self, value: char) -> Result<(), E> {
-        let mut encoded = [0_u16; 2];
-        self.push_units(value.encode_utf16(&mut encoded))
+        let mut bytes = [0; 4];
+        self.push_str(value.encode_utf8(&mut bytes))
+    }
+
+    fn can_borrow_leaf(&self, value: &JsValue) -> bool {
+        self.replacer.is_none()
+            && !matches!(
+                value,
+                JsValue::Array(_)
+                    | JsValue::Object(_)
+                    | JsValue::Closed(_)
+                    | JsValue::JsonProjection(_)
+            )
+    }
+
+    fn serialize_object_member(
+        &mut self,
+        key: &PropertyKey,
+        value: &JsValue,
+        depth: usize,
+        first: &mut bool,
+    ) -> Result<(), E> {
+        let value = self.replaced_value(key, value)?;
+        if matches!(value.as_ref(), JsValue::Undefined) {
+            return Ok(());
+        }
+        self.count_member()?;
+        self.member_prefix(depth, first)?;
+        match key {
+            PropertyKey::Native(value) => self.push_quoted_native(value)?,
+            PropertyKey::Utf16(value) => self.push_quoted(value)?,
+        }
+        self.push_str(if self.indent.is_empty() { ":" } else { ": " })?;
+        if !self.serialize_value(&value, depth + 1)? {
+            return Err(
+                type_error("JSON object member unexpectedly had no serialized value").into(),
+            );
+        }
+        Ok(())
     }
 
     fn push_str(&mut self, value: &str) -> Result<(), E> {
-        self.push_units(&value.encode_utf16().collect::<Vec<_>>())
-    }
-
-    fn push_js_string(&mut self, value: &JsString) -> Result<(), E> {
-        self.push_units(value.units())
-    }
-
-    fn push_units(&mut self, value: &[u16]) -> Result<(), E> {
-        let added_bytes = utf8_length(value)
-            .ok_or_else(|| type_error("JSON serialization attempted to publish invalid UTF-16"))?;
         let next_bytes = self
             .output_bytes
-            .checked_add(added_bytes)
+            .checked_add(value.len())
             .ok_or_else(|| range_error("JSON output length overflow"))?;
         if next_bytes > self.limits.max_output_bytes {
             return Err(range_error("JSON output exceeds the configured byte limit").into());
@@ -585,34 +653,20 @@ where
         self.output
             .try_reserve(value.len())
             .map_err(|_| range_error("JSON output allocation failed"))?;
-        self.output.extend_from_slice(value);
+        self.output.push_str(value);
         self.output_bytes = next_bytes;
         Ok(())
     }
-}
 
-fn utf8_length(units: &[u16]) -> Option<usize> {
-    let mut length = 0_usize;
-    let mut index = 0_usize;
-    while index < units.len() {
-        let unit = units[index];
-        let bytes = match unit {
-            0x0000..=0x007f => 1,
-            0x0080..=0x07ff => 2,
-            0xd800..=0xdbff => {
-                if !matches!(units.get(index + 1), Some(0xdc00..=0xdfff)) {
-                    return None;
-                }
-                index += 1;
-                4
-            }
-            0xdc00..=0xdfff => return None,
-            _ => 3,
-        };
-        length = length.checked_add(bytes)?;
-        index += 1;
+    fn push_units(&mut self, value: &[u16]) -> Result<(), E> {
+        for decoded in char::decode_utf16(value.iter().copied()) {
+            let scalar = decoded.map_err(|_| {
+                type_error("JSON serialization attempted to publish invalid UTF-16")
+            })?;
+            self.push_char(scalar)?;
+        }
+        Ok(())
     }
-    Some(length)
 }
 
 fn json_number(value: f64) -> String {
@@ -671,7 +725,7 @@ fn expand_exponential(value: &str) -> String {
 }
 
 struct Parser<'a> {
-    input: &'a [u16],
+    input: &'a [u8],
     pos: usize,
     limits: JsonLimits,
     nodes: usize,
@@ -679,9 +733,9 @@ struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    fn new(input: &'a JsString, limits: JsonLimits) -> Self {
+    fn new(input: &'a str, limits: JsonLimits) -> Self {
         Self {
-            input: input.units(),
+            input: input.as_bytes(),
             pos: 0,
             limits,
             nodes: 0,
@@ -738,7 +792,7 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn parse_literal(&mut self, literal: &[u16], value: JsValue) -> JsResult<JsValue> {
+    fn parse_literal(&mut self, literal: &[u8], value: JsValue) -> JsResult<JsValue> {
         if self.input.get(self.pos..self.pos + literal.len()) == Some(literal) {
             self.pos += literal.len();
             Ok(value)
@@ -747,21 +801,33 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_string(&mut self) -> JsResult<JsString> {
+    fn parse_string(&mut self) -> JsResult<String> {
         self.expect(0x0022)?;
-        let mut out = Vec::new();
+        let mut out = String::new();
         while let Some(unit) = self.next() {
             match unit {
-                0x0022 => return Ok(JsString::from_units(out)),
+                0x0022 => return Ok(out),
                 0x005c => self.parse_escape(&mut out)?,
                 0x00..=0x1f => return Err(syntax_error("JSON string contains control character")),
-                _ => out.push(unit),
+                _ => {
+                    let start = self.pos - 1;
+                    while self
+                        .input
+                        .get(self.pos)
+                        .is_some_and(|byte| *byte >= 0x20 && *byte != b'"' && *byte != b'\\')
+                    {
+                        self.pos += 1;
+                    }
+                    let text = std::str::from_utf8(&self.input[start..self.pos])
+                        .map_err(|_| syntax_error("invalid UTF-8 in JSON string"))?;
+                    out.push_str(text);
+                }
             }
         }
         Err(syntax_error("unterminated JSON string"))
     }
 
-    fn parse_escape(&mut self, out: &mut Vec<u16>) -> JsResult<()> {
+    fn parse_escape(&mut self, out: &mut String) -> JsResult<()> {
         let unit = match self.next() {
             Some(0x0022) => 0x0022,
             Some(0x005c) => 0x005c,
@@ -774,12 +840,30 @@ impl<'a> Parser<'a> {
             Some(0x0075) => return self.parse_unicode_escape(out),
             _ => return Err(syntax_error("invalid JSON string escape")),
         };
-        out.push(unit);
+        out.push(char::from(unit));
         Ok(())
     }
 
-    fn parse_unicode_escape(&mut self, out: &mut Vec<u16>) -> JsResult<()> {
-        out.push(self.parse_hex_unit()?);
+    fn parse_unicode_escape(&mut self, out: &mut String) -> JsResult<()> {
+        let first = self.parse_hex_unit()?;
+        let scalar = if (0xd800..=0xdbff).contains(&first) {
+            self.expect(b'\\')?;
+            self.expect(b'u')?;
+            let second = self.parse_hex_unit()?;
+            if !(0xdc00..=0xdfff).contains(&second) {
+                return Err(syntax_error(
+                    "JSON string contains an unpaired surrogate not representable in native UTF-8",
+                ));
+            }
+            0x10000 + ((u32::from(first) - 0xd800) << 10) + u32::from(second) - 0xdc00
+        } else {
+            u32::from(first)
+        };
+        out.push(char::from_u32(scalar).ok_or_else(|| {
+            syntax_error(
+                "JSON string contains an unpaired surrogate not representable in native UTF-8",
+            )
+        })?);
         Ok(())
     }
 
@@ -829,7 +913,7 @@ impl<'a> Parser<'a> {
             }
             self.consume_digits();
         }
-        String::from_utf16(&self.input[start..self.pos])
+        std::str::from_utf8(&self.input[start..self.pos])
             .ok()
             .and_then(|text| text.parse::<f64>().ok())
             .ok_or_else(|| syntax_error("invalid JSON number"))
@@ -869,7 +953,7 @@ impl<'a> Parser<'a> {
             let key = self.parse_string()?;
             self.skip_ws();
             self.expect(0x003a)?;
-            object.set_exact(key, self.parse_value(depth + 1)?);
+            object.set(&key, self.parse_value(depth + 1)?);
             self.skip_ws();
             match self.next() {
                 Some(0x002c) => {}
@@ -885,7 +969,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn expect(&mut self, expected: u16) -> JsResult<()> {
+    fn expect(&mut self, expected: u8) -> JsResult<()> {
         match self.next() {
             Some(actual) if actual == expected => Ok(()),
             _ => Err(syntax_error("JSON.parse unexpected token")),
@@ -898,13 +982,13 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn next(&mut self) -> Option<u16> {
+    fn next(&mut self) -> Option<u8> {
         let unit = self.peek()?;
         self.pos += 1;
         Some(unit)
     }
 
-    fn peek(&self) -> Option<u16> {
+    fn peek(&self) -> Option<u8> {
         self.input.get(self.pos).copied()
     }
 
@@ -913,7 +997,7 @@ impl<'a> Parser<'a> {
     }
 }
 
-fn hex(unit: u16) -> Option<u8> {
+fn hex(unit: u8) -> Option<u8> {
     match unit {
         0x0030..=0x0039 => Some((unit - 0x0030) as u8),
         0x0061..=0x0066 => Some((unit - 0x0061 + 10) as u8),

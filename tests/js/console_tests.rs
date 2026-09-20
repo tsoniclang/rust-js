@@ -37,7 +37,7 @@ fn native_number_boxing_preserves_full_ranges_and_float_bits() {
 
 #[test]
 fn console_formats_to_injectable_writer() {
-    let args = [JsValue::String(exact("x")), JsValue::Number(1.0)];
+    let args = [JsValue::Utf16String(exact("x")), JsValue::Number(1.0)];
     assert_eq!(console::format_args(&args), "x 1");
 
     let mut out = Vec::new();
@@ -49,15 +49,15 @@ fn console_formats_to_injectable_writer() {
     assert_eq!(String::from_utf8(err).unwrap(), "false\n");
 
     let mut warn = Vec::new();
-    console::warn_to(&mut warn, &[JsValue::String(exact("careful"))]).unwrap();
+    console::warn_to(&mut warn, &[JsValue::Utf16String(exact("careful"))]).unwrap();
     assert_eq!(String::from_utf8(warn).unwrap(), "careful\n");
 
     let mut info = Vec::new();
-    console::info_to(&mut info, &[JsValue::String(exact("info"))]).unwrap();
+    console::info_to(&mut info, &[JsValue::Utf16String(exact("info"))]).unwrap();
     assert_eq!(String::from_utf8(info).unwrap(), "info\n");
 
     let mut debug = Vec::new();
-    console::debug_to(&mut debug, &[JsValue::String(exact("debug"))]).unwrap();
+    console::debug_to(&mut debug, &[JsValue::Utf16String(exact("debug"))]).unwrap();
     assert_eq!(String::from_utf8(debug).unwrap(), "debug\n");
 
     let mut dir = Vec::new();
@@ -65,7 +65,7 @@ fn console_formats_to_injectable_writer() {
     assert_eq!(String::from_utf8(dir).unwrap(), "true\n");
 
     let mut trace = Vec::new();
-    console::trace_to(&mut trace, &[JsValue::String(exact("here"))]).unwrap();
+    console::trace_to(&mut trace, &[JsValue::Utf16String(exact("here"))]).unwrap();
     assert_eq!(String::from_utf8(trace).unwrap(), "Trace: here\n");
 
     let mut table = Vec::new();
@@ -75,7 +75,7 @@ fn console_formats_to_injectable_writer() {
     assert!(table.contains("0: 1"));
 
     let mut dirxml = Vec::new();
-    console::dirxml_to(&mut dirxml, &[JsValue::String(exact("node"))]).unwrap();
+    console::dirxml_to(&mut dirxml, &[JsValue::Utf16String(exact("node"))]).unwrap();
     assert_eq!(String::from_utf8(dirxml).unwrap(), "node\n");
 }
 
@@ -95,7 +95,7 @@ fn console_instance_tracks_counts_timers_and_groups() {
 
     let mut grouped = Vec::new();
     console
-        .group_to(&mut grouped, &[JsValue::String(exact("group"))])
+        .group_to(&mut grouped, &[JsValue::Utf16String(exact("group"))])
         .unwrap();
     console
         .log_to(&mut grouped, &[JsValue::Number(1.0)])
@@ -109,7 +109,7 @@ fn console_instance_tracks_counts_timers_and_groups() {
         .time_log_to(
             &mut timing,
             Some("load"),
-            &[JsValue::String(exact("phase"))]
+            &[JsValue::Utf16String(exact("phase"))]
         )
         .unwrap()
         .is_some());
@@ -135,10 +135,10 @@ fn console_options_profiles_timestamps_and_dirxml_are_closed() {
 
     let mut grouped = Vec::new();
     console
-        .group_collapsed_to(&mut grouped, &[JsValue::String(exact("root"))])
+        .group_collapsed_to(&mut grouped, &[JsValue::Utf16String(exact("root"))])
         .unwrap();
     console
-        .dirxml_to(&mut grouped, &[JsValue::String(exact("child"))])
+        .dirxml_to(&mut grouped, &[JsValue::Utf16String(exact("child"))])
         .unwrap();
     console.group_end();
     assert_eq!(String::from_utf8(grouped).unwrap(), "root\n    child\n");
@@ -163,7 +163,11 @@ fn console_options_profiles_timestamps_and_dirxml_are_closed() {
     console.assert_to(&mut assertion, true, &[]).unwrap();
     assert!(assertion.is_empty());
     console
-        .assert_to(&mut assertion, false, &[JsValue::String(exact("broken"))])
+        .assert_to(
+            &mut assertion,
+            false,
+            &[JsValue::Utf16String(exact("broken"))],
+        )
         .unwrap();
     assert_eq!(
         String::from_utf8(assertion).unwrap(),

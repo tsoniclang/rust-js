@@ -28,16 +28,7 @@ impl<T> JsArrayEntries<T> {
 }
 
 impl<T: Clone> JsArrayEntries<T> {
-    pub fn checked_present_values(&self) -> impl Iterator<Item = (f64, T)> + use<T> {
-        self.clone().map(|(index, value)| {
-            (
-                index,
-                value.expect("checked array density invariant violated"),
-            )
-        })
-    }
-
-    pub fn next_result(&self) -> IteratorResult<(f64, Option<T>), Undefined> {
+    pub fn next_result(&self) -> IteratorResult<(f64, T), Undefined> {
         match self.clone().next() {
             Some(value) => IteratorResult::yielded(value),
             None => IteratorResult::completed(Undefined),
@@ -61,7 +52,7 @@ impl<T> ObjectIdentityCarrier for JsArrayEntries<T> {
 }
 
 impl<T: Clone> Iterator for JsArrayEntries<T> {
-    type Item = (f64, Option<T>);
+    type Item = (f64, T);
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut state = self.state.borrow_mut();
@@ -70,7 +61,7 @@ impl<T: Clone> Iterator for JsArrayEntries<T> {
             state.array = None;
             return None;
         }
-        let value = array.get(state.index);
+        let value = array.get(state.index)?;
         let index = state.index;
         state.index += 1;
         Some((index as f64, value))

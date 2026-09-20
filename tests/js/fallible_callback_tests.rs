@@ -200,24 +200,15 @@ fn fallible_array_callbacks_short_circuit_and_preserve_reduce_errors() {
 }
 
 #[test]
-fn fallible_sort_callbacks_are_stable_preserve_holes_and_publish_atomically() {
-    let values = JsArray::from_sparse(
-        5,
-        vec![(0, (2, "first")), (2, (1, "middle")), (3, (2, "second"))],
-    );
+fn fallible_sort_callbacks_are_stable_and_publish_atomically() {
+    let values = JsArray::from_dense(vec![(2, "first"), (1, "middle"), (2, "second")]);
     let sorted = values
         .try_sort(|left, right| Ok::<_, TsonicError>(f64::from(left.0 - right.0)))
         .unwrap();
     assert!(values.ptr_eq(&sorted));
     assert_eq!(
         values.values(),
-        vec![
-            Some((1, "middle")),
-            Some((2, "first")),
-            Some((2, "second")),
-            None,
-            None,
-        ],
+        vec![(1, "middle"), (2, "first"), (2, "second"),],
     );
 
     let unchanged = JsArray::from_dense(vec![3, 2, 1]);
@@ -237,7 +228,7 @@ fn fallible_sort_callbacks_are_stable_preserve_holes_and_publish_atomically() {
 
     let nan = JsArray::from_dense(vec![2, 1]);
     nan.try_sort(|_, _| Ok::<_, TsonicError>(f64::NAN)).unwrap();
-    assert_eq!(nan.values(), vec![Some(2), Some(1)]);
+    assert_eq!(nan.values(), vec![2, 1]);
 
     let unary = JsArray::from_dense(vec![2, 1]);
     unary
@@ -247,7 +238,7 @@ fn fallible_sort_callbacks_are_stable_preserve_holes_and_publish_atomically() {
 
     let zero = JsArray::from_dense(vec![2, 1]);
     zero.try_sort_zero(|| Ok::<_, TsonicError>(0.0)).unwrap();
-    assert_eq!(zero.values(), vec![Some(2), Some(1)]);
+    assert_eq!(zero.values(), vec![2, 1]);
 }
 
 #[test]
@@ -272,7 +263,7 @@ fn fallible_vector_factories_preserve_callback_arity_and_short_circuiting() {
         tsonic_rust_js::array::from_vec_try_map_zero(&values, || Ok::<_, TsonicError>(7))
             .unwrap()
             .values(),
-        vec![Some(7), Some(7), Some(7)]
+        vec![7, 7, 7]
     );
     assert_eq!(
         tsonic_rust_js::array::from_vec_try_map(&values, |value| {
@@ -280,7 +271,7 @@ fn fallible_vector_factories_preserve_callback_arity_and_short_circuiting() {
         })
         .unwrap()
         .values(),
-        vec![Some(1), Some(2), Some(3)]
+        vec![1, 2, 3]
     );
     assert_eq!(
         tsonic_rust_js::array::from_vec_try_map_with_index(&values, |value, index| {
@@ -288,7 +279,7 @@ fn fallible_vector_factories_preserve_callback_arity_and_short_circuiting() {
         })
         .unwrap()
         .values(),
-        vec![Some(2), Some(5), Some(8)]
+        vec![2, 5, 8]
     );
 
     let mut visits = 0;

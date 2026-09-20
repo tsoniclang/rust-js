@@ -38,7 +38,7 @@ pub mod weak_collections;
 pub mod web;
 pub mod wrappers;
 
-pub use array::{JsArray, JsSlot};
+pub use array::JsArray;
 pub use array_buffer::ArrayBuffer;
 pub use data_view::DataView;
 pub use errors::{

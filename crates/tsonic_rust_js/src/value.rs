@@ -116,12 +116,19 @@ pub enum JsValue {
     Null,
     Bool(bool),
     Number(f64),
-    String(JsString),
+    String(String),
+    Utf16String(JsString),
     Symbol(JsSymbol),
     Object(Rc<RefCell<JsObject>>),
     Array(JsArray<JsValue>),
     Closed(JsClosedValue),
     JsonProjection(JsonProjection),
+}
+
+impl Default for JsValue {
+    fn default() -> Self {
+        Self::Undefined
+    }
 }
 
 impl JsValue {
@@ -236,13 +243,8 @@ where
     T: Clone,
     F: FnMut(T) -> JsValue,
 {
-    let length = values.len();
-    let converted = values
-        .entries()
-        .enumerate()
-        .filter_map(|(index, (_, value))| value.map(|value| (index, convert(value))))
-        .collect();
-    JsValue::array(JsArray::from_sparse(length, converted))
+    let converted = values.entries().map(|(_, value)| convert(value)).collect();
+    JsValue::array(JsArray::from_dense(converted))
 }
 
 pub fn js_value_from_optional_pairs<K>(pairs: Vec<Option<(K, JsValue)>>) -> JsValue
@@ -281,7 +283,8 @@ impl InspectState {
             JsValue::Null => "null".to_string(),
             JsValue::Bool(value) => value.to_string(),
             JsValue::Number(value) => format_js_number(*value),
-            JsValue::String(value) => value.inspect_quoted(),
+            JsValue::String(value) => format!("{:?}", value),
+            JsValue::Utf16String(value) => value.inspect_quoted(),
             JsValue::Symbol(value) => format!("{value:?}"),
             JsValue::Object(object) => self.render_object(object, depth),
             JsValue::Array(values) => self.render_array(values, depth),
@@ -335,11 +338,7 @@ impl InspectState {
         let mut rendered = values
             .into_iter()
             .take(self.max_entries)
-            .map(|value| {
-                value
-                    .map(|value| self.render(&value, depth + 1))
-                    .unwrap_or_default()
-            })
+            .map(|value| self.render(&value, depth + 1))
             .collect::<Vec<_>>();
         append_remaining(&mut rendered, total, self.max_entries);
         self.active.remove(&id);
@@ -368,6 +367,7 @@ impl JsSameValue for JsValue {
             (Self::Bool(left), Self::Bool(right)) => left == right,
             (Self::Number(left), Self::Number(right)) => same_value_f64(*left, *right),
             (Self::String(left), Self::String(right)) => left == right,
+            (Self::Utf16String(left), Self::Utf16String(right)) => left == right,
             (Self::Symbol(left), Self::Symbol(right)) => left == right,
             (Self::Object(left), Self::Object(right)) => Rc::ptr_eq(left, right),
             (Self::Array(left), Self::Array(right)) => left.ptr_eq(right),
@@ -387,6 +387,7 @@ impl JsSameValueZero for JsValue {
             (Self::Bool(left), Self::Bool(right)) => left == right,
             (Self::Number(left), Self::Number(right)) => same_value_zero_f64(*left, *right),
             (Self::String(left), Self::String(right)) => left == right,
+            (Self::Utf16String(left), Self::Utf16String(right)) => left == right,
             (Self::Symbol(left), Self::Symbol(right)) => left == right,
             (Self::Object(left), Self::Object(right)) => Rc::ptr_eq(left, right),
             (Self::Array(left), Self::Array(right)) => left.ptr_eq(right),
@@ -407,6 +408,7 @@ impl JsHash for JsValue {
             Self::Bool(value) => value.js_hash(),
             Self::Number(value) => value.js_hash(),
             Self::String(value) => value.js_hash(),
+            Self::Utf16String(value) => value.js_hash(),
             Self::Symbol(value) => value.js_hash(),
             Self::Object(value) => hash_identity(Rc::as_ptr(value) as usize),
             Self::Array(value) => value.js_hash(),
@@ -423,6 +425,7 @@ impl JsStrictEqual for JsValue {
             (Self::Bool(left), Self::Bool(right)) => left == right,
             (Self::Number(left), Self::Number(right)) => strict_equal_f64(*left, *right),
             (Self::String(left), Self::String(right)) => left == right,
+            (Self::Utf16String(left), Self::Utf16String(right)) => left == right,
             (Self::Symbol(left), Self::Symbol(right)) => left == right,
             (Self::Object(left), Self::Object(right)) => Rc::ptr_eq(left, right),
             (Self::Array(left), Self::Array(right)) => left.ptr_eq(right),
@@ -467,13 +470,13 @@ impl From<Null> for JsValue {
 
 impl From<String> for JsValue {
     fn from(value: String) -> Self {
-        Self::String(JsString::from_utf8(&value))
+        Self::String(value)
     }
 }
 
 impl From<JsString> for JsValue {
     fn from(value: JsString) -> Self {
-        Self::String(value)
+        Self::Utf16String(value)
     }
 }
 
@@ -490,11 +493,11 @@ impl From<Undefined> for JsValue {
 }
 
 pub fn from_string(value: &str) -> JsValue {
-    JsValue::String(JsString::from_utf8(value))
+    JsValue::String(value.to_owned())
 }
 
 pub fn from_exact_string(value: &JsString) -> JsValue {
-    JsValue::String(value.clone())
+    JsValue::Utf16String(value.clone())
 }
 
 pub fn clone_value(value: &JsValue) -> JsValue {
