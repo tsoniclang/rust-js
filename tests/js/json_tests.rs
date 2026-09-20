@@ -14,7 +14,7 @@ fn json_string_input_retains_its_guaranteed_result() {
     ] {
         assert_eq!(json::stringify_string(input).unwrap(), expected);
         assert_eq!(
-            json::stringify(&JsValue::String(JsString::from_utf8(input))).unwrap(),
+            json::stringify(&JsValue::Utf16String(JsString::from_utf8(input))).unwrap(),
             Some(expected.to_owned())
         );
     }
@@ -57,20 +57,20 @@ fn json_omits_undefined_object_fields_and_nulls_array_slots() {
 fn json_round_trips_non_ascii_strings() {
     let text = js("héllo — ünïcode ✓");
     let parsed = json::parse("\"héllo — ünïcode ✓\"").unwrap();
-    assert_eq!(parsed, JsValue::String(text.clone()));
+    assert_eq!(parsed, JsValue::Utf16String(text.clone()));
 
     let source = r#"{"msg":"héllo — ünïcode ✓"}"#;
     let value = json::parse(source).unwrap();
     assert_eq!(
         value.as_object().expect("object").borrow().get("msg"),
-        JsValue::String(text.clone())
+        JsValue::Utf16String(text.clone())
     );
     let round_tripped = stringify_text(&value);
     assert_eq!(round_tripped, source);
     let reparsed = json::parse(&round_tripped).unwrap();
     assert_eq!(
         reparsed.as_object().expect("object").borrow().get("msg"),
-        JsValue::String(text)
+        JsValue::Utf16String(text)
     );
 }
 
@@ -136,7 +136,7 @@ fn json_stringify_with_indent_nested_arrays_and_leaves() {
 
     // Scalars are unaffected by the indent.
     assert_eq!(
-        json::stringify_with_indent(&JsValue::String(js("plain")), "  ")
+        json::stringify_with_indent(&JsValue::Utf16String(js("plain")), "  ")
             .unwrap()
             .unwrap(),
         "\"plain\""
@@ -173,7 +173,7 @@ fn json_stringify_with_indent_keeps_undefined_member_rules() {
 
 #[test]
 fn json_quotes_control_characters_like_node() {
-    let value = JsValue::String(js("\u{1}\u{1f}\u{8}\u{c}\"\\"));
+    let value = JsValue::Utf16String(js("\u{1}\u{1f}\u{8}\u{c}\"\\"));
     assert_eq!(stringify_text(&value), "\"\\u0001\\u001f\\b\\f\\\"\\\\\"");
 }
 
@@ -239,14 +239,14 @@ fn json_enforces_resource_limits() {
         JsErrorKind::RangeError
     );
     assert_eq!(
-        json::stringify_with_limits(&JsValue::String(js("\u{1}")), limits)
+        json::stringify_with_limits(&JsValue::Utf16String(js("\u{1}")), limits)
             .unwrap()
             .unwrap(),
         "\"\\u0001\""
     );
     assert_eq!(
         json::stringify_with_limits(
-            &JsValue::String(js("\u{1}")),
+            &JsValue::Utf16String(js("\u{1}")),
             json::JsonLimits {
                 max_output_bytes: 7,
                 ..limits
@@ -291,7 +291,7 @@ fn json_number_grammar_and_output_match_ecmascript() {
 fn json_utf16_escape_policy_is_explicit() {
     assert_eq!(
         json::parse(r#""\uD83D\uDE00""#).unwrap(),
-        JsValue::String(js("😀"))
+        JsValue::Utf16String(js("😀"))
     );
     assert_eq!(
         json::parse(r#""\u12G4""#).unwrap_err().kind(),
@@ -302,7 +302,7 @@ fn json_utf16_escape_policy_is_explicit() {
         (r#""\uDC00""#, 0xDC00, r#""\udc00""#),
     ] {
         let value = json::parse(source).unwrap();
-        assert_eq!(value, JsValue::String(JsString::from_units(vec![unit])));
+        assert_eq!(value, JsValue::Utf16String(JsString::from_units(vec![unit])));
         assert_eq!(stringify_text(&value), serialized);
     }
 }

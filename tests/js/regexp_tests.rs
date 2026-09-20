@@ -306,13 +306,13 @@ fn regexp_replacement_tokens_and_callback_arguments_are_exact() {
 
     let calls = observed.borrow();
     assert_eq!(calls.len(), 2);
-    assert!(matches!(&calls[0][0], JsValue::String(value) if value == &js("1")));
-    assert!(matches!(&calls[0][1], JsValue::String(value) if value == &js("1")));
+    assert!(matches!(&calls[0][0], JsValue::Utf16String(value) if value == &js("1")));
+    assert!(matches!(&calls[0][1], JsValue::Utf16String(value) if value == &js("1")));
     assert!(matches!(calls[0][2], JsValue::Undefined));
     assert!(matches!(calls[0][3], JsValue::Number(value) if value == 1.0));
-    assert!(matches!(&calls[0][4], JsValue::String(value) if value == &js("a1b2x")));
+    assert!(matches!(&calls[0][4], JsValue::Utf16String(value) if value == &js("a1b2x")));
     assert!(matches!(calls[0][5], JsValue::Object(_)));
-    assert!(matches!(&calls[1][2], JsValue::String(value) if value == &js("x")));
+    assert!(matches!(&calls[1][2], JsValue::Utf16String(value) if value == &js("x")));
 }
 
 #[test]

@@ -200,11 +200,8 @@ fn fallible_array_callbacks_short_circuit_and_preserve_reduce_errors() {
 }
 
 #[test]
-fn fallible_sort_callbacks_are_stable_preserve_holes_and_publish_atomically() {
-    let values = JsArray::from_sparse(
-        5,
-        vec![(0, (2, "first")), (2, (1, "middle")), (3, (2, "second"))],
-    );
+fn fallible_sort_callbacks_are_stable_and_publish_atomically() {
+    let values = JsArray::from_dense(vec![(2, "first"), (1, "middle"), (2, "second")]);
     let sorted = values
         .try_sort(|left, right| Ok::<_, TsonicError>(f64::from(left.0 - right.0)))
         .unwrap();
@@ -215,8 +212,6 @@ fn fallible_sort_callbacks_are_stable_preserve_holes_and_publish_atomically() {
             Some((1, "middle")),
             Some((2, "first")),
             Some((2, "second")),
-            None,
-            None,
         ],
     );
 

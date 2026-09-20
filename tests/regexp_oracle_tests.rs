@@ -18,7 +18,7 @@ fn object_field(entry: &JsValue, key: &str) -> JsValue {
 
 fn string_field(entry: &JsValue, key: &str) -> JsString {
     match object_field(entry, key) {
-        JsValue::String(value) => value,
+        JsValue::Utf16String(value) => value,
         other => panic!("expected string for `{key}`, got {other:?}"),
     }
 }
@@ -59,7 +59,7 @@ fn expected_match(value: &JsValue) -> ExpectedMatch {
         .into_iter()
         .map(|group| match group {
             JsValue::Null => None,
-            JsValue::String(value) => Some(value),
+            JsValue::Utf16String(value) => Some(value),
             other => panic!("invalid oracle capture {other:?}"),
         })
         .collect();
@@ -257,7 +257,7 @@ fn regexp_runtime_matches_all_committed_node_vectors() {
             "replace" => {
                 let replacement = string_field(entry, "replacement");
                 match expected {
-                    JsValue::String(expected) => expression
+                    JsValue::Utf16String(expected) => expression
                         .replace(&input, &replacement)
                         .map_err(|error| format!("{label}: {error:?}"))
                         .and_then(|actual| {
@@ -272,7 +272,7 @@ fn regexp_runtime_matches_all_committed_node_vectors() {
                 let expected = array_items(&expected)
                     .into_iter()
                     .map(|value| match value {
-                        JsValue::String(value) => Ok(value),
+                        JsValue::Utf16String(value) => Ok(value),
                         other => Err(format!("{label}: invalid split value {other:?}")),
                     })
                     .collect::<Result<Vec<_>, _>>();
@@ -298,7 +298,7 @@ fn regexp_runtime_matches_all_committed_node_vectors() {
                 let result = object_field(&expected, "result");
                 let comparison = match (result, actual) {
                     (JsValue::Null, Ok(None)) => Ok(()),
-                    (JsValue::String(expected), Ok(Some(actual))) if actual.text() == expected => {
+                    (JsValue::Utf16String(expected), Ok(Some(actual))) if actual.text() == expected => {
                         Ok(())
                     }
                     (_, Err(error)) => Err(format!("{label}: {error:?}")),
@@ -325,7 +325,7 @@ fn regexp_runtime_matches_all_committed_node_vectors() {
                         array_items(&value)
                             .into_iter()
                             .map(|item| match item {
-                                JsValue::String(value) => value,
+                                JsValue::Utf16String(value) => value,
                                 other => panic!("{label}: invalid match item {other:?}"),
                             })
                             .collect::<Vec<_>>(),

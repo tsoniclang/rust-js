@@ -1,10 +1,11 @@
 //! Closed JSON parser/stringifier for supported carrier values.
 
 use std::collections::HashSet;
+use std::borrow::Cow;
 use std::rc::Rc;
 
 use crate::errors::{range_error, syntax_error, type_error, JsResult};
-use crate::object::JsObject;
+use crate::object::{JsObject, PropertyKey};
 use crate::value::JsValue;
 use crate::JsString;
 use tsonic_rust_runtime::{TsonicError, TsonicResult};
@@ -223,7 +224,7 @@ fn stringify_with_options<'a, E>(
     indent: &str,
     limits: JsonLimits,
     replacer: Option<&'a mut dyn FnMut(String, JsValue) -> Result<JsValue, E>>,
-    property_list: Option<&'a [JsString]>,
+    property_list: Option<&'a [PropertyKey]>,
 ) -> Result<Option<String>, E>
 where
     E: From<tsonic_rust_runtime::JsError>,
@@ -235,7 +236,7 @@ where
         .into());
     }
     let mut serializer = Serializer::new(indent.to_owned(), limits, replacer, property_list);
-    if serializer.serialize_property(&JsString::from_utf8(""), value, 0)? {
+    if serializer.serialize_property(&PropertyKey::Native(String::new()), value, 0)? {
         Ok(Some(serializer.output))
     } else {
         Ok(None)
@@ -252,16 +253,16 @@ fn string_indent(space: &str) -> JsResult<String> {
         .ok_or_else(|| type_error("JSON indentation ends inside a native UTF-8 character"))
 }
 
-fn normalize_property_list(values: &JsValue) -> JsResult<Vec<JsString>> {
+fn normalize_property_list(values: &JsValue) -> JsResult<Vec<PropertyKey>> {
     let values = values.as_array().ok_or_else(|| {
         type_error("JSON property-list replacer requires an exact JavaScript array value")
     })?;
     let mut properties = Vec::new();
     for value in values.values().into_iter().flatten() {
         let key = match value {
-            JsValue::String(value) => JsString::from_utf8(&value),
-            JsValue::Utf16String(value) => value,
-            JsValue::Number(value) => JsString::from_utf8(&crate::number::to_string(value)),
+            JsValue::String(value) => PropertyKey::Native(value),
+            JsValue::Utf16String(value) => PropertyKey::exact(value),
+            JsValue::Number(value) => PropertyKey::Native(crate::number::to_string(value)),
             _ => continue,
         };
         if !properties.contains(&key) {
@@ -288,7 +289,7 @@ struct Serializer<'a, E> {
     nodes: usize,
     members: usize,
     replacer: Option<&'a mut dyn FnMut(String, JsValue) -> Result<JsValue, E>>,
-    property_list: Option<&'a [JsString]>,
+    property_list: Option<&'a [PropertyKey]>,
 }
 
 impl<'a, E> Serializer<'a, E>
@@ -299,7 +300,7 @@ where
         indent: String,
         limits: JsonLimits,
         replacer: Option<&'a mut dyn FnMut(String, JsValue) -> Result<JsValue, E>>,
-        property_list: Option<&'a [JsString]>,
+        property_list: Option<&'a [PropertyKey]>,
     ) -> Self {
         Self {
             indent,
@@ -316,7 +317,7 @@ where
 
     fn serialize_property(
         &mut self,
-        key: &JsString,
+        key: &PropertyKey,
         value: &JsValue,
         depth: usize,
     ) -> Result<bool, E> {
@@ -341,27 +342,27 @@ where
         result
     }
 
-    fn replaced_value(&mut self, key: &JsString, value: &JsValue) -> Result<JsValue, E> {
+    fn replaced_value<'value>(&mut self, key: &PropertyKey, value: &'value JsValue) -> Result<Cow<'value, JsValue>, E> {
         let value = match value {
-            JsValue::Closed(value) => value.project_json().map_err(E::from)?,
+            JsValue::Closed(value) => Cow::Owned(value.project_json().map_err(E::from)?),
             JsValue::JsonProjection(projection) => {
-                let key = key.to_utf8().map_err(|_| {
+                let key = key.to_native().map_err(|_| {
                     E::from(type_error(
                         "JSON projection key cannot be represented by the native Rust string carrier",
                     ))
                 })?;
-                projection.project(key).map_err(E::from)?
+                Cow::Owned(projection.project(key).map_err(E::from)?)
             }
-            _ => value.clone(),
+            _ => Cow::Borrowed(value),
         };
         Ok(match self.replacer.as_mut() {
             Some(replacer) => {
-                let key = key.to_utf8().map_err(|_| {
+                let key = key.to_native().map_err(|_| {
                     E::from(type_error(
                         "JSON replacer key cannot be represented by the native Rust string carrier",
                     ))
                 })?;
-                replacer(key, value)?
+                Cow::Owned(replacer(key, value.into_owned())?)
             }
             None => value,
         })
@@ -401,7 +402,7 @@ where
                         serializer.member_prefix(depth, &mut first)?;
                         let value = value.unwrap_or(JsValue::Undefined);
                         if !serializer.serialize_property(
-                            &JsString::from_utf8(&index.to_string()),
+                            &PropertyKey::Native(index.to_string()),
                             &value,
                             depth + 1,
                         )? {
@@ -420,7 +421,7 @@ where
                         .map_err(|_| {
                             type_error("JSON.stringify cannot read a mutably borrowed object")
                         })?
-                        .entries_exact();
+                        .serialization_entries();
                     serializer.push_char('{')?;
                     let mut first = true;
                     for (key, value) in entries {
@@ -431,12 +432,15 @@ where
                             continue;
                         }
                         let value = serializer.replaced_value(&key, &value)?;
-                        if matches!(value, JsValue::Undefined) {
+                        if matches!(value.as_ref(), JsValue::Undefined) {
                             continue;
                         }
                         serializer.count_member()?;
                         serializer.member_prefix(depth, &mut first)?;
-                        serializer.push_quoted(&key)?;
+                        match &key {
+                            PropertyKey::Native(value) => serializer.push_quoted_native(value)?,
+                            PropertyKey::Utf16(value) => serializer.push_quoted(value)?,
+                        }
                         serializer.push_str(if serializer.indent.is_empty() {
                             ":"
                         } else {

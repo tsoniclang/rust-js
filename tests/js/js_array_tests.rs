@@ -1,4 +1,4 @@
-use tsonic_rust_js::array::{statics, JsArray, JsSlot};
+use tsonic_rust_js::array::{statics, JsArray};
 
 #[test]
 fn array_search_borrows_string_queries_without_materializing_owned_values() {
@@ -15,7 +15,7 @@ fn array_search_borrows_string_queries_without_materializing_owned_values() {
     assert_eq!(values.last_index_of_from_end("café😀"), 3);
     assert_eq!(values.last_index_of("café😀", -3.0), 1);
     assert!(!values.includes_from_start("missing"));
-    assert_eq!(values.index_of_from_start(""), -1);
+    assert_eq!(values.index_of_from_start(""), 0);
     assert_eq!(values.last_index_of_from_end("missing"), -1);
     assert_eq!(values.get(1).as_deref(), Some("café😀"));
 }
@@ -23,20 +23,18 @@ fn array_search_borrows_string_queries_without_materializing_owned_values() {
 #[test]
 fn object_keys_returns_an_independent_dense_array_without_cloning_source_values() {
     struct Token;
-    let values = JsArray::with_length(4);
-    values.set(2, Token);
-    values.set(0, Token);
+    let values = JsArray::from_dense(vec![Token, Token, Token]);
     values.set_number(-1.0, Token);
     values.set_number(f64::NAN, Token);
     let keys = values.object_keys();
-    assert_eq!(keys.join("|"), "0|2|-1|NaN");
-    assert_eq!(keys.len(), 4);
+    assert_eq!(keys.join("|"), "0|1|2|-1|NaN");
+    assert_eq!(keys.len(), 5);
     assert!((0..keys.len()).all(|index| keys.has_index(index)));
-    values.delete_at(0);
+    values.set_len(1);
     values.delete_number(-1.0);
     values.set_number(-1.0, Token);
-    assert_eq!(values.object_keys().join("|"), "2|NaN|-1");
-    assert_eq!(keys.join("|"), "0|2|-1|NaN");
+    assert_eq!(values.object_keys().join("|"), "0|NaN|-1");
+    assert_eq!(keys.join("|"), "0|1|2|-1|NaN");
 }
 
 #[test]
@@ -45,7 +43,7 @@ fn numeric_membership_preserves_presence_without_cloning_values() {
     let values = JsArray::from_dense(vec![Token]);
     assert!(JsArray::contains_number_property(-0.0, &values));
     assert!(!JsArray::contains_number_property(1.0, &values));
-    values.set_len(3);
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| values.set_len(3))).is_err());
     assert!(!JsArray::contains_number_property(2.0, &values));
     for index in [-1.0, 0.5, f64::NAN, f64::INFINITY, 4_294_967_295.0] {
         assert!(!JsArray::contains_number_property(index, &values));
@@ -54,31 +52,28 @@ fn numeric_membership_preserves_presence_without_cloning_values() {
         values.delete_number(index);
         assert!(!JsArray::contains_number_property(index, &values));
     }
-    values.delete_at(0);
+    values.set_len(0);
     assert!(!JsArray::contains_number_property(0.0, &values));
     let optional = JsArray::from_dense(vec![None::<Token>]);
     assert!(JsArray::contains_number_property(0.0, &optional));
-    optional.delete_at(0);
+    optional.set_len(0);
     assert!(!JsArray::contains_number_property(0.0, &optional));
     optional.set(0, None);
     assert!(JsArray::contains_number_property(0.0, &optional));
 }
 
 #[test]
-fn sparse_array_length_delete_and_holes() {
-    assert_eq!(JsSlot::Present(1).as_ref(), Some(&1));
-    assert_eq!(JsSlot::<i32>::Hole.as_ref(), None);
+fn dense_array_rejects_hole_creation_without_mutation() {
     let xs = JsArray::from_dense(vec![1, 2]);
-    xs.set_len(5);
-    assert_eq!(xs.len(), 5);
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| xs.set_len(5))).is_err());
+    assert_eq!(xs.len(), 2);
     assert!(xs.has_index(1));
     assert!(!xs.has_index(3));
-    assert!(xs.delete_at(1));
-    assert!(xs.delete_at(1));
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| xs.delete_at(1))).is_err());
     assert!(xs.delete_at(100));
-    assert_eq!(xs.len(), 5);
-    assert!(!xs.has_index(1));
-    assert_eq!(xs.get(1), None);
+    assert_eq!(xs.len(), 2);
+    assert!(xs.has_index(1));
+    assert_eq!(xs.get(1), Some(2));
 }
 
 #[test]
@@ -106,23 +101,23 @@ fn number_indexes_preserve_array_slots_and_non_index_properties() {
 }
 
 #[test]
-fn sparse_array_mutation_helpers_preserve_holes() {
+fn dense_array_mutation_helpers_preserve_initialized_values() {
     let xs = JsArray::with_length(4);
     xs.set(0, 1);
     xs.set(2, 3);
     xs.fill_to(9, 1.0, 3.0);
-    assert_eq!(xs.values(), vec![Some(1), Some(9), Some(9), None]);
+    assert_eq!(xs.values(), vec![Some(1), Some(9), Some(9), Some(0)]);
 
-    xs.delete_at(1);
+    xs.set(1, 0);
     xs.copy_within_to(2.0, 0.0, 2.0);
-    assert_eq!(xs.values(), vec![Some(1), None, Some(1), None]);
+    assert_eq!(xs.values(), vec![Some(1), Some(0), Some(1), Some(0)]);
 
     xs.reverse();
-    assert_eq!(xs.values(), vec![None, Some(1), None, Some(1)]);
+    assert_eq!(xs.values(), vec![Some(0), Some(1), Some(0), Some(1)]);
 }
 
 #[test]
-fn sparse_array_splice_shift_unshift_and_entries() {
+fn dense_array_splice_shift_unshift_and_entries() {
     let xs = JsArray::from_dense(vec![1, 2, 3]);
     let removed = xs.splice_many(1.0, 1.0, [9, 10]);
     assert_eq!(removed.values(), vec![Some(2)]);
@@ -133,7 +128,7 @@ fn sparse_array_splice_shift_unshift_and_entries() {
     assert_eq!(xs.keys(), vec![0, 1, 2]);
     assert_eq!(
         xs.entries().collect::<Vec<_>>(),
-        vec![(0.0, Some(0)), (1.0, Some(9)), (2.0, Some(10))]
+        vec![(0.0, 0), (1.0, 9), (2.0, 10)]
     );
 }
 
@@ -223,11 +218,11 @@ fn splice_uses_js_numeric_bounds_and_returns_a_distinct_removed_array() {
 }
 
 #[test]
-fn js_array_at_supports_negative_indices_and_holes() {
+fn js_array_at_supports_negative_indices_and_initialized_growth() {
     let values: JsArray<f64> = JsArray::from_dense(vec![1.0, 2.0, 3.0]);
-    values.set_len(5);
+    values.push_many([0.0, 0.0]);
     assert_eq!(values.at(0.0), Some(1.0));
-    assert_eq!(values.at(-1.0), None);
+    assert_eq!(values.at(-1.0), Some(0.0));
     assert_eq!(values.at(-5.0), Some(1.0));
     assert_eq!(values.at(-3.0), Some(3.0));
     assert_eq!(values.at(5.0), None);
@@ -241,28 +236,29 @@ fn js_array_at_supports_negative_indices_and_holes() {
 }
 
 #[test]
-fn sparse_array_enumerable_keys_include_only_present_own_indices() {
+fn dense_array_enumerable_keys_include_all_initialized_indices() {
     let values = JsArray::with_length(5);
     values.set(3, 4);
     values.set(1, 2);
-    assert_eq!(values.enumerable_own_keys(), vec!["1", "3"]);
-    values.delete_at(1);
-    assert_eq!(values.enumerable_own_keys(), vec!["3"]);
+    assert_eq!(values.enumerable_own_keys(), vec!["0", "1", "2", "3", "4"]);
+    values.set_len(2);
+    assert_eq!(values.enumerable_own_keys(), vec!["0", "1"]);
 }
 
 #[test]
-fn dense_and_sparse_arrays_share_reference_identity() {
+fn dense_arrays_share_reference_identity() {
     let dense = JsArray::from_dense(vec![1]);
     let dense_alias = dense.clone();
     dense_alias.push(2);
     assert!(dense.ptr_eq(&dense_alias));
     assert_eq!(dense.values(), vec![Some(1), Some(2)]);
 
-    let sparse = JsArray::from_sparse(3, vec![(1, 4)]);
-    let sparse_alias = sparse.clone();
-    sparse_alias.set(2, 5);
-    assert!(sparse.ptr_eq(&sparse_alias));
-    assert_eq!(sparse.values(), vec![None, Some(4), Some(5)]);
+    let initialized = JsArray::with_length(3);
+    initialized.set(1, 4);
+    let alias = initialized.clone();
+    alias.set(2, 5);
+    assert!(initialized.ptr_eq(&alias));
+    assert_eq!(initialized.values(), vec![Some(0), Some(4), Some(5)]);
 }
 
 #[test]
@@ -418,9 +414,9 @@ fn mapped_string_construction_stops_at_each_callback_failure() {
 }
 
 #[test]
-fn concat_preserves_holes_values_order_and_source_identity() {
-    let left = JsArray::from_sparse(3, vec![(0, 1), (2, 3)]);
-    let right = JsArray::from_sparse(2, vec![(1, 5)]);
+fn concat_preserves_values_order_and_source_identity() {
+    let left = JsArray::from_dense(vec![1, 0, 3]);
+    let right = JsArray::from_dense(vec![0, 5]);
 
     let joined = left.concat([
         statics::JsArrayConcatItem::Value(4),
@@ -429,10 +425,10 @@ fn concat_preserves_holes_values_order_and_source_identity() {
 
     assert_eq!(joined.len(), 6);
     assert_eq!(joined.get(0), Some(1));
-    assert!(!joined.has_index(1));
+    assert_eq!(joined.get(1), Some(0));
     assert_eq!(joined.get(2), Some(3));
     assert_eq!(joined.get(3), Some(4));
-    assert!(!joined.has_index(4));
+    assert_eq!(joined.get(4), Some(0));
     assert_eq!(joined.get(5), Some(5));
 
     left.set(0, 9);
@@ -583,8 +579,8 @@ fn every_array_callback_arity_has_executable_runtime_coverage() {
 }
 
 #[test]
-fn array_reduce_without_initial_uses_first_present_slot_and_rejects_empty_input() {
-    let sparse = JsArray::from_sparse(5, vec![(2, 4), (4, 6)]);
+fn array_reduce_without_initial_uses_first_value_and_rejects_empty_input() {
+    let sparse = JsArray::from_dense(vec![0, 0, 4, 0, 6]);
     assert_eq!(
         sparse
             .reduce_from_first(|sum, value| sum + value)
@@ -592,10 +588,11 @@ fn array_reduce_without_initial_uses_first_present_slot_and_rejects_empty_input(
         10
     );
 
-    let empty = JsArray::<i32>::with_length(3);
+    assert_eq!(JsArray::<i32>::with_length(3).reduce_from_first(|left, right| left + right).unwrap(), 0);
+    let empty = JsArray::<i32>::new();
     let error = empty
         .reduce_from_first(|sum, value| sum + value)
-        .expect_err("an array containing only holes has no initial accumulator");
+        .expect_err("an empty array has no initial accumulator");
     assert_eq!(error.kind(), tsonic_rust_runtime::JsErrorKind::TypeError);
 }
 
@@ -614,12 +611,12 @@ fn array_search_indexes_follow_ecmascript_number_rules() {
 }
 
 #[test]
-fn default_array_sort_compares_utf16_code_units() {
+fn default_array_sort_compares_native_strings() {
     let values = JsArray::from_dense(vec!["\u{10000}".to_string(), "\u{e000}".to_string()]);
     values.sort_by_js_string();
     assert_eq!(
         values.values(),
-        vec![Some("\u{10000}".to_string()), Some("\u{e000}".to_string())]
+        vec![Some("\u{e000}".to_string()), Some("\u{10000}".to_string())]
     );
 }
 

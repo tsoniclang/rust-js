@@ -360,7 +360,7 @@ fn json_replacer_and_property_list_traverse_only_closed_values() {
 }
 
 fn string_value(value: &str) -> JsValue {
-    JsValue::String(JsString::from_utf8(value))
+    JsValue::Utf16String(JsString::from_utf8(value))
 }
 
 fn block_on<T>(future: impl Future<Output = T>) -> T {

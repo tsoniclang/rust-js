@@ -26,7 +26,7 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
     let mut out = Vec::new();
     js::abi::console_log_to(
         &mut out,
-        &[js::abi::JsValue::String(js::abi::JsString::from_utf8("ok"))],
+        &[js::abi::JsValue::Utf16String(js::abi::JsString::from_utf8("ok"))],
     )
     .unwrap();
     assert_eq!(String::from_utf8(out).unwrap(), "ok\n");
@@ -155,7 +155,7 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
     assert_eq!(exact.units(), &[0xD83D, 0xDE00]);
     assert_eq!(
         js::abi::js_value_from_exact_string(&exact),
-        js::abi::JsValue::String(exact)
+        js::abi::JsValue::Utf16String(exact)
     );
 
     let buffer = js::abi::ArrayBuffer::new(4.0).unwrap();
