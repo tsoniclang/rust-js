@@ -282,6 +282,21 @@ impl<T> JsArray<T> {
             .find_map(|(candidate, value)| (candidate == &key).then(|| value.clone()))
     }
 
+    pub fn with_number_element<Result>(
+        &self,
+        index: impl Into<f64>,
+        read: impl FnOnce(Option<&T>) -> Result,
+    ) -> Result {
+        let index = index.into();
+        if let Some(index) = canonical_array_index(index) {
+            return self.with_element(index, read);
+        }
+        let key = crate::number::to_string(index);
+        let state = self.state.borrow();
+        read(state.numeric_properties.iter()
+            .find_map(|(candidate, value)| (candidate == &key).then_some(value)))
+    }
+
     pub fn at(&self, index: f64) -> Option<T>
     where
         T: Clone,
