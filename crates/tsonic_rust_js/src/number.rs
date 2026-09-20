@@ -9,7 +9,7 @@ use std::cmp::Ordering;
 use std::str::FromStr;
 
 use num_bigint::{BigInt, BigUint};
-use num_traits::{One, ToPrimitive, Zero};
+use num_traits::{One, ToPrimitive};
 use tsonic_rust_runtime::{JsError, JsErrorKind};
 
 pub const MAX_VALUE: f64 = f64::MAX;
@@ -145,7 +145,8 @@ pub fn parse_int(text: &str, radix: Option<f64>) -> f64 {
     }
 
     let radix = u32::try_from(base).expect("validated parseInt radix");
-    let mut value = BigUint::zero();
+    let mut value = 0u64;
+    let mut wide_value: Option<BigUint> = None;
     let mut consumed = false;
     for byte in source.bytes() {
         let Some(digit) = ascii_digit(byte) else {
@@ -154,7 +155,17 @@ pub fn parse_int(text: &str, radix: Option<f64>) -> f64 {
         if digit >= radix {
             break;
         }
-        value = value * radix + digit;
+        if let Some(wide) = &mut wide_value {
+            *wide *= radix;
+            *wide += digit;
+        } else if let Some(next) = value
+            .checked_mul(u64::from(radix))
+            .and_then(|product| product.checked_add(u64::from(digit)))
+        {
+            value = next;
+        } else {
+            wide_value = Some(BigUint::from(value) * radix + digit);
+        }
         consumed = true;
     }
 
@@ -162,7 +173,10 @@ pub fn parse_int(text: &str, radix: Option<f64>) -> f64 {
         return f64::NAN;
     }
 
-    let magnitude = value.to_f64().expect("BigUint always converts to f64");
+    let magnitude = wide_value.map_or_else(
+        || value as f64,
+        |wide| wide.to_f64().expect("BigUint always converts to f64"),
+    );
     if negative {
         -magnitude
     } else {

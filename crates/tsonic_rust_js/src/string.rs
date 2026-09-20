@@ -35,6 +35,10 @@ impl std::iter::FusedIterator for NativeStringIterator {}
 /// JS-facing string value conversion contract used by dense array join and future array helpers.
 pub trait JsToString {
     fn to_js_string(&self) -> String;
+
+    fn write_js_string(&self, output: &mut String) {
+        output.push_str(&self.to_js_string());
+    }
 }
 
 macro_rules! impl_js_to_string {
@@ -42,6 +46,11 @@ macro_rules! impl_js_to_string {
         $(impl JsToString for $type {
             fn to_js_string(&self) -> String {
                 self.to_string()
+            }
+
+            fn write_js_string(&self, output: &mut String) {
+                use std::fmt::Write;
+                write!(output, "{self}").expect("formatting into String cannot fail");
             }
         })+
     };
@@ -64,6 +73,10 @@ impl JsToString for f64 {
 impl JsToString for str {
     fn to_js_string(&self) -> String {
         self.to_string()
+    }
+
+    fn write_js_string(&self, output: &mut String) {
+        output.push_str(self);
     }
 }
 
