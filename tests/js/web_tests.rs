@@ -29,7 +29,7 @@ fn abort_controller_and_signal_record_reason() {
     assert!(timeout.aborted());
     assert_eq!(
         timeout.reason(),
-        JsValue::Utf16String(JsString::from_utf8("TimeoutError"))
+        JsValue::String(String::from("TimeoutError"))
     );
 }
 

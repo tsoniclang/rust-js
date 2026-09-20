@@ -243,7 +243,7 @@ where
 {
     let converted = values
         .entries()
-        .map(|(_, value)| convert(value.expect("dense array entry")))
+        .map(|(_, value)| convert(value))
         .collect();
     JsValue::array(JsArray::from_dense(converted))
 }

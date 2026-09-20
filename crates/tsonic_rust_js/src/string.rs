@@ -7,7 +7,7 @@ use crate::array::JsArray;
 use crate::coercion::{absolute_index, relative_index, to_integer_or_infinity, to_length};
 use crate::errors::{type_error, JsResult};
 use crate::number::JsNumberValue;
-use crate::{JsString, JsValue};
+use crate::JsValue;
 
 pub struct NativeStringIterator {
     value: String,

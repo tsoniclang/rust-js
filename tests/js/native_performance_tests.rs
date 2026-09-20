@@ -33,7 +33,10 @@ fn object_native_lookups_and_explicit_keys_share_one_identity() {
     object.set_exact(exact.clone(), 3.0);
     assert_eq!(object.get_exact(&exact), JsValue::Number(3.0));
     assert!(object.keys().is_err());
-    assert_eq!(json::stringify(&JsValue::object(object)).unwrap().unwrap(), "{\"café😀\":2,\"\\ud800\":3}");
+    assert_eq!(json::stringify(&JsValue::object(object.clone())).unwrap().unwrap(), "{\"café😀\":2,\"\\ud800\":3}");
+    assert!(object.has_exact_own_property(&exact));
+    assert!(object.delete_exact(&exact));
+    assert!(!object.has_exact_own_property(&exact));
 }
 
 #[test]
@@ -107,6 +110,11 @@ fn native_regex_uses_byte_offsets_and_dense_optional_captures() {
 
 #[test]
 fn bulk_typed_array_copy_overlaps_and_fill_retains_views() {
+    let first = tsonic_rust_js::ArrayBuffer::from_bytes(vec![1, 2, 3]);
+    let second = tsonic_rust_js::ArrayBuffer::from_bytes(vec![2, 3]);
+    assert!(first.with_byte_ranges(1..3, &second, 0..2, |left, right| left == right));
+    assert!(second.with_byte_ranges(0..2, &first, 1..3, |left, right| left == right));
+    assert!(first.with_byte_ranges(1..3, &first.clone(), 1..3, |left, right| left == right));
     let values = Uint8Array::from_bytes(vec![1, 2, 3, 4, 5]);
     values.set_from_typed_array(&values.subarray(0.0, Some(4.0)), 1.0).unwrap();
     assert_eq!(values.with_bytes(<[u8]>::to_vec), [1, 1, 2, 3, 4]);

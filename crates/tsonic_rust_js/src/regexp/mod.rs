@@ -2,7 +2,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::ops::Deref;
 use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use regress::{Flags, Match, Regex};
 use tsonic_rust_runtime::{ObjectIdentity, ObjectIdentityCarrier, Undefined};
@@ -427,6 +427,7 @@ struct CompiledRegExp {
     flags: JsString,
     parsed_flags: ParsedFlags,
     regex: Regex,
+    native_regex: OnceLock<JsResult<Regex>>,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -563,6 +564,7 @@ impl JsRegExp {
             flags,
             parsed_flags,
             regex,
+            native_regex: OnceLock::new(),
         });
         COMPILED_REGEXP_CACHE.with(|cache| {
             cache.borrow_mut().insert(key, Arc::clone(&compiled));

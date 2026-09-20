@@ -15,11 +15,11 @@ fn text(value: &JsString) -> String {
         .expect("test text must be well-formed UTF-16")
 }
 
-fn dense_strings(values: &JsArray<JsString>) -> Vec<String> {
+fn dense_strings(values: &JsArray<Option<JsString>>) -> Vec<String> {
     values
         .values()
         .into_iter()
-        .map(|value| value.map_or_else(|| "<undefined>".to_string(), |value| text(&value)))
+        .map(|value| value.expect("dense capture slot").map_or_else(|| "<undefined>".to_string(), |value| text(&value)))
         .collect()
 }
 
@@ -112,11 +112,13 @@ fn regexp_result_required_groups_and_replace_all_entry_points_are_exact() {
     let single = JsRegExp::new(js("(a)?b"), js("")).unwrap();
     let execution = single.exec(&js("ab")).unwrap().unwrap();
     assert_eq!(execution.required_group(1.0), js("a"));
-    assert_eq!(execution.required_group(2.0), js(""));
+    assert_eq!(execution.group(2), None);
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| execution.required_group(2.0))).is_err());
 
     let matched = single.match_result(&js("ab")).unwrap().unwrap();
     assert_eq!(matched.required_group(1.0), js("a"));
-    assert_eq!(matched.required_group(2.0), js(""));
+    assert_eq!(matched.group(2), None);
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| matched.required_group(2.0))).is_err());
 
     let global = JsRegExp::new(js("a"), js("g")).unwrap();
     assert_eq!(
@@ -370,17 +372,15 @@ fn regexp_escape_matches_the_normative_escape_shape() {
 }
 
 #[test]
-fn native_results_fail_closed_when_only_the_exact_lane_can_represent_them() {
+fn native_results_use_scalars_while_explicit_utf16_uses_code_units() {
     let exact_expression = JsRegExp::new(js("."), js("")).unwrap();
     let exact_result = exact_expression.exec(&js("😀")).unwrap().unwrap();
     assert_eq!(exact_result.text().units(), &[0xD83D]);
 
     let native_expression = JsRegExp::new(js("."), js("")).unwrap();
     assert_eq!(
-        regexp_exec_native(&native_expression, "😀")
-            .unwrap_err()
-            .kind(),
-        JsErrorKind::TypeError,
+        regexp_exec_native(&native_expression, "😀").unwrap().unwrap().text(),
+        "😀",
     );
 }
 

@@ -165,10 +165,11 @@ fn bigint_string_construction_uses_integer_grammar() {
 }
 
 #[test]
-fn array_length_construction_keeps_holes_and_reference_fill() {
+fn array_length_construction_initializes_native_values() {
     let values = abi::array_construct_length::<String>(3_i64).unwrap();
     assert_eq!(values.len(), 3);
-    assert!(!values.has_index(0));
+    assert!(values.has_index(0));
+    assert_eq!(values.get(0), Some(String::new()));
     let empty = abi::array_construct_length::<String>(-0.0).unwrap();
     assert_eq!(empty.len(), 0);
     let item = abi::array_of([3.0]);

@@ -71,7 +71,7 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
             .unwrap()
             .iter_values()
             .collect::<Vec<_>>(),
-        vec!["a".to_owned(), "b".to_owned()]
+        vec![Some("a".to_owned()), Some("b".to_owned())]
     );
 
     assert_eq!(dense.find_index(|x| x == 2), 1);

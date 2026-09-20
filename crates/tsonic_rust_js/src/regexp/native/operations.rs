@@ -1,13 +1,20 @@
 use super::*;
-use regress::Match;
-use crate::errors::range_error;
+use regress::{Match, Regex};
+use crate::errors::{range_error, syntax_error};
 
 pub(super) fn find(expression: &JsRegExp, input: &str, start: usize, sticky: bool) -> JsResult<Option<Match>> {
     if start > input.len() { return Ok(None); }
     if !input.is_char_boundary(start) {
         return Err(range_error("RegExp index lies inside a native UTF-8 character"));
     }
-    expression.state.compiled.regex.try_find_from(input, start, super::super::execution_budget(input.len()))
+    let compiled = &expression.state.compiled;
+    let regex = compiled.native_regex.get_or_init(|| {
+        Regex::from_unicode(
+            super::super::pattern_code_points(&compiled.source, true).into_iter(),
+            compiled.parsed_flags.engine_flags(),
+        ).map_err(|error| syntax_error(format!("invalid native regular expression: {error}")))
+    }).as_ref().map_err(Clone::clone)?;
+    regex.try_find_from(input, start, super::super::execution_budget(input.len()))
         .map(|found| found.filter(|matched| !sticky || matched.start() == start))
         .map_err(|error| range_error(error.to_string()))
 }
