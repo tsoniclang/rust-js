@@ -289,6 +289,7 @@ impl<K, V> JsMap<K, V> {
             state.entries[index] = None;
             remove_hash_index(&mut state.indices_by_hash, hash, index);
             state.size -= 1;
+            state.compact();
             return true;
         }
         false
@@ -492,5 +493,23 @@ impl<K, V> ObjectIdentityCarrier for JsMap<K, V> {
 impl<K, V> Default for JsMap<K, V> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::JsMap;
+
+    #[test]
+    fn identity_key_churn_reclaims_tombstones() {
+        let values = JsMap::new();
+        for index in 0..4096 {
+            values.set_eq_discard(index, index);
+            assert!(values.delete_eq(&index));
+            assert!(values.state.borrow().entries.len() <= 32);
+        }
+        assert!(values.is_empty());
+        values.set_eq_discard(1, 7);
+        assert_eq!(values.get_eq(&1), Some(7));
     }
 }
