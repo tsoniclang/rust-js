@@ -20,16 +20,12 @@ pub fn to_number(value: &JsValue) -> f64 {
             }
         }
         JsValue::Number(value) => *value,
-        JsValue::String(value) => {
+        JsValue::String(value) => parse_numeric_string(value),
+        JsValue::Utf16String(value) => {
             let Ok(text) = value.to_utf8() else {
                 return f64::NAN;
             };
-            let trimmed = text.trim_matches(is_ecmascript_whitespace);
-            if trimmed.is_empty() {
-                0.0
-            } else {
-                trimmed.parse::<f64>().unwrap_or(f64::NAN)
-            }
+            parse_numeric_string(&text)
         }
         JsValue::Symbol(_)
         | JsValue::Object(_)
@@ -37,6 +33,11 @@ pub fn to_number(value: &JsValue) -> f64 {
         | JsValue::Closed(_)
         | JsValue::JsonProjection(_) => f64::NAN,
     }
+}
+
+fn parse_numeric_string(value: &str) -> f64 {
+    let trimmed = value.trim_matches(is_ecmascript_whitespace);
+    if trimmed.is_empty() { 0.0 } else { trimmed.parse::<f64>().unwrap_or(f64::NAN) }
 }
 
 pub(crate) fn is_ecmascript_whitespace(value: char) -> bool {

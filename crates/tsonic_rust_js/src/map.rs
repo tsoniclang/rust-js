@@ -10,14 +10,45 @@ struct MapEntry<K, V> {
     key: K,
     value: V,
     hash: u64,
-    present: bool,
 }
 
 #[derive(Debug)]
 struct JsMapState<K, V> {
-    entries: Vec<MapEntry<K, V>>,
+    entries: Vec<Option<MapEntry<K, V>>>,
+    active_iterators: usize,
     indices_by_hash: HashMap<u64, Vec<usize>>,
     size: usize,
+}
+
+impl<K, V> JsMapState<K, V> {
+    fn compact(&mut self) {
+        if self.active_iterators != 0 || self.entries.len().saturating_sub(self.size) <= self.size.max(32) {
+            return;
+        }
+        self.entries.retain(Option::is_some);
+        self.indices_by_hash.clear();
+        for (index, entry) in self.entries.iter().enumerate() {
+            let entry = entry.as_ref().expect("compacted map entry");
+            self.indices_by_hash.entry(entry.hash).or_default().push(index);
+        }
+    }
+}
+
+struct MapIteration<'a, K, V>(&'a RefCell<JsMapState<K, V>>);
+
+impl<'a, K, V> MapIteration<'a, K, V> {
+    fn new(state: &'a RefCell<JsMapState<K, V>>) -> Self {
+        state.borrow_mut().active_iterators += 1;
+        Self(state)
+    }
+}
+
+impl<K, V> Drop for MapIteration<'_, K, V> {
+    fn drop(&mut self) {
+        let mut state = self.0.borrow_mut();
+        state.active_iterators -= 1;
+        state.compact();
+    }
 }
 
 #[derive(Debug)]
@@ -66,6 +97,7 @@ impl<K, V> JsMap<K, V> {
         Self {
             state: Rc::new(RefCell::new(JsMapState {
                 entries: Vec::new(),
+                active_iterators: 0,
                 indices_by_hash: HashMap::new(),
                 size: 0,
             })),
@@ -106,8 +138,12 @@ impl<K, V> JsMap<K, V> {
 
     pub fn clear(&self) {
         let mut state = self.state.borrow_mut();
-        for entry in &mut state.entries {
-            entry.present = false;
+        if state.active_iterators == 0 {
+            state.entries.clear();
+        } else {
+            for entry in &mut state.entries {
+                *entry = None;
+            }
         }
         state.indices_by_hash.clear();
         state.size = 0;
@@ -120,7 +156,7 @@ impl<K, V> JsMap<K, V> {
         V: Clone,
     {
         let state = self.state.borrow();
-        find_index(&state, key.js_hash(), key).map(|index| state.entries[index].value.clone())
+        find_index(&state, key.js_hash(), key).map(|index| state.entries[index].as_ref().expect("live map entry").value.clone())
     }
 
     pub fn get_eq(&self, key: &K) -> Option<V>
@@ -131,8 +167,8 @@ impl<K, V> JsMap<K, V> {
         self.state
             .borrow()
             .entries
-            .iter()
-            .find(|entry| entry.present && entry.key == *key)
+            .iter().flatten()
+            .find(|entry| entry.key == *key)
             .map(|entry| entry.value.clone())
     }
 
@@ -151,15 +187,14 @@ impl<K, V> JsMap<K, V> {
         let hash = key.js_hash();
         let mut state = self.state.borrow_mut();
         if let Some(index) = find_index(&state, hash, &key) {
-            state.entries[index].value = value;
+            state.entries[index].as_mut().expect("live map entry").value = value;
         } else {
             let index = state.entries.len();
-            state.entries.push(MapEntry {
+            state.entries.push(Some(MapEntry {
                 key,
                 value,
                 hash,
-                present: true,
-            });
+            }));
             state.indices_by_hash.entry(hash).or_default().push(index);
             state.size += 1;
         }
@@ -180,17 +215,16 @@ impl<K, V> JsMap<K, V> {
         let mut state = self.state.borrow_mut();
         if let Some(entry) = state
             .entries
-            .iter_mut()
-            .find(|entry| entry.present && entry.key == key)
+            .iter_mut().flatten()
+            .find(|entry| entry.key == key)
         {
             entry.value = value;
         } else {
-            state.entries.push(MapEntry {
+            state.entries.push(Some(MapEntry {
                 key,
                 value,
                 hash: 0,
-                present: true,
-            });
+            }));
             state.size += 1;
         }
     }
@@ -210,8 +244,8 @@ impl<K, V> JsMap<K, V> {
         self.state
             .borrow()
             .entries
-            .iter()
-            .any(|entry| entry.present && entry.key == *key)
+            .iter().flatten()
+            .any(|entry| entry.key == *key)
     }
 
     pub fn delete<Q>(&self, key: &Q) -> bool
@@ -222,9 +256,10 @@ impl<K, V> JsMap<K, V> {
         let hash = key.js_hash();
         let mut state = self.state.borrow_mut();
         if let Some(index) = find_index(&state, hash, key) {
-            state.entries[index].present = false;
+            state.entries[index] = None;
             remove_hash_index(&mut state.indices_by_hash, hash, index);
             state.size -= 1;
+            state.compact();
             return true;
         }
         false
@@ -235,12 +270,12 @@ impl<K, V> JsMap<K, V> {
         K: PartialEq,
     {
         let mut state = self.state.borrow_mut();
-        if let Some(entry) = state
-            .entries
-            .iter_mut()
-            .find(|entry| entry.present && entry.key == *key)
+        if let Some(index) = state.entries.iter()
+            .position(|entry| entry.as_ref().is_some_and(|entry| entry.key == *key))
         {
-            entry.present = false;
+            let hash = state.entries[index].as_ref().expect("live map entry").hash;
+            state.entries[index] = None;
+            remove_hash_index(&mut state.indices_by_hash, hash, index);
             state.size -= 1;
             return true;
         }
@@ -255,7 +290,7 @@ impl<K, V> JsMap<K, V> {
             .borrow()
             .entries
             .iter()
-            .filter(|entry| entry.present)
+            .flatten()
             .map(|entry| entry.key.clone())
             .collect()
     }
@@ -268,7 +303,7 @@ impl<K, V> JsMap<K, V> {
             .borrow()
             .entries
             .iter()
-            .filter(|entry| entry.present)
+            .flatten()
             .map(|entry| entry.value.clone())
             .collect()
     }
@@ -282,7 +317,7 @@ impl<K, V> JsMap<K, V> {
             .borrow()
             .entries
             .iter()
-            .filter(|entry| entry.present)
+            .flatten()
             .map(|entry| (entry.key.clone(), entry.value.clone()))
             .collect()
     }
@@ -320,16 +355,18 @@ impl<K, V> JsMap<K, V> {
         V: Clone,
         F: FnMut(V, K, Self),
     {
+        let _iteration = MapIteration::new(&self.state);
         let mut index = 0;
         loop {
             let next = {
                 let state = self.state.borrow();
-                while index < state.entries.len() && !state.entries[index].present {
+                while index < state.entries.len() && state.entries[index].is_none() {
                     index += 1;
                 }
                 state
                     .entries
                     .get(index)
+                    .and_then(Option::as_ref)
                     .map(|entry| (entry.key.clone(), entry.value.clone()))
             };
             let Some((key, value)) = next else {
@@ -346,16 +383,18 @@ impl<K, V> JsMap<K, V> {
         V: Clone,
         F: FnMut(V, K, Self) -> TsonicResult<()>,
     {
+        let _iteration = MapIteration::new(&self.state);
         let mut index = 0;
         loop {
             let next = {
                 let state = self.state.borrow();
-                while index < state.entries.len() && !state.entries[index].present {
+                while index < state.entries.len() && state.entries[index].is_none() {
                     index += 1;
                 }
                 state
                     .entries
                     .get(index)
+                    .and_then(Option::as_ref)
                     .map(|entry| (entry.key.clone(), entry.value.clone()))
             };
             let Some((key, value)) = next else {
@@ -414,8 +453,8 @@ where
         .iter()
         .copied()
         .find(|index| {
-            let entry = &state.entries[*index];
-            entry.present && entry.hash == hash && entry.key.same_value_zero(key)
+            state.entries[*index].as_ref()
+                .is_some_and(|entry| entry.hash == hash && entry.key.same_value_zero(key))
         })
 }
 

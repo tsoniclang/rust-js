@@ -6,13 +6,11 @@ mod fallible_callbacks;
 pub mod js_array;
 mod locations;
 pub mod number_array_like;
-pub mod slot;
 pub mod statics;
 
 pub use construction::{construct_length, ArrayLength};
 pub use entries::JsArrayEntries;
 pub use js_array::{JsArray, JsArrayIterator};
-pub use slot::JsSlot;
 pub use statics::{
     from_dense_array, from_optional_array, from_string, from_string_map,
     from_string_map_with_index, from_string_map_zero, from_string_try_map,

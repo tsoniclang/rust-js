@@ -5,10 +5,9 @@ use std::rc::Rc;
 
 use tsonic_rust_runtime::{JsError, Undefined};
 
-use super::{
-    JsRegExp, JsRegExpExecArray, JsRegExpIndexPair, JsRegExpIndices, JsRegExpMatchArray,
-    JsRegExpNamedGroups, JsRegExpNamedIndices, JsRegExpStringIterator,
-};
+use super::{JsRegExp, JsRegExpIndexPair};
+
+mod operations;
 use crate::array::JsArray;
 use crate::equality::{hash_identity, JsHash, JsSameValueZero, JsStrictEqual};
 use crate::errors::{type_error, JsResult};
@@ -135,13 +134,13 @@ impl RegExpNamedIndices {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RegExpIndices {
-    values: JsArray<RegExpIndexPair>,
+    values: JsArray<Option<RegExpIndexPair>>,
     groups: Option<RegExpNamedIndices>,
 }
 
 impl RegExpIndices {
     pub fn at(&self, index: usize) -> Option<RegExpIndexPair> {
-        self.values.get(index)
+        self.values.get(index).flatten()
     }
 
     pub fn len(&self) -> usize {
@@ -156,13 +155,13 @@ impl RegExpIndices {
         self.groups.clone()
     }
 
-    pub fn iter_values(&self) -> std::vec::IntoIter<Option<RegExpIndexPair>> {
-        self.values.values().into_iter()
+    pub fn iter_values(&self) -> impl Iterator<Item = Option<RegExpIndexPair>> {
+        self.values.values().into_iter().map(Option::flatten)
     }
 }
 
 impl Deref for RegExpIndices {
-    type Target = JsArray<RegExpIndexPair>;
+    type Target = JsArray<Option<RegExpIndexPair>>;
 
     fn deref(&self) -> &Self::Target {
         &self.values
@@ -171,7 +170,7 @@ impl Deref for RegExpIndices {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RegExpMatchArray {
-    values: JsArray<String>,
+    values: JsArray<Option<String>>,
     index: Option<f64>,
     input: Option<String>,
     groups: Option<RegExpNamedGroups>,
@@ -180,11 +179,11 @@ pub struct RegExpMatchArray {
 
 impl RegExpMatchArray {
     pub fn required_group(&self, index: f64) -> String {
-        self.values.get_number(index).unwrap_or_default()
+        self.values.get_number(index).flatten().expect("required whole-match capture")
     }
 
     pub fn text(&self) -> String {
-        self.values.get(0).unwrap_or_default()
+        self.values.get(0).flatten().expect("required whole-match capture")
     }
 
     pub fn value(&self) -> String {
@@ -200,7 +199,7 @@ impl RegExpMatchArray {
     }
 
     pub fn group(&self, index: usize) -> Option<String> {
-        self.values.get(index)
+        self.values.get(index).flatten()
     }
 
     pub fn group_count(&self) -> usize {
@@ -223,17 +222,17 @@ impl RegExpMatchArray {
         self.indices.clone()
     }
 
-    pub fn array(&self) -> JsArray<String> {
+    pub fn array(&self) -> JsArray<Option<String>> {
         self.values.clone()
     }
 
-    pub fn iter_values(&self) -> std::vec::IntoIter<Option<String>> {
-        self.values.values().into_iter()
+    pub fn iter_values(&self) -> impl Iterator<Item = Option<String>> {
+        self.values.values().into_iter().map(Option::flatten)
     }
 }
 
 impl Deref for RegExpMatchArray {
-    type Target = JsArray<String>;
+    type Target = JsArray<Option<String>>;
 
     fn deref(&self) -> &Self::Target {
         &self.values
@@ -242,7 +241,7 @@ impl Deref for RegExpMatchArray {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RegExpExecArray {
-    values: JsArray<String>,
+    values: JsArray<Option<String>>,
     index: f64,
     input: String,
     groups: Option<RegExpNamedGroups>,
@@ -251,11 +250,11 @@ pub struct RegExpExecArray {
 
 impl RegExpExecArray {
     pub fn required_group(&self, index: f64) -> String {
-        self.values.get_number(index).unwrap_or_default()
+        self.values.get_number(index).flatten().expect("required whole-match capture")
     }
 
     pub fn text(&self) -> String {
-        self.values.get(0).unwrap_or_default()
+        self.values.get(0).flatten().expect("required whole-match capture")
     }
 
     pub fn value(&self) -> String {
@@ -271,7 +270,7 @@ impl RegExpExecArray {
     }
 
     pub fn group(&self, index: usize) -> Option<String> {
-        self.values.get(index)
+        self.values.get(index).flatten()
     }
 
     pub fn group_count(&self) -> usize {
@@ -294,8 +293,8 @@ impl RegExpExecArray {
         self.indices.clone()
     }
 
-    pub fn iter_values(&self) -> std::vec::IntoIter<Option<String>> {
-        self.values.values().into_iter()
+    pub fn iter_values(&self) -> impl Iterator<Item = Option<String>> {
+        self.values.values().into_iter().map(Option::flatten)
     }
 
     fn into_match_array(self) -> RegExpMatchArray {
@@ -310,7 +309,7 @@ impl RegExpExecArray {
 }
 
 impl Deref for RegExpExecArray {
-    type Target = JsArray<String>;
+    type Target = JsArray<Option<String>>;
 
     fn deref(&self) -> &Self::Target {
         &self.values
@@ -323,22 +322,37 @@ pub fn regexp_exec_into_match_array_native(value: RegExpExecArray) -> RegExpMatc
 
 #[derive(Debug, Clone)]
 pub struct RegExpStringIterator {
-    inner: JsRegExpStringIterator,
+    state: Rc<RefCell<NativeIteratorState>>,
+}
+
+#[derive(Debug)]
+struct NativeIteratorState {
+    expression: JsRegExp,
+    input: String,
+    done: bool,
 }
 
 impl RegExpStringIterator {
-    pub fn iterator(&self) -> Self {
-        self.clone()
-    }
+    pub fn iterator(&self) -> Self { self.clone() }
 }
 
 impl Iterator for RegExpStringIterator {
     type Item = JsResult<RegExpExecArray>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.inner
-            .next()
-            .map(|result| result.and_then(exact_exec_array_to_native))
+        let mut state = self.state.borrow_mut();
+        if state.done { return None; }
+        match operations::execute(&state.expression, &state.input) {
+            Err(error) => { state.done = true; Some(Err(error)) }
+            Ok(None) => { state.done = true; None }
+            Ok(Some(found)) => {
+                if !state.expression.global() { state.done = true; }
+                else if found.start() == found.end() {
+                    state.expression.set_last_index(operations::advance(&state.input, found.end()) as f64);
+                }
+                Some(Ok(operations::build(&state.expression, &state.input, found)))
+            }
+        }
     }
 }
 
@@ -435,32 +449,36 @@ pub fn regexp_construct_from_regexp_with_undefined_flags_native(
 }
 
 pub fn regexp_test_native(expression: &JsRegExp, input: &str) -> JsResult<bool> {
-    expression.test(&JsString::from_utf8(input))
+    Ok(operations::execute(expression, input)?.is_some())
 }
 
 pub fn regexp_exec_native(expression: &JsRegExp, input: &str) -> JsResult<Option<RegExpExecArray>> {
-    expression
-        .exec(&JsString::from_utf8(input))?
-        .map(exact_exec_array_to_native)
-        .transpose()
+    Ok(operations::execute(expression, input)?.map(|found| operations::build(expression, input, found)))
 }
 
 pub fn regexp_match_native(
     expression: &JsRegExp,
     input: &str,
 ) -> JsResult<Option<RegExpMatchArray>> {
-    expression
-        .match_result(&JsString::from_utf8(input))?
-        .map(exact_match_array_to_native)
-        .transpose()
+    if !expression.global() {
+        return Ok(regexp_exec_native(expression, input)?.map(RegExpExecArray::into_match_array));
+    }
+    let matches = operations::collect(expression, input)?;
+    if matches.is_empty() { return Ok(None); }
+    Ok(Some(RegExpMatchArray {
+        values: JsArray::from_dense(matches.into_iter().map(|found| Some(input[found.range].to_owned())).collect()),
+        index: None, input: None, groups: None, indices: None,
+    }))
 }
 
 pub fn regexp_match_all_native(
     expression: &JsRegExp,
     input: &str,
 ) -> JsResult<RegExpStringIterator> {
+    let cloned = JsRegExp::construct_from_regexp(expression)?;
+    cloned.set_last_index(expression.last_index());
     Ok(RegExpStringIterator {
-        inner: expression.match_all(&JsString::from_utf8(input))?,
+        state: Rc::new(RefCell::new(NativeIteratorState { expression: cloned, input: input.to_owned(), done: false })),
     })
 }
 
@@ -481,13 +499,20 @@ pub fn regexp_replace_native(
     input: &str,
     replacement: &str,
 ) -> JsResult<String> {
-    exact_to_native(
-        &expression.replace(
-            &JsString::from_utf8(input),
-            &JsString::from_utf8(replacement),
-        )?,
-        "regular-expression replacement result",
-    )
+    let mut output = String::with_capacity(input.len());
+    let mut copied = 0;
+    if expression.global() { expression.set_last_index(0.0); }
+    while let Some(found) = operations::execute(expression, input)? {
+        output.push_str(&input[copied..found.start()]);
+        operations::append_substitution(&mut output, input, &found, replacement);
+        copied = found.end();
+        if !expression.global() { break; }
+        if found.start() == found.end() {
+            expression.set_last_index(operations::advance(input, found.end()) as f64);
+        }
+    }
+    output.push_str(&input[copied..]);
+    Ok(output)
 }
 
 pub fn regexp_replace_all_for_string_native(
@@ -495,13 +520,8 @@ pub fn regexp_replace_all_for_string_native(
     input: &str,
     replacement: &str,
 ) -> JsResult<String> {
-    exact_to_native(
-        &expression.replace_all_for_string(
-            &JsString::from_utf8(input),
-            &JsString::from_utf8(replacement),
-        )?,
-        "regular-expression replacement result",
-    )
+    if !expression.global() { return Err(type_error("String.prototype.replaceAll requires a global RegExp")); }
+    regexp_replace_native(expression, input, replacement)
 }
 
 pub fn regexp_try_replace_native_with<E, F>(
@@ -513,11 +533,16 @@ where
     E: From<JsError>,
     F: Fn(JsArray<JsValue>) -> Result<String, E>,
 {
-    let exact_input = JsString::from_utf8(input);
-    let result = expression.try_replace_with(&exact_input, |arguments| {
-        replacer(arguments).map(|value| JsString::from_utf8(&value))
-    })?;
-    exact_to_native(&result, "regular-expression replacement result").map_err(E::from)
+    let matches = operations::collect(expression, input)?;
+    let mut output = String::with_capacity(input.len());
+    let mut copied = 0;
+    for found in matches {
+        output.push_str(&input[copied..found.start()]);
+        output.push_str(&replacer(operations::replacement_arguments(input, &found))?);
+        copied = found.end();
+    }
+    output.push_str(&input[copied..]);
+    Ok(output)
 }
 
 pub fn regexp_try_replace_all_for_string_native_with<E, F>(
@@ -529,25 +554,45 @@ where
     E: From<JsError>,
     F: Fn(JsArray<JsValue>) -> Result<String, E>,
 {
-    let exact_input = JsString::from_utf8(input);
-    let result = expression.try_replace_all_for_string_with(&exact_input, |arguments| {
-        replacer(arguments).map(|value| JsString::from_utf8(&value))
-    })?;
-    exact_to_native(&result, "regular-expression replacement result").map_err(E::from)
+    if !expression.global() { return Err(type_error("String.prototype.replaceAll requires a global RegExp").into()); }
+    regexp_try_replace_native_with(expression, input, replacer)
 }
 
 pub fn regexp_split_native(
     expression: &JsRegExp,
     input: &str,
     limit: Option<f64>,
-) -> JsResult<JsArray<String>> {
-    exact_array_to_native(
-        expression.split(&JsString::from_utf8(input), limit)?,
-        "regular-expression split result",
-    )
+) -> JsResult<JsArray<Option<String>>> {
+    let maximum = super::to_uint32(limit.unwrap_or(u32::MAX as f64)) as usize;
+    let mut output = Vec::new();
+    if maximum == 0 { return Ok(JsArray::new()); }
+    if input.is_empty() {
+        if operations::find(expression, input, 0, true)?.is_none() { output.push(Some(String::new())); }
+        return Ok(super::array_from_optional(output));
+    }
+    let mut segment = 0;
+    let mut cursor = 0;
+    while cursor < input.len() {
+        let Some(found) = operations::find(expression, input, cursor, true)? else {
+            cursor = operations::advance(input, cursor);
+            continue;
+        };
+        if found.end() == segment { cursor = operations::advance(input, cursor); continue; }
+        output.push(Some(input[segment..cursor].to_owned()));
+        if output.len() >= maximum { break; }
+        for capture in &found.captures {
+            output.push(capture.clone().map(|span| input[span].to_owned()));
+            if output.len() >= maximum { break; }
+        }
+        if output.len() >= maximum { break; }
+        segment = found.end();
+        cursor = found.end();
+    }
+    if output.len() < maximum { output.push(Some(input[segment..].to_owned())); }
+    Ok(super::array_from_optional(output))
 }
 
-pub fn regexp_split_all_native(expression: &JsRegExp, input: &str) -> JsResult<JsArray<String>> {
+pub fn regexp_split_all_native(expression: &JsRegExp, input: &str) -> JsResult<JsArray<Option<String>>> {
     regexp_split_native(expression, input, None)
 }
 
@@ -555,12 +600,12 @@ pub fn regexp_split_with_limit_native(
     expression: &JsRegExp,
     input: &str,
     limit: f64,
-) -> JsResult<JsArray<String>> {
+) -> JsResult<JsArray<Option<String>>> {
     regexp_split_native(expression, input, Some(limit))
 }
 
 pub fn regexp_search_native(expression: &JsRegExp, input: &str) -> JsResult<f64> {
-    expression.search(&JsString::from_utf8(input))
+    Ok(operations::find(expression, input, 0, expression.sticky())?.map_or(-1.0, |found| found.start() as f64))
 }
 
 pub fn regexp_match_string_native(
@@ -632,7 +677,7 @@ pub fn string_search_regexp_native(input: &str, expression: &JsRegExp) -> JsResu
     regexp_search_native(expression, input)
 }
 
-pub fn string_split_regexp_native(input: &str, expression: &JsRegExp) -> JsResult<JsArray<String>> {
+pub fn string_split_regexp_native(input: &str, expression: &JsRegExp) -> JsResult<JsArray<Option<String>>> {
     regexp_split_all_native(expression, input)
 }
 
@@ -640,7 +685,7 @@ pub fn string_split_regexp_with_limit_native(
     input: &str,
     expression: &JsRegExp,
     limit: f64,
-) -> JsResult<JsArray<String>> {
+) -> JsResult<JsArray<Option<String>>> {
     regexp_split_with_limit_native(expression, input, limit)
 }
 
@@ -679,9 +724,7 @@ pub fn regexp_replacement_argument_string_native(
     index: usize,
 ) -> JsResult<String> {
     match arguments.get(index) {
-        Some(JsValue::String(value)) => {
-            exact_to_native(&value, "regular-expression replacement callback argument")
-        }
+        Some(JsValue::String(value)) => Ok(value),
         _ => unreachable!("replacement callback string slot violates its closed runtime ABI"),
     }
 }
@@ -719,95 +762,6 @@ pub fn regexp_named_indices_set_native(
 
 pub fn regexp_named_indices_delete_native(groups: &RegExpNamedIndices, name: &str) -> bool {
     groups.delete(name)
-}
-
-fn exact_exec_array_to_native(value: JsRegExpExecArray) -> JsResult<RegExpExecArray> {
-    Ok(RegExpExecArray {
-        values: exact_array_to_native(value.values, "regular-expression capture")?,
-        index: value.index,
-        input: exact_to_native(&value.input, "RegExpExecArray.input")?,
-        groups: exact_named_groups_to_native(value.groups)?,
-        indices: exact_indices_to_native(value.indices)?,
-    })
-}
-
-fn exact_match_array_to_native(value: JsRegExpMatchArray) -> JsResult<RegExpMatchArray> {
-    Ok(RegExpMatchArray {
-        values: exact_array_to_native(value.values, "regular-expression capture")?,
-        index: value.index,
-        input: value
-            .input
-            .map(|input| exact_to_native(&input, "RegExpMatchArray.input"))
-            .transpose()?,
-        groups: exact_named_groups_to_native(value.groups)?,
-        indices: exact_indices_to_native(value.indices)?,
-    })
-}
-
-fn exact_indices_to_native(value: Option<JsRegExpIndices>) -> JsResult<Option<RegExpIndices>> {
-    value
-        .map(|value| {
-            Ok(RegExpIndices {
-                values: value.values,
-                groups: exact_named_indices_to_native(value.groups)?,
-            })
-        })
-        .transpose()
-}
-
-fn exact_named_groups_to_native(
-    value: Option<JsRegExpNamedGroups>,
-) -> JsResult<Option<RegExpNamedGroups>> {
-    value
-        .map(|value| {
-            let mut converted = BTreeMap::new();
-            for (name, group) in value.values.borrow().iter() {
-                converted.insert(
-                    exact_to_native(name, "regular-expression group name")?,
-                    group
-                        .as_ref()
-                        .map(|group| exact_to_native(group, "named regular-expression capture"))
-                        .transpose()?,
-                );
-            }
-            Ok(RegExpNamedGroups {
-                values: Rc::new(RefCell::new(converted)),
-            })
-        })
-        .transpose()
-}
-
-fn exact_named_indices_to_native(
-    value: Option<JsRegExpNamedIndices>,
-) -> JsResult<Option<RegExpNamedIndices>> {
-    value
-        .map(|value| {
-            let mut converted = BTreeMap::new();
-            for (name, indices) in value.values.borrow().iter() {
-                converted.insert(
-                    exact_to_native(name, "regular-expression group name")?,
-                    *indices,
-                );
-            }
-            Ok(RegExpNamedIndices {
-                values: Rc::new(RefCell::new(converted)),
-            })
-        })
-        .transpose()
-}
-
-fn exact_array_to_native(
-    values: JsArray<JsString>,
-    context: &'static str,
-) -> JsResult<JsArray<String>> {
-    let length = values.len();
-    let mut present = Vec::new();
-    for (index, value) in values.values().into_iter().enumerate() {
-        if let Some(value) = value {
-            present.push((index, exact_to_native(&value, context)?));
-        }
-    }
-    Ok(JsArray::from_sparse(length, present))
 }
 
 fn exact_to_native(value: &JsString, context: &'static str) -> JsResult<String> {

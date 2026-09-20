@@ -32,11 +32,10 @@ impl<T> JsArray<T> {
         F: FnMut(T, f64, Self) -> Result<U, E>,
     {
         let length = self.len();
-        let output = JsArray::with_length(length);
+        let output = JsArray::with_capacity(length);
         for index in 0..length {
-            if let Some(value) = self.get(index) {
-                output.set(index, mapper(value, index as f64, self.clone())?);
-            }
+            let value = self.get(index).expect("Array.map cannot create holes after its source is shortened");
+            output.push(mapper(value, index as f64, self.clone())?);
         }
         Ok(output)
     }

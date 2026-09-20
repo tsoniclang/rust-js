@@ -348,8 +348,17 @@ impl<T: TypedElement> TypedArray<T> {
     pub fn fill(&self, value: f64, start: f64, end: Option<f64>) -> Self {
         let (start, end) = normalized_range(self.view.length, start, end);
         let value = T::from_number(value);
-        for index in start..end {
-            self.set_usize(index, value);
+        let mut storage = self.view.buffer.as_mut_bytes();
+        let bytes = &mut storage[self.view.byte_offset + start * T::BYTES_PER_ELEMENT
+            ..self.view.byte_offset + end * T::BYTES_PER_ELEMENT];
+        if !bytes.is_empty() {
+            value.write_bytes(&mut bytes[..T::BYTES_PER_ELEMENT]);
+            let mut filled = T::BYTES_PER_ELEMENT;
+            while filled < bytes.len() {
+                let count = filled.min(bytes.len() - filled);
+                bytes.copy_within(..count, filled);
+                filled += count;
+            }
         }
         self.clone()
     }
@@ -438,6 +447,18 @@ impl<T: TypedElement> TypedArray<T> {
         source: &TypedArray<U>,
         offset: f64,
     ) -> JsResult<()> {
+        if T::KIND == U::KIND && T::BYTES_PER_ELEMENT == U::BYTES_PER_ELEMENT {
+            let offset = to_index(offset)?;
+            if offset.checked_add(source.view.length).is_none_or(|end| end > self.view.length) {
+                return Err(range_error("typed array set source out of bounds"));
+            }
+            self.view.buffer.copy_bytes_from(
+                self.view.byte_offset + offset * T::BYTES_PER_ELEMENT,
+                &source.view.buffer,
+                source.view.byte_offset..source.view.byte_offset + source.view.length * U::BYTES_PER_ELEMENT,
+            );
+            return Ok(());
+        }
         self.set_from_numbers(
             (0..source.view.length)
                 .map(|index| source.get_usize(index).unwrap_or_default().to_number()),
@@ -448,9 +469,9 @@ impl<T: TypedElement> TypedArray<T> {
     pub fn slice(&self, start: f64, end: Option<f64>) -> Self {
         let (start, end) = normalized_range(self.view.length, start, end);
         let result = Self::new((end - start) as f64).expect("normalized typed array length");
-        for (target, source) in (start..end).enumerate() {
-            result.set_usize(target, self.get_usize(source).unwrap_or_default());
-        }
+        result.view.buffer.copy_bytes_from(0, &self.view.buffer,
+            self.view.byte_offset + start * T::BYTES_PER_ELEMENT
+                ..self.view.byte_offset + end * T::BYTES_PER_ELEMENT);
         result
     }
 

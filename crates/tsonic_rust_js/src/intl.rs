@@ -531,69 +531,65 @@ impl IntlNumberFormat {
     }
 
     pub fn format<Value: IntlNumberInput>(&self, value: Value) -> String {
-        self.format_to_parts(value)
-            .values()
-            .into_iter()
-            .flatten()
-            .map(|part| part.value)
-            .collect::<Vec<_>>()
-            .concat()
+        let mut output = String::new();
+        self.visit_parts(value, |_, text| output.push_str(text));
+        output
     }
 
     pub fn format_to_parts<Value: IntlNumberInput>(
         &self,
         value: Value,
     ) -> JsArray<IntlNumberFormatPart> {
+        let mut parts = Vec::new();
+        self.visit_parts(value, |kind, text| parts.push(IntlNumberFormatPart::new(kind, text)));
+        JsArray::from_dense(parts)
+    }
+
+    fn visit_parts<Value: IntlNumberInput>(&self, value: Value, mut append: impl FnMut(&str, &str)) {
         let (text, negative_zero) = value.into_intl_decimal();
         if text == "NaN" {
-            return JsArray::from_dense(vec![IntlNumberFormatPart::new("nan", "NaN")]);
+            append("nan", "NaN");
+            return;
         }
         if text == "Infinity" || text == "-Infinity" {
-            let mut parts = Vec::new();
             if text.starts_with('-') {
-                parts.push(IntlNumberFormatPart::new("minusSign", "-"));
+                append("minusSign", "-");
             }
-            parts.push(IntlNumberFormatPart::new("infinity", "∞"));
-            return JsArray::from_dense(parts);
+            append("infinity", "∞");
+            return;
         }
         let negative = text.starts_with('-') || negative_zero;
         let (integer, fraction) = self
             .precision
             .format(text.trim_start_matches('-'), self.style == "percent");
-        let groups = if self.use_grouping.is_some()
-            && (self.use_grouping.as_deref() != Some("min2") || integer.len() > 4)
-        {
-            group_integer(&integer)
-        } else {
-            vec![integer]
-        };
-        let mut parts = Vec::new();
         if negative {
-            parts.push(IntlNumberFormatPart::new("minusSign", "-"));
+            append("minusSign", "-");
         }
         if self.style == "currency" {
-            parts.push(IntlNumberFormatPart::new(
-                "currency",
-                self.currency_label.as_deref().unwrap_or_default(),
-            ));
+            append("currency", self.currency_label.as_deref().unwrap_or_default());
             if self.currency_display == "code" || self.currency_display == "name" {
-                parts.push(IntlNumberFormatPart::new("literal", " "));
+                append("literal", " ");
             }
         }
-        for (index, group) in groups.into_iter().enumerate() {
-            if index > 0 {
-                parts.push(IntlNumberFormatPart::new("group", ","));
+        if self.use_grouping.is_some()
+            && (self.use_grouping.as_deref() != Some("min2") || integer.len() > 4)
+        {
+            let first = match integer.len() % 3 { 0 => 3, count => count };
+            append("integer", &integer[..first]);
+            for group in integer[first..].as_bytes().chunks(3) {
+                append("group", ",");
+                append("integer", std::str::from_utf8(group).expect("decimal digits are ASCII"));
             }
-            parts.push(IntlNumberFormatPart::new("integer", group));
+        } else {
+            append("integer", &integer);
         }
         if !fraction.is_empty() {
-            parts.push(IntlNumberFormatPart::new("decimal", "."));
-            parts.push(IntlNumberFormatPart::new("fraction", fraction));
+            append("decimal", ".");
+            append("fraction", &fraction);
         }
         if self.style == "percent" {
-            parts.push(IntlNumberFormatPart::new("percentSign", "%"));
+            append("percentSign", "%");
         }
-        JsArray::from_dense(parts)
     }
 
     pub fn resolved_options(&self) -> IntlResolvedNumberFormatOptions {
@@ -663,10 +659,7 @@ impl IntlNumberFormat {
             JsValue::Undefined => Some("auto".to_owned()),
             JsValue::Bool(false) => None,
             JsValue::Bool(true) => Some("always".to_owned()),
-            JsValue::String(value) => match value
-                .to_utf8()
-                .map_err(|_| range_error("Invalid grouping strategy"))?
-                .as_str()
+            JsValue::String(value) => match value.as_str()
             {
                 "auto" => Some("auto".to_owned()),
                 "always" => Some("always".to_owned()),
@@ -872,10 +865,7 @@ fn option_value(options: &JsValue, name: &str) -> JsResult<JsValue> {
 fn string_option(options: &JsValue, name: &str) -> JsResult<Option<String>> {
     match option_value(options, name)? {
         JsValue::Undefined => Ok(None),
-        JsValue::String(value) => value
-            .to_utf8()
-            .map(Some)
-            .map_err(|_| type_error(format!("Intl option '{name}' is not a native string"))),
+        JsValue::String(value) => Ok(Some(value)),
         _ => Err(type_error(format!("Intl option '{name}' must be a string"))),
     }
 }
@@ -1063,21 +1053,6 @@ fn currency_value(currency: &str, display: &str) -> JsResult<String> {
         },
     };
     Ok(value)
-}
-
-fn group_integer(value: &str) -> Vec<String> {
-    let first = value.len() % 3;
-    let mut groups = Vec::new();
-    let mut index = 0;
-    if first > 0 {
-        groups.push(value[..first].to_owned());
-        index = first;
-    }
-    while index < value.len() {
-        groups.push(value[index..index + 3].to_owned());
-        index += 3;
-    }
-    groups
 }
 
 fn numeric_string_compare(left: &str, right: &str) -> std::cmp::Ordering {

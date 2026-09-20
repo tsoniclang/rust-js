@@ -71,6 +71,25 @@ impl<'a, T> JsPromise<'a, T> {
 }
 
 impl<'a, T: Clone + 'a> JsPromise<'a, T> {
+    pub async fn into_result(self) -> TsonicResult<T> {
+        match Rc::try_unwrap(self.state) {
+            Ok(state) => match state.into_inner() {
+                PromiseState::Settled(result) => result,
+                PromiseState::Pending { future, .. } => {
+                    future.expect("an exclusively owned Promise cannot be polling").await
+                }
+            },
+            Err(state) => Self { state }.await_result().await,
+        }
+    }
+
+    pub async fn into_value(self) -> T {
+        match self.into_result().await {
+            Ok(value) => value,
+            Err(error) => panic!("compiler-proven infallible Promise rejected: {error}"),
+        }
+    }
+
     fn poll_result(&self, context: &mut Context<'_>) -> Poll<TsonicResult<T>> {
         let future = {
             let mut state = self.state.borrow_mut();
@@ -254,9 +273,7 @@ pub fn promise_all_settled<'a, T: Clone + 'a>(
                 settled[index] = match value {
                     None => Some(PromiseSettledResult::Rejected(PromiseRejectedResult {
                         status: "rejected".to_string(),
-                        reason: JsValue::String(crate::JsString::from_utf8(
-                            "Promise.allSettled received a sparse Promise array",
-                        )),
+                        reason: JsValue::String(("Promise.allSettled received a sparse Promise array").to_owned()),
                     })),
                     Some(value) => match value.poll_result(context) {
                         Poll::Pending => None,
@@ -269,9 +286,7 @@ pub fn promise_all_settled<'a, T: Clone + 'a>(
                         Poll::Ready(Err(error)) => {
                             Some(PromiseSettledResult::Rejected(PromiseRejectedResult {
                                 status: "rejected".to_string(),
-                                reason: JsValue::String(crate::JsString::from_utf8(
-                                    &error.to_string(),
-                                )),
+                                reason: JsValue::String((&error.to_string()).to_owned()),
                             }))
                         }
                     },

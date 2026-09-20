@@ -77,19 +77,19 @@ pub fn from_vec<T: Clone>(values: &[T]) -> super::JsArray<T> {
 }
 
 pub fn from_dense_array<T: Clone>(values: &super::JsArray<T>) -> super::JsArray<T> {
-    values.copy_materialized(|| panic!("checked array density invariant violated"))
+    values.copy_materialized()
 }
 
 pub fn from_optional_array<T: Clone>(
     values: &super::JsArray<Option<T>>,
 ) -> super::JsArray<Option<T>> {
-    values.copy_materialized(|| None)
+    values.copy_materialized()
 }
 
 pub fn from_undefined_array(
     values: &super::JsArray<tsonic_rust_runtime::Undefined>,
 ) -> super::JsArray<tsonic_rust_runtime::Undefined> {
-    values.copy_materialized(|| tsonic_rust_runtime::Undefined)
+    values.copy_materialized()
 }
 
 pub fn from_vec_map_zero<T: Clone, U, F>(values: &[T], mut callback: F) -> super::JsArray<U>

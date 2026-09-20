@@ -1,4 +1,4 @@
-//! UTF-16-aware JS string helpers over valid Rust `str`.
+//! Native UTF-8 string operations exposed by the source profile.
 
 use tsonic_rust_runtime::{JsError, JsErrorKind};
 use unicode_normalization::UnicodeNormalization;
@@ -6,8 +6,6 @@ use unicode_normalization::UnicodeNormalization;
 use crate::array::JsArray;
 use crate::coercion::{absolute_index, relative_index, to_integer_or_infinity, to_length};
 use crate::errors::{type_error, JsResult};
-use crate::exact_string;
-use crate::js_string::to_native_string;
 use crate::number::JsNumberValue;
 use crate::{JsString, JsValue};
 
@@ -69,70 +67,52 @@ impl JsToString for str {
     }
 }
 
-fn utf16_units(value: &str) -> Vec<u16> {
-    value.encode_utf16().collect()
-}
-
-fn from_units(units: &[u16]) -> Result<String, JsError> {
-    String::from_utf16(units).map_err(|_| {
-        JsError::new(
-            JsErrorKind::Unsupported,
-            "a JavaScript string containing an unpaired UTF-16 surrogate requires a UTF-16 string carrier",
-        )
+fn native_slice(value: &str, start: usize, end: usize) -> Result<&str, JsError> {
+    value.get(start..end).ok_or_else(|| {
+        crate::errors::range_error("string range must start and end at UTF-8 character boundaries")
     })
 }
 
 pub fn js_len(value: &str) -> usize {
-    value.encode_utf16().count()
+    value.len()
 }
 
 pub fn char_at(value: &str, index: f64) -> Result<String, JsError> {
-    let units = utf16_units(value);
-    match absolute_index(index, units.len()) {
-        Some(pos) => from_units(&[units[pos]]),
+    match absolute_index(index, value.len()) {
+        Some(position) => Ok(native_slice(value, position, value.len())?
+            .chars()
+            .next()
+            .map(|character| character.to_string())
+            .unwrap_or_default()),
         None => Ok(String::new()),
     }
 }
 
 pub fn at(value: &str, index: f64) -> Result<Option<String>, JsError> {
-    let units = utf16_units(value);
-    relative_index(index, units.len())
-        .map(|pos| from_units(&[units[pos]]))
+    relative_index(index, value.len())
+        .map(|position| char_at(value, position as f64))
         .transpose()
 }
 
 pub fn char_code_at(value: &str, index: f64) -> f64 {
-    let units = utf16_units(value);
-    absolute_index(index, units.len())
-        .map(|pos| units[pos] as f64)
-        .unwrap_or(f64::NAN)
+    code_point_at(value, index).unwrap_or(f64::NAN)
 }
 
 pub fn code_point_at(value: &str, index: f64) -> Option<f64> {
-    let units = utf16_units(value);
-    let pos = absolute_index(index, units.len())?;
-    let first = units[pos];
-    if (0xD800..=0xDBFF).contains(&first) && pos + 1 < units.len() {
-        let second = units[pos + 1];
-        if (0xDC00..=0xDFFF).contains(&second) {
-            let pair = (u32::from(first - 0xD800) << 10) + u32::from(second - 0xDC00) + 0x10000;
-            return Some(f64::from(pair));
-        }
-    }
-    Some(f64::from(first))
+    let position = absolute_index(index, value.len())?;
+    let character = value.get(position..)?.chars().next()?;
+    Some(f64::from(u32::from(character)))
 }
 
 pub fn slice(value: &str, start: f64, end: Option<f64>) -> Result<String, JsError> {
-    let units = utf16_units(value);
-    let from = crate::coercion::normalize_slice_index(start, units.len());
+    let from = crate::coercion::normalize_slice_index(start, value.len());
     let to = end
-        .map(|value| crate::coercion::normalize_slice_index(value, units.len()))
-        .unwrap_or(units.len());
-    // JS slice does not swap start and end. If normalized start > end, result is empty.
+        .map(|position| crate::coercion::normalize_slice_index(position, value.len()))
+        .unwrap_or(value.len());
     if from > to {
         return Ok(String::new());
     }
-    from_units(&units[from..to])
+    native_slice(value, from, to).map(str::to_owned)
 }
 
 pub fn slice_to(value: &str, start: f64, end: f64) -> Result<String, JsError> {
@@ -140,15 +120,14 @@ pub fn slice_to(value: &str, start: f64, end: f64) -> Result<String, JsError> {
 }
 
 fn substring_with_end(value: &str, start: f64, end: Option<f64>) -> Result<String, JsError> {
-    let units = utf16_units(value);
-    let mut start = clamped_position(start, units.len());
+    let mut start = clamped_position(start, value.len());
     let mut end = end
-        .map(|value| clamped_position(value, units.len()))
-        .unwrap_or(units.len());
+        .map(|position| clamped_position(position, value.len()))
+        .unwrap_or(value.len());
     if start > end {
         std::mem::swap(&mut start, &mut end);
     }
-    from_units(&units[start..end])
+    native_slice(value, start, end).map(str::to_owned)
 }
 
 pub fn substring(value: &str, start: f64, end: f64) -> Result<String, JsError> {
@@ -156,14 +135,13 @@ pub fn substring(value: &str, start: f64, end: f64) -> Result<String, JsError> {
 }
 
 fn substr_with_length(value: &str, start: f64, length: Option<f64>) -> Result<String, JsError> {
-    let units = utf16_units(value);
     let start = to_integer_or_infinity(start);
     let start = if start == f64::NEG_INFINITY {
         0
     } else if start < 0.0 {
-        (units.len() as f64 + start).max(0.0) as usize
+        (value.len() as f64 + start).max(0.0) as usize
     } else {
-        start.min(units.len() as f64) as usize
+        start.min(value.len() as f64) as usize
     };
     let length = length.map(to_integer_or_infinity);
     if length.is_some_and(|value| value <= 0.0) {
@@ -171,62 +149,45 @@ fn substr_with_length(value: &str, start: f64, length: Option<f64>) -> Result<St
     }
     let end = length
         .filter(|value| value.is_finite())
-        .map(|length| start.saturating_add(length as usize).min(units.len()))
-        .unwrap_or(units.len());
-    from_units(&units[start..end])
+        .map(|length| start.saturating_add(length as usize).min(value.len()))
+        .unwrap_or(value.len());
+    native_slice(value, start, end).map(str::to_owned)
 }
 
 pub fn index_of(value: &str, search: &str, position: f64) -> isize {
-    let position = clamped_position(position, js_len(value));
+    let mut position = clamped_position(position, value.len());
     if search.is_empty() {
         return position as isize;
     }
-    let haystack = utf16_units(value);
-    let needle = utf16_units(search);
-    if needle.is_empty() || haystack.is_empty() || needle.len() > haystack.len() {
-        return -1;
+    while !value.is_char_boundary(position) {
+        position += 1;
     }
-
-    let start = position.min(haystack.len());
-
-    (start..=haystack.len().saturating_sub(needle.len()))
-        .find(|&i| haystack[i..i + needle.len()] == needle[..])
-        .map(|i| i as isize)
+    value[position..]
+        .find(search)
+        .map(|offset| (position + offset) as isize)
         .unwrap_or(-1)
 }
 
 fn last_index_of_with_position(value: &str, search: &str, position: Option<f64>) -> isize {
-    let haystack = utf16_units(value);
-    let needle = utf16_units(search);
     let position = position
-        .map(|value| clamped_position(value, haystack.len()))
-        .unwrap_or(haystack.len());
-    if needle.is_empty() {
+        .map(|position| clamped_position(position, value.len()))
+        .unwrap_or(value.len());
+    if search.is_empty() {
         return position as isize;
     }
-    if needle.len() > haystack.len() {
+    if search.len() > value.len() {
         return -1;
     }
-
-    let max_index = haystack.len() as isize - needle.len() as isize;
-    if max_index < 0 {
-        return -1;
+    let mut end = position.saturating_add(search.len()).min(value.len());
+    while !value.is_char_boundary(end) {
+        end -= 1;
     }
-
-    let end = position.min(max_index as usize);
-    for i in (0..=end).rev() {
-        if haystack[i..i + needle.len()] == needle[..] {
-            return i as isize;
-        }
-    }
-    -1
+    value[..end].rfind(search).map(|offset| offset as isize).unwrap_or(-1)
 }
 
 pub fn starts_with(value: &str, search: &str, position: f64) -> bool {
-    let units = utf16_units(value);
-    let needle = utf16_units(search);
-    let start = clamped_position(position, units.len());
-    start + needle.len() <= units.len() && needle == units[start..start + needle.len()]
+    let start = clamped_position(position, value.len());
+    value.get(start..).is_some_and(|suffix| suffix.starts_with(search))
 }
 
 pub fn last_index_of(value: &str, search: &str, position: f64) -> isize {
@@ -234,15 +195,10 @@ pub fn last_index_of(value: &str, search: &str, position: f64) -> isize {
 }
 
 fn ends_with_position(value: &str, search: &str, end_position: Option<f64>) -> bool {
-    let units = utf16_units(value);
-    let needle = utf16_units(search);
     let end = end_position
-        .map(|end| clamped_position(end, units.len()))
-        .unwrap_or(units.len());
-    if needle.len() > end {
-        return false;
-    }
-    needle == units[end - needle.len()..end]
+        .map(|end| clamped_position(end, value.len()))
+        .unwrap_or(value.len());
+    value.get(..end).is_some_and(|prefix| prefix.ends_with(search))
 }
 
 pub fn includes(value: &str, search: &str, position: f64) -> bool {
@@ -250,15 +206,15 @@ pub fn includes(value: &str, search: &str, position: f64) -> bool {
 }
 
 pub fn includes_from_start(value: &str, search: &str) -> bool {
-    includes(value, search, 0.0)
+    value.contains(search)
 }
 
 pub fn starts_with_from_start(value: &str, search: &str) -> bool {
-    starts_with(value, search, 0.0)
+    value.starts_with(search)
 }
 
 pub fn ends_with_at_end(value: &str, search: &str) -> bool {
-    ends_with_position(value, search, None)
+    value.ends_with(search)
 }
 
 pub fn ends_with(value: &str, search: &str, end_position: f64) -> bool {
@@ -316,12 +272,6 @@ pub fn replace(value: &str, search: &str, replacement: &str) -> String {
 
 pub fn replace_all(value: &str, search: &str, replacement: &str) -> Result<String, JsError> {
     if search.is_empty() {
-        if value.chars().any(|character| character.len_utf16() > 1) {
-            return Err(JsError::new(
-                JsErrorKind::Unsupported,
-                "replaceAll with an empty search over astral text requires a UTF-16 string carrier",
-            ));
-        }
         let mut output = String::new();
         for (start, character) in value.char_indices() {
             append_replacement(
@@ -363,12 +313,7 @@ where
     E: From<JsError>,
     F: Fn(JsArray<JsValue>) -> Result<String, E>,
 {
-    let result = exact_string::try_replace_with(
-        &JsString::from_utf8(value),
-        &JsString::from_utf8(search),
-        |arguments| replacer(arguments).map(|replacement| JsString::from_utf8(&replacement)),
-    )?;
-    to_native_string(&result, "String.prototype.replace callback result").map_err(E::from)
+    replace_matches(value, search, replacer, false)
 }
 
 pub fn try_replace_with<E, F>(value: &str, search: &str, replacer: F) -> Result<String, E>
@@ -384,12 +329,28 @@ where
     E: From<JsError>,
     F: Fn(JsArray<JsValue>) -> Result<String, E>,
 {
-    let result = exact_string::try_replace_all_with(
-        &JsString::from_utf8(value),
-        &JsString::from_utf8(search),
-        |arguments| replacer(arguments).map(|replacement| JsString::from_utf8(&replacement)),
-    )?;
-    to_native_string(&result, "String.prototype.replaceAll callback result").map_err(E::from)
+    replace_matches(value, search, replacer, true)
+}
+
+fn replace_matches<E, F>(value: &str, search: &str, replacer: F, all: bool) -> Result<String, E>
+where
+    F: Fn(JsArray<JsValue>) -> Result<String, E>,
+{
+    let mut output = String::with_capacity(value.len());
+    let mut consumed = 0;
+    for (offset, matched) in value.match_indices(search) {
+        output.push_str(&value[consumed..offset]);
+        let arguments = JsArray::from_dense(vec![
+            JsValue::String((matched).to_owned()),
+            JsValue::Number(offset as f64),
+            JsValue::String((value).to_owned()),
+        ]);
+        output.push_str(&replacer(arguments)?);
+        consumed = offset + matched.len();
+        if !all { break; }
+    }
+    output.push_str(&value[consumed..]);
+    Ok(output)
 }
 
 pub fn try_replace_all_with<E, F>(value: &str, search: &str, replacer: F) -> Result<String, E>
@@ -445,11 +406,11 @@ fn split_with_limit(
         return Ok(JsArray::new());
     }
     if separator.is_empty() {
-        let parts = utf16_units(value)
-            .into_iter()
-            .map(|unit| from_units(&[unit]))
+        let parts = value
+            .chars()
+            .map(|character| character.to_string())
             .take(limit)
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Vec<_>>();
         return Ok(JsArray::from_dense(parts));
     }
     let parts = value
@@ -520,8 +481,7 @@ fn pad(
     at_start: bool,
 ) -> Result<String, JsError> {
     let target_length = to_length(target_length);
-    let value_units = utf16_units(value);
-    if target_length <= value_units.len() as u64 {
+    if target_length <= value.len() as u64 {
         return Ok(value.to_string());
     }
     let filler = filler.unwrap_or(" ");
@@ -530,48 +490,34 @@ fn pad(
     }
     let target_length = usize::try_from(target_length)
         .map_err(|_| crate::errors::range_error("invalid string length"))?;
-    let needed = target_length - value_units.len();
-    let filler_units = utf16_units(filler);
-    let mut padding = Vec::new();
-    padding
-        .try_reserve_exact(needed)
-        .map_err(|_| JsError::new(JsErrorKind::RangeError, "invalid string length"))?;
-    let repetitions = needed / filler_units.len();
-    let remainder = needed % filler_units.len();
-    for _ in 0..repetitions {
-        padding.extend_from_slice(&filler_units);
-    }
-    padding.extend_from_slice(&filler_units[..remainder]);
-
-    let mut output = Vec::new();
+    let needed = target_length - value.len();
+    let repetitions = needed / filler.len();
+    let remainder = native_slice(filler, 0, needed % filler.len())?;
+    let mut output = String::new();
     output
         .try_reserve_exact(target_length)
         .map_err(|_| JsError::new(JsErrorKind::RangeError, "invalid string length"))?;
-    if at_start {
-        output.extend_from_slice(&padding);
-        output.extend_from_slice(&value_units);
-    } else {
-        output.extend_from_slice(&value_units);
-        output.extend_from_slice(&padding);
+    if !at_start {
+        output.push_str(value);
     }
-    String::from_utf16(&output).map_err(|_| {
-        JsError::new(
-            JsErrorKind::Unsupported,
-            "padding that produces a lone UTF-16 surrogate requires a UTF-16 string carrier",
-        )
-    })
+    for _ in 0..repetitions {
+        output.push_str(filler);
+    }
+    output.push_str(remainder);
+    if at_start {
+        output.push_str(value);
+    }
+    Ok(output)
 }
 
 pub fn trim(value: &str) -> String {
-    value.trim_matches(is_ecmascript_whitespace).to_string()
+    value.trim().to_string()
 }
 pub fn trim_start(value: &str) -> String {
-    value
-        .trim_start_matches(is_ecmascript_whitespace)
-        .to_string()
+    value.trim_start().to_string()
 }
 pub fn trim_end(value: &str) -> String {
-    value.trim_end_matches(is_ecmascript_whitespace).to_string()
+    value.trim_end().to_string()
 }
 
 pub fn to_lower_case(value: &str) -> String {
@@ -620,15 +566,11 @@ pub fn concat(value: &str, strings: &[&str]) -> String {
 }
 
 pub fn from_char_code(code_units: &[f64]) -> Result<String, JsError> {
-    let code_units = code_units
-        .iter()
-        .map(|value| to_uint32(*value) as u16)
-        .collect::<Vec<_>>();
-    from_units(&code_units)
+    from_code_point(code_units)
 }
 
 pub fn from_code_point(code_points: &[f64]) -> Result<String, JsError> {
-    let mut units = Vec::new();
+    let mut output = String::new();
     for value in code_points {
         if !value.is_finite() || value.fract() != 0.0 || *value < 0.0 || *value > 0x10FFFF as f64 {
             return Err(JsError::new(
@@ -636,16 +578,11 @@ pub fn from_code_point(code_points: &[f64]) -> Result<String, JsError> {
                 "fromCodePoint expects an integer between 0 and 0x10FFFF",
             ));
         }
-        let code_point = *value as u32;
-        if code_point <= 0xffff {
-            units.push(code_point as u16);
-        } else {
-            let scalar = code_point - 0x1_0000;
-            units.push(0xd800 | ((scalar >> 10) as u16));
-            units.push(0xdc00 | ((scalar & 0x3ff) as u16));
-        }
+        let character = char::from_u32(*value as u32)
+            .ok_or_else(|| crate::errors::range_error("native string character must be a Unicode scalar"))?;
+        output.push(character);
     }
-    from_units(&units)
+    Ok(output)
 }
 
 pub fn raw(raw_parts: &[&str], substitutions: &[&str]) -> String {
@@ -657,21 +594,4 @@ pub fn raw(raw_parts: &[&str], substitutions: &[&str]) -> String {
         }
     }
     out
-}
-
-fn is_ecmascript_whitespace(value: char) -> bool {
-    matches!(
-        value as u32,
-        0x0009..=0x000d
-            | 0x0020
-            | 0x00a0
-            | 0x1680
-            | 0x2000..=0x200a
-            | 0x2028
-            | 0x2029
-            | 0x202f
-            | 0x205f
-            | 0x3000
-            | 0xfeff
-    )
 }
