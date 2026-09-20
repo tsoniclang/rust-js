@@ -106,6 +106,33 @@ fn lazy_array_identity_is_shared_before_and_after_mutation() {
 }
 
 #[test]
+fn native_string_join_and_custom_formatters_preserve_order() {
+    struct Formatted<'a>(&'a Cell<usize>);
+
+    impl string::JsToString for Formatted<'_> {
+        fn to_js_string(&self) -> String {
+            self.0.set(self.0.get() + 1);
+            self.0.get().to_string()
+        }
+    }
+
+    let count = Cell::new(0);
+    let values = JsArray::from_dense(vec![Formatted(&count), Formatted(&count)]);
+    assert_eq!(values.join("|"), "1|2");
+    assert_eq!(count.get(), 2);
+    for strings in [
+        vec![],
+        vec![String::new()],
+        vec!["café".repeat(32), "😀".repeat(32)],
+    ] {
+        let array = JsArray::from_dense(strings.clone());
+        for separator in ["", "|", "🌍"] {
+            assert_eq!(array.join(separator), strings.join(separator));
+        }
+    }
+}
+
+#[test]
 fn native_strings_keep_bytes_and_explicit_utf16_remains_distinct() {
     let text = String::from("café😀");
     let address = text.as_ptr();

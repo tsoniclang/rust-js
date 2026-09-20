@@ -623,14 +623,7 @@ impl<T> JsArray<T> {
         T: crate::string::JsToString,
     {
         let state = self.state.borrow();
-        let mut output = String::new();
-        for (index, value) in state.values.iter().enumerate() {
-            if index != 0 {
-                output.push_str(separator);
-            }
-            value.write_js_string(&mut output);
-        }
-        output
+        T::join_js_strings(&state.values, separator)
     }
 
     pub fn join_default(&self) -> String
