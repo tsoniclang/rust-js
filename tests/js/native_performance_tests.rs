@@ -29,6 +29,27 @@ impl AsRef<str> for CountedString {
 }
 
 #[test]
+fn borrowed_elements_retain_storage_until_the_guard_is_released() {
+    struct NonClone(String);
+    let values = JsArray::from_dense(vec![NonClone(String::from("original"))]);
+    let alias = values.clone();
+    let guard = values.borrow_number_element(0).unwrap();
+    assert_eq!(guard.0, "original");
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        alias.set(0, NonClone(String::from("not admitted")));
+    }))
+    .is_err());
+    drop(guard);
+    alias.set(0, NonClone(String::from("changed")));
+    assert_eq!(values.borrow_number_element(0).unwrap().0, "changed");
+    assert!(values.borrow_number_element(100).is_none());
+    alias.set_number(-1.5, NonClone(String::from("property")));
+    assert_eq!(values.borrow_number_element(-1.5).unwrap().0, "property");
+    assert!(values.borrow_number_element(f64::NAN).is_none());
+    assert!(values.borrow_number_element(f64::INFINITY).is_none());
+}
+
+#[test]
 fn scoped_reads_and_comparators_do_not_copy_string_elements() {
     let copies = Rc::new(Cell::new(0));
     let values = JsArray::from_dense(
@@ -39,12 +60,9 @@ fn scoped_reads_and_comparators_do_not_copy_string_elements() {
             })
             .into(),
     );
-    assert_eq!(
-        values.with_number_element(0, |value| value.unwrap().text.len()),
-        2
-    );
-    assert!(values.with_number_element(99.0, |value| value.is_none()));
-    assert!(values.with_number_element(-1.0, |value| value.is_none()));
+    assert_eq!(values.borrow_number_element(0).unwrap().text.len(), 2);
+    assert!(values.borrow_number_element(99.0).is_none());
+    assert!(values.borrow_number_element(-1.0).is_none());
     assert_eq!(copies.get(), 0);
     let alias = values.clone();
     values.sort_borrowed(|left, right| {
@@ -52,10 +70,7 @@ fn scoped_reads_and_comparators_do_not_copy_string_elements() {
         left.cmp(right) as i32 as f64
     });
     assert_eq!(copies.get(), 3);
-    assert_eq!(
-        values.with_number_element(0, |value| value.unwrap().text.clone()),
-        "a"
-    );
+    assert_eq!(values.borrow_number_element(0).unwrap().text, "a");
     values.sort_value_borrowed(|_| 0.0);
     values
         .try_sort_borrowed(|left, right| Ok::<_, ()>(left.cmp(right) as i32 as f64))

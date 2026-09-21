@@ -1,4 +1,4 @@
-use std::cell::{OnceCell, RefCell};
+use std::cell::{OnceCell, Ref, RefCell};
 use std::convert::Infallible;
 use std::rc::Rc;
 
@@ -282,23 +282,19 @@ impl<T> JsArray<T> {
             .find_map(|(candidate, value)| (candidate == &key).then(|| value.clone()))
     }
 
-    pub fn with_number_element<Result>(
-        &self,
-        index: impl Into<f64>,
-        read: impl FnOnce(Option<&T>) -> Result,
-    ) -> Result {
+    pub fn borrow_number_element(&self, index: impl Into<f64>) -> Option<Ref<'_, T>> {
         let index = index.into();
         if let Some(index) = canonical_array_index(index) {
-            return self.with_element(index, read);
+            return Ref::filter_map(self.state.borrow(), |state| state.values.get(index)).ok();
         }
         let key = crate::number::to_string(index);
-        let state = self.state.borrow();
-        read(
+        Ref::filter_map(self.state.borrow(), |state| {
             state
                 .numeric_properties
                 .iter()
-                .find_map(|(candidate, value)| (candidate == &key).then_some(value)),
-        )
+                .find_map(|(candidate, value)| (candidate == &key).then_some(value))
+        })
+        .ok()
     }
 
     pub fn at(&self, index: f64) -> Option<T>
