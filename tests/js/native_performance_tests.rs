@@ -7,6 +7,146 @@ use tsonic_rust_js::{
     json, regexp, string, JsArray, JsMap, JsObject, JsString, JsValue, Uint8Array,
 };
 
+struct CountedString {
+    text: String,
+    copies: Rc<Cell<usize>>,
+}
+
+impl Clone for CountedString {
+    fn clone(&self) -> Self {
+        self.copies.set(self.copies.get() + 1);
+        Self {
+            text: self.text.clone(),
+            copies: Rc::clone(&self.copies),
+        }
+    }
+}
+
+impl AsRef<str> for CountedString {
+    fn as_ref(&self) -> &str {
+        &self.text
+    }
+}
+
+#[test]
+fn borrowed_elements_retain_storage_until_the_guard_is_released() {
+    struct NonClone(String);
+    let values = JsArray::from_dense(vec![NonClone(String::from("original"))]);
+    let alias = values.clone();
+    let guard = values.borrow_number_element(0).unwrap();
+    assert_eq!(guard.0, "original");
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        alias.set(0, NonClone(String::from("not admitted")));
+    }))
+    .is_err());
+    drop(guard);
+    alias.set(0, NonClone(String::from("changed")));
+    assert_eq!(values.borrow_number_element(0).unwrap().0, "changed");
+    assert!(values.borrow_number_element(100).is_none());
+    alias.set_number(-1.5, NonClone(String::from("property")));
+    assert_eq!(values.borrow_number_element(-1.5).unwrap().0, "property");
+    assert!(values.borrow_number_element(f64::NAN).is_none());
+    assert!(values.borrow_number_element(f64::INFINITY).is_none());
+}
+
+#[test]
+fn scoped_reads_and_comparators_do_not_copy_string_elements() {
+    let copies = Rc::new(Cell::new(0));
+    let values = JsArray::from_dense(
+        ["cc", "a", "bb"]
+            .map(|text| CountedString {
+                text: text.to_string(),
+                copies: Rc::clone(&copies),
+            })
+            .into(),
+    );
+    assert_eq!(values.borrow_number_element(0).unwrap().text.len(), 2);
+    assert!(values.borrow_number_element(99.0).is_none());
+    assert!(values.borrow_number_element(-1.0).is_none());
+    assert_eq!(copies.get(), 0);
+    let alias = values.clone();
+    values.sort_borrowed(|left, right| {
+        assert_eq!(alias.len(), 3);
+        left.cmp(right) as i32 as f64
+    });
+    assert_eq!(copies.get(), 3);
+    assert_eq!(values.borrow_number_element(0).unwrap().text, "a");
+    values.sort_value_borrowed(|_| 0.0);
+    values
+        .try_sort_borrowed(|left, right| Ok::<_, ()>(left.cmp(right) as i32 as f64))
+        .unwrap();
+    values
+        .try_sort_value_borrowed(|_| Ok::<_, ()>(0.0))
+        .unwrap();
+    assert_eq!(copies.get(), 12);
+}
+
+#[test]
+fn borrowed_sort_snapshots_allow_reentry_and_preserve_failure_identity() {
+    let values = JsArray::from_dense(vec![String::from("b"), String::from("a")]);
+    let alias = values.clone();
+    let first = Cell::new(true);
+    values.sort_borrowed(|left, right| {
+        if first.replace(false) {
+            alias.push(String::from("tail"));
+        }
+        left.cmp(right) as i32 as f64
+    });
+    assert_eq!(values.values(), ["a", "b", "tail"]);
+    let failure = Rc::new("failure");
+    let error = values
+        .try_sort_borrowed(|_, _| Err::<f64, _>(Rc::clone(&failure)))
+        .unwrap_err();
+    assert!(Rc::ptr_eq(&error, &failure));
+    assert_eq!(values.values(), ["a", "b", "tail"]);
+}
+
+#[test]
+fn lazy_array_identity_is_shared_before_and_after_mutation() {
+    use tsonic_rust_runtime::{ObjectIdentity, ObjectIdentityCarrier};
+    let values = JsArray::from_dense(vec![String::from("café"), String::from("😀")]);
+    let alias = values.clone();
+    assert_eq!(values.join("|"), "café|😀");
+    assert!(ObjectIdentity::same(
+        values.object_identity(),
+        alias.object_identity()
+    ));
+    alias.set(0, String::from("changed"));
+    assert_eq!(values.join(""), "changed😀");
+    assert!(!ObjectIdentity::same(
+        values.object_identity(),
+        JsArray::<String>::new().object_identity()
+    ));
+    assert_eq!(JsArray::<String>::new().join("|"), "");
+}
+
+#[test]
+fn native_string_join_and_custom_formatters_preserve_order() {
+    struct Formatted<'a>(&'a Cell<usize>);
+
+    impl string::JsToString for Formatted<'_> {
+        fn to_js_string(&self) -> String {
+            self.0.set(self.0.get() + 1);
+            self.0.get().to_string()
+        }
+    }
+
+    let count = Cell::new(0);
+    let values = JsArray::from_dense(vec![Formatted(&count), Formatted(&count)]);
+    assert_eq!(values.join("|"), "1|2");
+    assert_eq!(count.get(), 2);
+    for strings in [
+        vec![],
+        vec![String::new()],
+        vec!["café".repeat(32), "😀".repeat(32)],
+    ] {
+        let array = JsArray::from_dense(strings.clone());
+        for separator in ["", "|", "🌍"] {
+            assert_eq!(array.join(separator), strings.join(separator));
+        }
+    }
+}
+
 #[test]
 fn native_strings_keep_bytes_and_explicit_utf16_remains_distinct() {
     let text = String::from("café😀");

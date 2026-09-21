@@ -35,6 +35,24 @@ impl std::iter::FusedIterator for NativeStringIterator {}
 /// JS-facing string value conversion contract used by dense array join and future array helpers.
 pub trait JsToString {
     fn to_js_string(&self) -> String;
+
+    fn write_js_string(&self, output: &mut String) {
+        output.push_str(&self.to_js_string());
+    }
+
+    fn join_js_strings(values: &[Self], separator: &str) -> String
+    where
+        Self: Sized,
+    {
+        let mut output = String::new();
+        for (index, value) in values.iter().enumerate() {
+            if index != 0 {
+                output.push_str(separator);
+            }
+            value.write_js_string(&mut output);
+        }
+        output
+    }
 }
 
 macro_rules! impl_js_to_string {
@@ -43,11 +61,30 @@ macro_rules! impl_js_to_string {
             fn to_js_string(&self) -> String {
                 self.to_string()
             }
+
+            fn write_js_string(&self, output: &mut String) {
+                use std::fmt::Write;
+                write!(output, "{self}").expect("formatting into String cannot fail");
+            }
         })+
     };
 }
 
-impl_js_to_string!(bool, i8, u8, i16, u16, i32, u32, i64, u64, isize, usize, String);
+impl_js_to_string!(bool, i8, u8, i16, u16, i32, u32, i64, u64, isize, usize);
+
+impl JsToString for String {
+    fn to_js_string(&self) -> String {
+        self.clone()
+    }
+
+    fn write_js_string(&self, output: &mut String) {
+        output.push_str(self);
+    }
+
+    fn join_js_strings(values: &[Self], separator: &str) -> String {
+        values.join(separator)
+    }
+}
 
 impl JsToString for f32 {
     fn to_js_string(&self) -> String {
@@ -64,6 +101,10 @@ impl JsToString for f64 {
 impl JsToString for str {
     fn to_js_string(&self) -> String {
         self.to_string()
+    }
+
+    fn write_js_string(&self, output: &mut String) {
+        output.push_str(self);
     }
 }
 

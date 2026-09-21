@@ -15,15 +15,31 @@ impl<T> JsArray<T> {
         T: Clone,
         F: FnMut(T) -> Result<f64, E>,
     {
-        self.try_sort_present_by(|left, _| compare(left))
+        self.try_sort_present_by(|left, _| compare(left.clone()))
     }
 
-    pub fn try_sort<E, F>(&self, compare: F) -> Result<Self, E>
+    pub fn try_sort<E, F>(&self, mut compare: F) -> Result<Self, E>
     where
         T: Clone,
         F: FnMut(T, T) -> Result<f64, E>,
     {
-        self.try_sort_present_by(compare)
+        self.try_sort_present_by(|left, right| compare(left.clone(), right.clone()))
+    }
+
+    pub fn try_sort_borrowed<E, F>(&self, mut compare: F) -> Result<Self, E>
+    where
+        T: Clone + AsRef<str>,
+        F: FnMut(&str, &str) -> Result<f64, E>,
+    {
+        self.try_sort_present_by(|left, right| compare(left.as_ref(), right.as_ref()))
+    }
+
+    pub fn try_sort_value_borrowed<E, F>(&self, mut compare: F) -> Result<Self, E>
+    where
+        T: Clone + AsRef<str>,
+        F: FnMut(&str) -> Result<f64, E>,
+    {
+        self.try_sort_present_by(|left, _| compare(left.as_ref()))
     }
 
     fn try_map_with<U, E, F>(&self, mut mapper: F) -> Result<JsArray<U>, E>

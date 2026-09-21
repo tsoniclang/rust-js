@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{OnceCell, Ref, RefCell};
 use std::convert::Infallible;
 use std::rc::Rc;
 
@@ -24,9 +24,22 @@ impl<T> JsArrayState<T> {
 }
 
 #[derive(Debug)]
+struct JsArrayOwner<T> {
+    values: RefCell<JsArrayState<T>>,
+    identity: OnceCell<ObjectIdentity>,
+}
+
+impl<T> std::ops::Deref for JsArrayOwner<T> {
+    type Target = RefCell<JsArrayState<T>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.values
+    }
+}
+
+#[derive(Debug)]
 pub struct JsArray<T> {
-    state: Rc<RefCell<JsArrayState<T>>>,
-    identity: ObjectIdentity,
+    state: Rc<JsArrayOwner<T>>,
 }
 
 pub struct JsArrayIterator<T> {
@@ -38,7 +51,6 @@ impl<T> Clone for JsArray<T> {
     fn clone(&self) -> Self {
         Self {
             state: Rc::clone(&self.state),
-            identity: self.identity.clone(),
         }
     }
 }
@@ -87,11 +99,13 @@ impl<T> JsArray<T> {
 
     pub fn from_dense(values: Vec<T>) -> Self {
         Self {
-            state: Rc::new(RefCell::new(JsArrayState {
-                values,
-                numeric_properties: Vec::new(),
-            })),
-            identity: ObjectIdentity::new(),
+            state: Rc::new(JsArrayOwner {
+                values: RefCell::new(JsArrayState {
+                    values,
+                    numeric_properties: Vec::new(),
+                }),
+                identity: OnceCell::new(),
+            }),
         }
     }
 
@@ -129,7 +143,7 @@ impl<T> JsArray<T> {
     pub(super) fn try_sort_present_by<E, F>(&self, mut compare: F) -> Result<Self, E>
     where
         T: Clone,
-        F: FnMut(T, T) -> Result<f64, E>,
+        F: FnMut(&T, &T) -> Result<f64, E>,
     {
         let values = self.state.borrow().values.clone();
         let values = try_stable_sort(values, &mut compare)?;
@@ -140,7 +154,7 @@ impl<T> JsArray<T> {
     fn sort_present_by<F>(&self, mut compare: F) -> Self
     where
         T: Clone,
-        F: FnMut(T, T) -> f64,
+        F: FnMut(&T, &T) -> f64,
     {
         match self.try_sort_present_by(|left, right| Ok::<_, Infallible>(compare(left, right))) {
             Ok(sorted) => sorted,
@@ -161,15 +175,31 @@ impl<T> JsArray<T> {
         T: Clone,
         F: FnMut(T) -> f64,
     {
-        self.sort_present_by(|left, _| compare(left))
+        self.sort_present_by(|left, _| compare(left.clone()))
     }
 
-    pub fn sort<F>(&self, compare: F) -> Self
+    pub fn sort<F>(&self, mut compare: F) -> Self
     where
         T: Clone,
         F: FnMut(T, T) -> f64,
     {
-        self.sort_present_by(compare)
+        self.sort_present_by(|left, right| compare(left.clone(), right.clone()))
+    }
+
+    pub fn sort_borrowed<F>(&self, mut compare: F) -> Self
+    where
+        T: Clone + AsRef<str>,
+        F: FnMut(&str, &str) -> f64,
+    {
+        self.sort_present_by(|left, right| compare(left.as_ref(), right.as_ref()))
+    }
+
+    pub fn sort_value_borrowed<F>(&self, mut compare: F) -> Self
+    where
+        T: Clone + AsRef<str>,
+        F: FnMut(&str) -> f64,
+    {
+        self.sort_present_by(|left, _| compare(left.as_ref()))
     }
 
     pub fn ptr_eq(&self, other: &Self) -> bool {
@@ -250,6 +280,21 @@ impl<T> JsArray<T> {
             .numeric_properties
             .iter()
             .find_map(|(candidate, value)| (candidate == &key).then(|| value.clone()))
+    }
+
+    pub fn borrow_number_element(&self, index: impl Into<f64>) -> Option<Ref<'_, T>> {
+        let index = index.into();
+        if let Some(index) = canonical_array_index(index) {
+            return Ref::filter_map(self.state.borrow(), |state| state.values.get(index)).ok();
+        }
+        let key = crate::number::to_string(index);
+        Ref::filter_map(self.state.borrow(), |state| {
+            state
+                .numeric_properties
+                .iter()
+                .find_map(|(candidate, value)| (candidate == &key).then_some(value))
+        })
+        .ok()
     }
 
     pub fn at(&self, index: f64) -> Option<T>
@@ -573,13 +618,8 @@ impl<T> JsArray<T> {
     where
         T: crate::string::JsToString,
     {
-        self.state
-            .borrow()
-            .values
-            .iter()
-            .map(|value| value.to_js_string())
-            .collect::<Vec<_>>()
-            .join(separator)
+        let state = self.state.borrow();
+        T::join_js_strings(&state.values, separator)
     }
 
     pub fn join_default(&self) -> String
@@ -1191,8 +1231,7 @@ impl<T> JsArray<T> {
 
 fn try_stable_sort<T, E, F>(mut values: Vec<T>, compare: &mut F) -> Result<Vec<T>, E>
 where
-    T: Clone,
-    F: FnMut(T, T) -> Result<f64, E>,
+    F: FnMut(&T, &T) -> Result<f64, E>,
 {
     if values.len() <= 1 {
         return Ok(values);
@@ -1210,8 +1249,7 @@ where
             let mut right = middle;
             let mut output = start;
             while left < middle && right < end {
-                let comparison =
-                    compare(values[order[left]].clone(), values[order[right]].clone())?;
+                let comparison = compare(&values[order[left]], &values[order[right]])?;
                 if comparison.is_nan() || comparison <= 0.0 {
                     scratch[output] = order[left];
                     left += 1;
@@ -1253,7 +1291,7 @@ pub(super) fn canonical_array_index(value: f64) -> Option<usize> {
 
 impl<T> ObjectIdentityCarrier for JsArray<T> {
     fn object_identity(&self) -> &ObjectIdentity {
-        &self.identity
+        self.state.identity.get_or_init(ObjectIdentity::new)
     }
 }
 
