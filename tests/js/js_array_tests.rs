@@ -177,6 +177,33 @@ fn discarded_variadic_mutations_preserve_order_and_shared_identity() {
 }
 
 #[test]
+fn variadic_sequences_move_non_clone_values_and_reuse_owned_storage() {
+    struct Token(usize);
+    let items = vec![Token(1), Token(2)];
+    let original = items.as_ptr();
+    let values = statics::of(items);
+    assert_eq!(
+        values.borrow_number_element(0).as_deref().unwrap() as *const Token,
+        original
+    );
+    let alias = values.clone();
+    assert_eq!(values.push_many(vec![Token(3), Token(4)]), 4);
+    assert_eq!(values.unshift_many(vec![Token(0)]), 5);
+    values.push_many_discard(vec![Token(5)]);
+    values.unshift_many_discard(std::iter::empty());
+    let removed = values.splice_many(1.0, 2.0, vec![Token(8), Token(9)]);
+    assert_eq!(removed.borrow_number_element(0).unwrap().0, 1);
+    assert_eq!(removed.borrow_number_element(1).unwrap().0, 2);
+    assert_eq!(alias.len(), 6);
+    for (index, expected) in [0, 8, 9, 3, 4, 5].into_iter().enumerate() {
+        assert_eq!(
+            alias.borrow_number_element(index as f64).unwrap().0,
+            expected
+        );
+    }
+}
+
+#[test]
 fn splice_uses_js_numeric_bounds_and_returns_a_distinct_removed_array() {
     let values = JsArray::from_dense(vec![0, 1, 2, 3]);
     let removed = values.splice_many(-3.8, 1.9, [8, 9]);

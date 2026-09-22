@@ -353,13 +353,13 @@ impl<T> JsArray<T> {
         state.values.len()
     }
 
-    pub fn push_many<const N: usize>(&self, items: [T; N]) -> usize {
+    pub fn push_many(&self, items: impl IntoIterator<Item = T>) -> usize {
         let mut state = self.state.borrow_mut();
         state.values.extend(items);
         state.values.len()
     }
 
-    pub fn push_many_discard<const N: usize>(&self, items: [T; N]) {
+    pub fn push_many_discard(&self, items: impl IntoIterator<Item = T>) {
         self.state.borrow_mut().values.extend(items);
     }
 
@@ -381,13 +381,13 @@ impl<T> JsArray<T> {
         state.values.len()
     }
 
-    pub fn unshift_many<const N: usize>(&self, items: [T; N]) -> usize {
+    pub fn unshift_many(&self, items: impl IntoIterator<Item = T>) -> usize {
         let mut state = self.state.borrow_mut();
         state.values.splice(0..0, items);
         state.values.len()
     }
 
-    pub fn unshift_many_discard<const N: usize>(&self, items: [T; N]) {
+    pub fn unshift_many_discard(&self, items: impl IntoIterator<Item = T>) {
         self.state.borrow_mut().values.splice(0..0, items);
     }
 
@@ -493,11 +493,11 @@ impl<T> JsArray<T> {
         self.splice(start, f64::INFINITY, std::iter::empty())
     }
 
-    pub fn splice_many<const N: usize>(
+    pub fn splice_many(
         &self,
         start: f64,
         delete_count: f64,
-        items: [T; N],
+        items: impl IntoIterator<Item = T>,
     ) -> Self {
         self.splice(start, delete_count, items)
     }

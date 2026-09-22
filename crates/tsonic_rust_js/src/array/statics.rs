@@ -143,8 +143,8 @@ where
     )
 }
 
-pub fn of<T, const N: usize>(items: [T; N]) -> super::JsArray<T> {
-    super::JsArray::from_dense(Vec::from(items))
+pub fn of<T>(items: impl IntoIterator<Item = T>) -> super::JsArray<T> {
+    super::JsArray::from_dense(items.into_iter().collect())
 }
 
 /// Compile-time array identity helper for statically typed carriers.
