@@ -20,6 +20,10 @@ name = "numeric_allocation_tests"
 path = "../../tests/numeric_allocation_tests.rs"
 
 [[test]]
+name = "native_result_carriers"
+path = "../../tests/native_result_carriers.rs"
+
+[[test]]
 name = "no_forbidden_shortcuts"
 path = "../../tests/architecture/no_forbidden_shortcuts.rs"
 

@@ -12,7 +12,7 @@ fn bigint_parsing_rejects_malformed_whole_tokens() {
             tsonic_rust_js::bigint::from_string(source)
                 .unwrap_err()
                 .kind(),
-            "SyntaxError",
+            tsonic_rust_runtime::JsErrorKind::SyntaxError,
             "{source:?}"
         );
     }

@@ -71,7 +71,7 @@ pub(super) fn build(expression: &JsRegExp, input: &str, matched: Match) -> RegEx
         let values = super::super::array_from_optional(
             matched
                 .groups()
-                .map(|range| range.map(|span| (span.start as f64, span.end as f64)))
+                .map(|range| range.map(|span| (span.start, span.end)))
                 .collect(),
         );
         let named: BTreeMap<_, _> = matched
@@ -79,7 +79,7 @@ pub(super) fn build(expression: &JsRegExp, input: &str, matched: Match) -> RegEx
             .map(|(name, range)| {
                 (
                     name.to_owned(),
-                    range.map(|span| (span.start as f64, span.end as f64)),
+                    range.map(|span| (span.start, span.end)),
                 )
             })
             .collect();
@@ -92,7 +92,7 @@ pub(super) fn build(expression: &JsRegExp, input: &str, matched: Match) -> RegEx
     });
     RegExpExecArray {
         values,
-        index: matched.start() as f64,
+        index: matched.start(),
         input: input.to_owned(),
         groups: (!groups.is_empty()).then(|| RegExpNamedGroups {
             values: Rc::new(RefCell::new(groups)),

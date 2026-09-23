@@ -58,7 +58,7 @@ fn native_string_indexes_and_searches_use_utf8_bytes() {
     let text = "aé😀z";
     assert_eq!(native_string::js_len(text), 8);
     assert_eq!(native_string::char_code_at(text, 1.0), 233.0);
-    assert_eq!(native_string::code_point_at(text, 3.0), Some(128512.0));
+    assert_eq!(native_string::code_point_at(text, 3.0), Some(128512));
     assert!(native_string::char_code_at(text, 2.0).is_nan());
     assert_eq!(native_string::code_point_at(text, 4.0), None);
     assert_eq!(native_string::slice(text, 1.0, Some(7.0)).unwrap(), "é😀");
@@ -121,8 +121,8 @@ fn utf16_code_units_and_points() {
 
     assert_eq!(string::char_code_at(&emoji, 0.0), 0xD83D as f64);
     assert_eq!(string::char_code_at(&emoji, 1.0), 0xDE00 as f64);
-    assert_eq!(string::code_point_at(&emoji, 0.0), Some(0x1F600 as f64));
-    assert_eq!(string::code_point_at(&emoji, 1.0), Some(0xDE00 as f64));
+    assert_eq!(string::code_point_at(&emoji, 0.0), Some(0x1F600));
+    assert_eq!(string::code_point_at(&emoji, 1.0), Some(0xDE00));
     assert_eq!(string::code_point_at(&emoji, -1.0), None);
     assert_eq!(string::char_at(&value, -1.0), js(""));
     assert!(string::char_code_at(&value, -1.0).is_nan());
@@ -344,8 +344,8 @@ fn conversion_helpers() {
     assert_eq!(string::to_upper_case(&js("hello")), js("HELLO"));
     assert_eq!(string::char_at(&js("😀"), 5.0), js(""));
     assert_eq!(string::at(&js("😀"), 1.0).unwrap().units(), &[0xDE00]);
-    assert_eq!(string::code_point_at(&js("😀"), 0.0), Some(0x1f600 as f64));
-    assert_eq!(string::code_point_at(&js("😀"), 1.0), Some(0xDE00 as f64));
+    assert_eq!(string::code_point_at(&js("😀"), 0.0), Some(0x1f600));
+    assert_eq!(string::code_point_at(&js("😀"), 1.0), Some(0xDE00));
     assert_eq!(string::identity(&js("hello")), js("hello"));
 
     let b = js("b");

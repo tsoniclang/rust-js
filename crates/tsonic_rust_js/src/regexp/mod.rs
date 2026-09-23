@@ -15,7 +15,7 @@ use crate::{JsObject, JsString, JsValue};
 mod native;
 pub use native::*;
 
-pub type JsRegExpIndexPair = (f64, f64);
+pub type JsRegExpIndexPair = (usize, usize);
 
 #[derive(Debug, Clone)]
 pub struct JsRegExpNamedGroups {
@@ -172,7 +172,7 @@ impl Deref for JsRegExpIndices {
 #[derive(Debug, Clone, PartialEq)]
 pub struct JsRegExpMatchArray {
     values: JsArray<Option<JsString>>,
-    index: Option<f64>,
+    index: Option<usize>,
     input: Option<JsString>,
     groups: Option<JsRegExpNamedGroups>,
     indices: Option<JsRegExpIndices>,
@@ -198,7 +198,7 @@ impl JsRegExpMatchArray {
         self.text()
     }
 
-    pub fn index(&self) -> Option<f64> {
+    pub fn index(&self) -> Option<usize> {
         self.index
     }
 
@@ -250,7 +250,7 @@ impl Deref for JsRegExpMatchArray {
 #[derive(Debug, Clone, PartialEq)]
 pub struct JsRegExpExecArray {
     values: JsArray<Option<JsString>>,
-    index: f64,
+    index: usize,
     input: JsString,
     groups: Option<JsRegExpNamedGroups>,
     indices: Option<JsRegExpIndices>,
@@ -276,7 +276,7 @@ impl JsRegExpExecArray {
         self.text()
     }
 
-    pub fn index(&self) -> f64 {
+    pub fn index(&self) -> usize {
         self.index
     }
 
@@ -904,12 +904,12 @@ impl JsRegExp {
         self.split(input, Some(limit))
     }
 
-    pub fn search(&self, input: &JsString) -> JsResult<f64> {
+    pub fn search(&self, input: &JsString) -> JsResult<isize> {
         let previous = self.last_index();
         self.set_last_index(0.0);
         let result = self.exec(input);
         self.set_last_index(previous);
-        Ok(result?.map(|matched| matched.index()).unwrap_or(-1.0))
+        Ok(result?.map(|matched| matched.index() as isize).unwrap_or(-1))
     }
 
     pub fn to_string_value(&self) -> JsString {
@@ -993,7 +993,7 @@ impl JsRegExp {
         let mut index_values = Vec::with_capacity(matched.captures.len() + 1);
         for range in matched.groups() {
             values.push(range.clone().map(|span| input.slice(span.clone())));
-            index_values.push(range.map(|span| (span.start as f64, span.end as f64)));
+            index_values.push(range.map(|span| (span.start, span.end)));
         }
         let mut groups = BTreeMap::new();
         let mut named_indices = BTreeMap::new();
@@ -1003,10 +1003,10 @@ impl JsRegExp {
                 key.clone(),
                 range.clone().map(|span| input.slice(span.clone())),
             );
-            named_indices.insert(key, range.map(|span| (span.start as f64, span.end as f64)));
+            named_indices.insert(key, range.map(|span| (span.start, span.end)));
         }
         JsRegExpExecArray {
-            index: matched.start() as f64,
+            index: matched.start(),
             input: input.clone(),
             groups: if groups.is_empty() {
                 None
@@ -1119,7 +1119,7 @@ pub fn regexp_match_string(
     JsRegExp::new(pattern.clone(), JsString::new())?.match_result(input)
 }
 
-pub fn regexp_search_string(input: &JsString, pattern: &JsString) -> JsResult<f64> {
+pub fn regexp_search_string(input: &JsString, pattern: &JsString) -> JsResult<isize> {
     JsRegExp::new(pattern.clone(), JsString::new())?.search(input)
 }
 
@@ -1199,7 +1199,7 @@ where
     expression.try_replace_all_for_string_with(input, replacer)
 }
 
-pub fn string_search_regexp(input: &JsString, expression: &JsRegExp) -> JsResult<f64> {
+pub fn string_search_regexp(input: &JsString, expression: &JsRegExp) -> JsResult<isize> {
     expression.search(input)
 }
 
@@ -1326,7 +1326,7 @@ fn regexp_replacement_arguments(matched: &JsRegExpExecArray, input: &JsString) -
             None => JsValue::Undefined,
         });
     }
-    values.push(JsValue::Number(matched.index()));
+    values.push(JsValue::Number(matched.index() as f64));
     values.push(JsValue::Utf16String(input.clone()));
     if let Some(groups) = matched.groups() {
         let entries = groups

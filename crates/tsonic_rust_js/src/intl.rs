@@ -158,16 +158,16 @@ impl IntlResolvedNumberFormatOptions {
         self.style.clone()
     }
 
-    pub fn minimum_integer_digits(&self) -> f64 {
-        f64::from(self.precision.minimum_integer)
+    pub fn minimum_integer_digits(&self) -> u16 {
+        self.precision.minimum_integer
     }
 
-    pub fn minimum_fraction_digits(&self) -> Option<f64> {
-        self.precision.minimum_fraction.map(f64::from)
+    pub fn minimum_fraction_digits(&self) -> Option<u16> {
+        self.precision.minimum_fraction
     }
 
-    pub fn maximum_fraction_digits(&self) -> Option<f64> {
-        self.precision.maximum_fraction.map(f64::from)
+    pub fn maximum_fraction_digits(&self) -> Option<u16> {
+        self.precision.maximum_fraction
     }
 
     pub fn use_grouping(&self) -> IntlGrouping {
@@ -176,11 +176,11 @@ impl IntlResolvedNumberFormatOptions {
             None => IntlGrouping::Disabled,
         }
     }
-    pub fn minimum_significant_digits(&self) -> Option<f64> {
-        self.precision.minimum_significant.map(f64::from)
+    pub fn minimum_significant_digits(&self) -> Option<u16> {
+        self.precision.minimum_significant
     }
-    pub fn maximum_significant_digits(&self) -> Option<f64> {
-        self.precision.maximum_significant.map(f64::from)
+    pub fn maximum_significant_digits(&self) -> Option<u16> {
+        self.precision.maximum_significant
     }
     pub fn currency(&self) -> Option<String> {
         self.currency.clone()
@@ -209,8 +209,8 @@ impl IntlResolvedNumberFormatOptions {
     pub fn rounding_priority(&self) -> String {
         "auto".to_owned()
     }
-    pub fn rounding_increment(&self) -> f64 {
-        1.0
+    pub fn rounding_increment(&self) -> u16 {
+        1
     }
     pub fn rounding_mode(&self) -> String {
         "halfExpand".to_owned()
@@ -757,7 +757,7 @@ impl IntlCollator {
         Self::with_locale_options(&first_locale(locales)?, options)
     }
 
-    pub fn compare(&self, left: &str, right: &str) -> f64 {
+    pub fn compare(&self, left: &str, right: &str) -> i32 {
         let normalize = |value: &str| {
             let filtered = if self.options.ignore_punctuation {
                 value
@@ -790,9 +790,9 @@ impl IntlCollator {
             };
         }
         match ordering {
-            std::cmp::Ordering::Less => -1.0,
-            std::cmp::Ordering::Equal => 0.0,
-            std::cmp::Ordering::Greater => 1.0,
+            std::cmp::Ordering::Less => -1,
+            std::cmp::Ordering::Equal => 0,
+            std::cmp::Ordering::Greater => 1,
         }
     }
 

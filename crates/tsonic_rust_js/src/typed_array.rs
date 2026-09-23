@@ -46,7 +46,7 @@ impl TypedArray<u8> {
 }
 
 impl<T: TypedElement> TypedArray<T> {
-    pub const BYTES_PER_ELEMENT: f64 = T::BYTES_PER_ELEMENT as f64;
+    pub const BYTES_PER_ELEMENT: usize = T::BYTES_PER_ELEMENT;
 
     pub fn new(length: f64) -> JsResult<Self> {
         Self::with_length(to_index(length)?)
@@ -98,7 +98,7 @@ impl<T: TypedElement> TypedArray<T> {
         length: Option<f64>,
     ) -> JsResult<Self> {
         let byte_offset = to_index(byte_offset)?;
-        let buffer_length = buffer.byte_length_usize();
+        let buffer_length = buffer.byte_length();
         if byte_offset > buffer_length || byte_offset % T::BYTES_PER_ELEMENT != 0 {
             return Err(range_error("typed array byte offset is invalid"));
         }
@@ -153,20 +153,20 @@ impl<T: TypedElement> TypedArray<T> {
         operation(&mut bytes[start..end])
     }
 
-    pub fn bytes_per_element(&self) -> f64 {
+    pub fn bytes_per_element(&self) -> usize {
         Self::BYTES_PER_ELEMENT
     }
 
-    pub fn byte_length(&self) -> f64 {
-        (self.view.length * T::BYTES_PER_ELEMENT) as f64
+    pub fn byte_length(&self) -> usize {
+        self.view.length * T::BYTES_PER_ELEMENT
     }
 
-    pub fn byte_offset(&self) -> f64 {
-        self.view.byte_offset as f64
+    pub fn byte_offset(&self) -> usize {
+        self.view.byte_offset
     }
 
-    pub fn length(&self) -> f64 {
-        self.view.length as f64
+    pub fn length(&self) -> usize {
+        self.view.length
     }
 
     pub fn len(&self) -> usize {
@@ -177,19 +177,20 @@ impl<T: TypedElement> TypedArray<T> {
         self.view.length == 0
     }
 
-    pub fn at(&self, index: f64) -> Option<f64> {
+    pub fn at(&self, index: f64) -> Option<T::Value> {
         self.get_usize(crate::native_integer::relative_index(
             index,
             self.view.length,
         )?)
-        .map(TypedElement::to_number)
+        .map(TypedElement::into_value)
     }
 
-    pub fn get_number(&self, index: f64) -> Option<f64> {
-        if !index.is_finite() || index < 0.0 || index.fract() != 0.0 {
+    pub fn get_number(&self, index: f64) -> Option<T::Value> {
+        if !index.is_finite() || index.fract() != 0.0 {
             return None;
         }
-        self.get_usize(index as usize).map(TypedElement::to_number)
+        let index = crate::native_integer::absolute_index(index, self.view.length)?;
+        self.get_usize(index).map(TypedElement::into_value)
     }
 
     pub fn set_number(&self, index: f64, value: f64) {
@@ -240,17 +241,17 @@ impl<T: TypedElement> TypedArray<T> {
         self.includes(search, 0.0)
     }
 
-    pub fn index_of(&self, search: f64, from_index: f64) -> f64 {
+    pub fn index_of(&self, search: f64, from_index: f64) -> isize {
         let start = normalize_index(from_index, self.view.length);
         (start..self.view.length)
             .find(|index| {
                 self.get_usize(*index)
                     .is_some_and(|value| value.to_number() == search)
             })
-            .map_or(-1.0, |index| index as f64)
+            .map_or(-1, |index| index as isize)
     }
 
-    pub fn index_of_from_start(&self, search: f64) -> f64 {
+    pub fn index_of_from_start(&self, search: f64) -> isize {
         self.index_of(search, 0.0)
     }
 
@@ -425,15 +426,15 @@ impl<T: TypedElement> TypedArray<T> {
 
     pub fn sort_default(&self) -> Self {
         let mut values = self.values();
-        values.sort_by(|left, right| left.total_cmp(right));
-        self.replace_numbers(values);
+        values.sort_by(|left, right| left.compare(*right));
+        self.replace_values(values);
         self.clone()
     }
 
-    pub fn sort_by(&self, mut compare: impl FnMut(f64, f64) -> f64) -> Self {
+    pub fn sort_by(&self, mut compare: impl FnMut(T::Value, T::Value) -> f64) -> Self {
         let mut values = self.values();
         values.sort_by(|left, right| {
-            let order = compare(*left, *right);
+            let order = compare(left.into_value(), right.into_value());
             if order.is_nan() || order == 0.0 {
                 Ordering::Equal
             } else if order < 0.0 {
@@ -442,17 +443,17 @@ impl<T: TypedElement> TypedArray<T> {
                 Ordering::Greater
             }
         });
-        self.replace_numbers(values);
+        self.replace_values(values);
         self.clone()
     }
 
     pub fn try_sort_by(
         &self,
-        mut compare: impl FnMut(f64, f64) -> tsonic_rust_runtime::TsonicResult<f64>,
+        mut compare: impl FnMut(T::Value, T::Value) -> tsonic_rust_runtime::TsonicResult<f64>,
     ) -> tsonic_rust_runtime::TsonicResult<Self> {
         let mut values = self.values();
         let mut failure = None;
-        values.sort_by(|left, right| match compare(*left, *right) {
+        values.sort_by(|left, right| match compare(left.into_value(), right.into_value()) {
             Ok(order) if order < 0.0 => Ordering::Less,
             Ok(order) if order > 0.0 => Ordering::Greater,
             Ok(_) => Ordering::Equal,
@@ -464,7 +465,7 @@ impl<T: TypedElement> TypedArray<T> {
         if let Some(error) = failure {
             return Err(error);
         }
-        self.replace_numbers(values);
+        self.replace_values(values);
         Ok(self.clone())
     }
 
@@ -480,7 +481,7 @@ impl<T: TypedElement> TypedArray<T> {
         }
     }
 
-    fn get_usize(&self, index: usize) -> Option<T> {
+    pub(crate) fn get_usize(&self, index: usize) -> Option<T> {
         let (start, end) = self.byte_range(index)?;
         let bytes = self.view.buffer.as_bytes();
         Some(T::read_bytes(&bytes[start..end]))
@@ -508,15 +509,15 @@ impl<T: TypedElement> TypedArray<T> {
         Ok(())
     }
 
-    fn values(&self) -> Vec<f64> {
+    fn values(&self) -> Vec<T> {
         (0..self.view.length)
-            .map(|index| self.get_usize(index).unwrap_or_default().to_number())
+            .map(|index| self.get_usize(index).unwrap_or_default())
             .collect()
     }
 
-    fn replace_numbers(&self, values: Vec<f64>) {
+    fn replace_values(&self, values: Vec<T>) {
         for (index, value) in values.into_iter().enumerate() {
-            self.set_usize(index, T::from_number(value));
+            self.set_usize(index, value);
         }
     }
 

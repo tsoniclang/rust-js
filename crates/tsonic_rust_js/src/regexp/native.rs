@@ -171,7 +171,7 @@ impl Deref for RegExpIndices {
 #[derive(Debug, Clone, PartialEq)]
 pub struct RegExpMatchArray {
     values: JsArray<Option<String>>,
-    index: Option<f64>,
+    index: Option<usize>,
     input: Option<String>,
     groups: Option<RegExpNamedGroups>,
     indices: Option<RegExpIndices>,
@@ -196,7 +196,7 @@ impl RegExpMatchArray {
         self.text()
     }
 
-    pub fn index(&self) -> Option<f64> {
+    pub fn index(&self) -> Option<usize> {
         self.index
     }
 
@@ -248,7 +248,7 @@ impl Deref for RegExpMatchArray {
 #[derive(Debug, Clone, PartialEq)]
 pub struct RegExpExecArray {
     values: JsArray<Option<String>>,
-    index: f64,
+    index: usize,
     input: String,
     groups: Option<RegExpNamedGroups>,
     indices: Option<RegExpIndices>,
@@ -273,7 +273,7 @@ impl RegExpExecArray {
         self.text()
     }
 
-    pub fn index(&self) -> f64 {
+    pub fn index(&self) -> usize {
         self.index
     }
 
@@ -676,9 +676,9 @@ pub fn regexp_split_with_limit_native(
     regexp_split_native(expression, input, Some(limit))
 }
 
-pub fn regexp_search_native(expression: &JsRegExp, input: &str) -> JsResult<f64> {
+pub fn regexp_search_native(expression: &JsRegExp, input: &str) -> JsResult<isize> {
     Ok(operations::find(expression, input, 0, expression.sticky())?
-        .map_or(-1.0, |found| found.start() as f64))
+        .map_or(-1, |found| found.start() as isize))
 }
 
 pub fn regexp_match_string_native(
@@ -688,7 +688,7 @@ pub fn regexp_match_string_native(
     regexp_match_native(&regexp_from_string_native(pattern)?, input)
 }
 
-pub fn regexp_search_string_native(input: &str, pattern: &str) -> JsResult<f64> {
+pub fn regexp_search_string_native(input: &str, pattern: &str) -> JsResult<isize> {
     regexp_search_native(&regexp_from_string_native(pattern)?, input)
 }
 
@@ -746,7 +746,7 @@ where
     regexp_try_replace_all_for_string_native_with(expression, input, replacer)
 }
 
-pub fn string_search_regexp_native(input: &str, expression: &JsRegExp) -> JsResult<f64> {
+pub fn string_search_regexp_native(input: &str, expression: &JsRegExp) -> JsResult<isize> {
     regexp_search_native(expression, input)
 }
 

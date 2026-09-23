@@ -2,6 +2,7 @@
 
 use std::path::Path;
 use std::process::Command;
+use num_traits::ToPrimitive;
 
 use tsonic_rust_js::json;
 use tsonic_rust_js::regexp::{JsRegExp, JsRegExpExecArray, JsRegExpMatchArray};
@@ -99,7 +100,7 @@ fn restore_exact_strings(value: JsValue) -> JsValue {
 #[derive(Debug)]
 struct ExpectedMatch {
     text: JsString,
-    index: f64,
+    index: usize,
     groups: Vec<Option<JsString>>,
 }
 
@@ -112,9 +113,11 @@ fn expected_match(value: &JsValue) -> ExpectedMatch {
             other => panic!("invalid oracle capture {other:?}"),
         })
         .collect();
+    let index = number_field(value, "index");
+    assert_eq!(index.fract(), 0.0, "oracle index must be integral");
     ExpectedMatch {
         text: string_field(value, "text"),
-        index: number_field(value, "index"),
+        index: index.to_usize().expect("oracle index must fit usize"),
         groups,
     }
 }
@@ -297,6 +300,8 @@ fn regexp_runtime_matches_all_committed_node_vectors() {
                     .search(&input)
                     .map_err(|error| format!("{label}: {error:?}"))
                     .and_then(|actual| {
+                        assert_eq!(expected.fract(), 0.0, "oracle search index must be integral");
+                        let expected = expected.to_isize().expect("oracle search index must fit isize");
                         (actual == expected)
                             .then_some(())
                             .ok_or_else(|| format!("{label}: expected {expected}, got {actual}"))

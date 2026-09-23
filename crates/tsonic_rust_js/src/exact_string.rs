@@ -27,9 +27,9 @@ pub fn char_code_at(value: &JsString, index: f64) -> f64 {
         .unwrap_or(f64::NAN)
 }
 
-pub fn code_point_at(value: &JsString, index: f64) -> Option<f64> {
+pub fn code_point_at(value: &JsString, index: f64) -> Option<u32> {
     let position = absolute_index(index, value.len())?;
-    value.code_point_at(position).map(f64::from)
+    value.code_point_at(position)
 }
 
 pub fn slice(value: &JsString, start: f64, end: Option<f64>) -> JsString {

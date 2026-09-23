@@ -196,8 +196,8 @@ fn regexp_utf16_mode_and_indices_follow_ecmascript_code_units() {
         .unwrap()
         .unwrap();
     assert_eq!(legacy.text().units(), &[0xD83D]);
-    assert_eq!(legacy.index(), 0.0);
-    assert_eq!(legacy.indices().unwrap().at(0), Some((0.0, 1.0)));
+    assert_eq!(legacy.index(), 0);
+    assert_eq!(legacy.indices().unwrap().at(0), Some((0, 1)));
 
     let unicode = JsRegExp::new(js("."), js("du"))
         .unwrap()
@@ -205,7 +205,7 @@ fn regexp_utf16_mode_and_indices_follow_ecmascript_code_units() {
         .unwrap()
         .unwrap();
     assert_eq!(unicode.text(), astral);
-    assert_eq!(unicode.indices().unwrap().at(0), Some((0.0, 2.0)));
+    assert_eq!(unicode.indices().unwrap().at(0), Some((0, 2)));
 
     let sticky = JsRegExp::new(js("b"), js("y")).unwrap();
     sticky.set_last_index(2.0);
@@ -215,20 +215,20 @@ fn regexp_utf16_mode_and_indices_follow_ecmascript_code_units() {
     let quantified_astral = JsRegExp::new(js("💚+"), js("")).unwrap();
     let quantified_match = quantified_astral.exec(&js("a💚💚b")).unwrap().unwrap();
     assert_eq!(quantified_match.text(), js("💚"));
-    assert_eq!(quantified_match.index(), 1.0);
+    assert_eq!(quantified_match.index(), 1);
 
     let nullable = JsRegExp::new(js("a*"), js("g")).unwrap();
     nullable.set_last_index(1.0);
     let nullable_mid_pair = nullable.exec(&astral).unwrap().unwrap();
     assert_eq!(nullable_mid_pair.text(), js(""));
-    assert_eq!(nullable_mid_pair.index(), 1.0);
+    assert_eq!(nullable_mid_pair.index(), 1);
     assert_eq!(nullable.last_index(), 1.0);
 
     let nullable_before_scalar = JsRegExp::new(js("a*"), js("g")).unwrap();
     nullable_before_scalar.set_last_index(2.0);
     let nullable_scalar = nullable_before_scalar.exec(&js("😀a")).unwrap().unwrap();
     assert_eq!(nullable_scalar.text(), js("a"));
-    assert_eq!(nullable_scalar.index(), 2.0);
+    assert_eq!(nullable_scalar.index(), 2);
     assert_eq!(nullable_before_scalar.last_index(), 3.0);
 }
 
@@ -249,11 +249,11 @@ fn regexp_named_groups_optional_captures_and_indices_are_preserved() {
     assert!(groups.has(&js("digits")));
 
     let indices = result.indices().unwrap();
-    assert_eq!(indices.at(0), Some((0.0, 3.0)));
-    assert_eq!(indices.at(1), Some((0.0, 3.0)));
+    assert_eq!(indices.at(0), Some((0, 3)));
+    assert_eq!(indices.at(1), Some((0, 3)));
     assert_eq!(indices.at(2), None);
     let named = indices.groups().unwrap();
-    assert_eq!(named.get(&js("letter")), Some((0.0, 3.0)));
+    assert_eq!(named.get(&js("letter")), Some((0, 3)));
     assert_eq!(named.get(&js("digits")), None);
     assert!(named.has(&js("digits")));
 }
@@ -348,12 +348,12 @@ fn regexp_split_includes_captures_limits_and_empty_boundaries() {
 fn regexp_search_preserves_observable_last_index() {
     let expression = JsRegExp::new(js("b"), js("gy")).unwrap();
     expression.set_last_index(7.0);
-    assert_eq!(expression.search(&js("ab")).unwrap(), -1.0);
+    assert_eq!(expression.search(&js("ab")).unwrap(), -1);
     assert_eq!(expression.last_index(), 7.0);
 
     let expression = JsRegExp::new(js("b"), js("g")).unwrap();
     expression.set_last_index(7.0);
-    assert_eq!(expression.search(&js("ab")).unwrap(), 1.0);
+    assert_eq!(expression.search(&js("ab")).unwrap(), 1);
     assert_eq!(expression.last_index(), 7.0);
 }
 

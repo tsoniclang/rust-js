@@ -166,13 +166,13 @@ pub fn at(value: &str, index: f64) -> Result<Option<String>, JsError> {
 }
 
 pub fn char_code_at(value: &str, index: f64) -> f64 {
-    code_point_at(value, index).unwrap_or(f64::NAN)
+    code_point_at(value, index).map(f64::from).unwrap_or(f64::NAN)
 }
 
-pub fn code_point_at(value: &str, index: f64) -> Option<f64> {
+pub fn code_point_at(value: &str, index: f64) -> Option<u32> {
     let position = absolute_index(index, value.len())?;
     let character = value.get(position..)?.chars().next()?;
-    Some(f64::from(u32::from(character)))
+    Some(u32::from(character))
 }
 
 pub fn slice(value: &str, start: f64, end: Option<f64>) -> Result<String, JsError> {

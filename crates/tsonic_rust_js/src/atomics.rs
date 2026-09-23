@@ -11,7 +11,7 @@ fn address(array: &Int32Array, index: f64) -> JsResult<usize> {
     if index >= array.len() {
         return Err(range_error("atomic index is outside the typed array"));
     }
-    Ok(array.byte_offset() as usize + index * 4)
+    Ok(array.byte_offset() + index * 4)
 }
 
 pub fn wait(array: &Int32Array, index: f64, expected: f64, timeout: f64) -> JsResult<String> {
@@ -30,19 +30,19 @@ pub fn wait_forever(array: &Int32Array, index: f64, expected: f64) -> JsResult<S
     wait(array, index, expected, f64::INFINITY)
 }
 
-pub fn notify(array: &Int32Array, index: f64, count: f64) -> JsResult<f64> {
+pub fn notify(array: &Int32Array, index: f64, count: f64) -> JsResult<usize> {
     let offset = address(array, index)?;
     Ok(array
         .buffer()
         .shared_storage()
-        .map_or(0, |storage| storage.notify(offset, count)) as f64)
+        .map_or(0, |storage| storage.notify(offset, count)))
 }
 
-pub fn notify_all(array: &Int32Array, index: f64) -> JsResult<f64> {
+pub fn notify_all(array: &Int32Array, index: f64) -> JsResult<usize> {
     notify(array, index, f64::INFINITY)
 }
 
-pub fn load(array: &Int32Array, index: f64) -> JsResult<f64> {
+pub fn load(array: &Int32Array, index: f64) -> JsResult<i32> {
     let offset = address(array, index)?;
     let _order = ATOMIC_ORDER.lock().expect("atomic order lock poisoned");
     let buffer = array.buffer();
@@ -51,7 +51,7 @@ pub fn load(array: &Int32Array, index: f64) -> JsResult<f64> {
         bytes[offset..offset + 4]
             .try_into()
             .expect("checked Int32 width"),
-    ) as f64)
+    ))
 }
 
 pub fn store(array: &Int32Array, index: f64, value: f64) -> JsResult<f64> {

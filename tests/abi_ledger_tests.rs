@@ -56,15 +56,15 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
     re.set_last_index(0.0);
     let first = js::abi::regexp_exec_native(&re, "xabbc").unwrap().unwrap();
     assert_eq!(
-        (first.index(), first.index() + first.text().len() as f64),
-        (1.0, 5.0)
+        (first.index(), first.index() + first.text().len()),
+        (1, 5)
     );
     re.set_last_index(0.0);
     assert_eq!(
         js::abi::regexp_replace_native(&re, "abc abbc", "[$1]").unwrap(),
         "[b] [bb]"
     );
-    assert_eq!(js::abi::regexp_search_native(&re, "xabc").unwrap(), 1.0);
+    assert_eq!(js::abi::regexp_search_native(&re, "xabc").unwrap(), 1);
     assert_eq!(
         js::abi::regexp_split_native(&js::abi::regexp_new_native(",", "").unwrap(), "a,b", None,)
             .unwrap()
@@ -104,7 +104,7 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
         .unwrap()
         .unwrap();
     assert_eq!(matched.text(), "bb");
-    assert_eq!(matched.index(), 1.0);
+    assert_eq!(matched.index(), 1);
     assert_eq!(matched.group(1), Some(text("bb")));
     assert_eq!(exec_re.last_index(), 3.0);
 
@@ -127,7 +127,7 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
     assert_eq!(js::abi::js_string_char_code_at(&text("abc"), 1.0), 98.0);
     assert_eq!(
         js::abi::js_string_code_point_at(&text("😀"), 0.0),
-        Some(0x1F600 as f64)
+        Some(0x1F600)
     );
     assert_eq!(
         js::abi::js_string_last_index_of(&text("abc"), &text("b"), 2.0),
@@ -158,8 +158,8 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
     );
 
     let buffer = js::abi::ArrayBuffer::new(4.0).unwrap();
-    assert_eq!(buffer.byte_length(), 4.0);
+    assert_eq!(buffer.byte_length(), 4);
     let typed = js::abi::Uint8Array::from_vec(vec![1.0, 2.0, 3.0]).unwrap();
     typed.set_number(1.0, 9.0);
-    assert_eq!(typed.get_number(1.0), Some(9.0));
+    assert_eq!(typed.get_number(1.0), Some(9));
 }

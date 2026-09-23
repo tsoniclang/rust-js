@@ -68,10 +68,6 @@ impl ArrayBuffer {
         }
     }
 
-    pub fn byte_length(&self) -> f64 {
-        self.byte_length_usize() as f64
-    }
-
     pub fn new_shared(byte_length: f64) -> JsResult<Self> {
         let byte_length = to_index(byte_length)?;
         let mut bytes = Vec::new();
@@ -201,7 +197,7 @@ impl ArrayBuffer {
         self.slice(start, Some(end))
     }
 
-    pub(crate) fn byte_length_usize(&self) -> usize {
+    pub fn byte_length(&self) -> usize {
         self.as_bytes().len()
     }
 }

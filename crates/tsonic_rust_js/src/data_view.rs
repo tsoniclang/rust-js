@@ -63,7 +63,7 @@ impl DataView {
 
     pub fn new(buffer: ArrayBuffer, byte_offset: f64, byte_length: Option<f64>) -> JsResult<Self> {
         let byte_offset = to_index(byte_offset)?;
-        let buffer_length = buffer.byte_length_usize();
+        let buffer_length = buffer.byte_length();
         if byte_offset > buffer_length {
             return Err(range_error("DataView byte offset out of bounds"));
         }
@@ -91,65 +91,65 @@ impl DataView {
         self.state.buffer.clone()
     }
 
-    pub fn byte_offset(&self) -> f64 {
-        self.state.byte_offset as f64
+    pub fn byte_offset(&self) -> usize {
+        self.state.byte_offset
     }
 
-    pub fn byte_length(&self) -> f64 {
-        self.state.byte_length as f64
+    pub fn byte_length(&self) -> usize {
+        self.state.byte_length
     }
 
-    pub fn get_int8(&self, offset: f64) -> JsResult<f64> {
-        Ok(i8::from_ne_bytes(self.read::<1>(offset)?) as f64)
+    pub fn get_int8(&self, offset: f64) -> JsResult<i8> {
+        Ok(i8::from_ne_bytes(self.read::<1>(offset)?))
     }
 
-    pub fn get_uint8(&self, offset: f64) -> JsResult<f64> {
-        Ok(self.read::<1>(offset)?[0] as f64)
+    pub fn get_uint8(&self, offset: f64) -> JsResult<u8> {
+        Ok(self.read::<1>(offset)?[0])
     }
 
-    pub fn get_int16(&self, offset: f64, little_endian: bool) -> JsResult<f64> {
+    pub fn get_int16(&self, offset: f64, little_endian: bool) -> JsResult<i16> {
         Ok(read_number(
             self.read::<2>(offset)?,
             little_endian,
             i16::from_le_bytes,
             i16::from_be_bytes,
-        ) as f64)
+       ) )
     }
 
-    pub fn get_uint16(&self, offset: f64, little_endian: bool) -> JsResult<f64> {
+    pub fn get_uint16(&self, offset: f64, little_endian: bool) -> JsResult<u16> {
         Ok(read_number(
             self.read::<2>(offset)?,
             little_endian,
             u16::from_le_bytes,
             u16::from_be_bytes,
-        ) as f64)
+       ) )
     }
 
-    pub fn get_int32(&self, offset: f64, little_endian: bool) -> JsResult<f64> {
+    pub fn get_int32(&self, offset: f64, little_endian: bool) -> JsResult<i32> {
         Ok(read_number(
             self.read::<4>(offset)?,
             little_endian,
             i32::from_le_bytes,
             i32::from_be_bytes,
-        ) as f64)
+       ) )
     }
 
-    pub fn get_uint32(&self, offset: f64, little_endian: bool) -> JsResult<f64> {
+    pub fn get_uint32(&self, offset: f64, little_endian: bool) -> JsResult<u32> {
         Ok(read_number(
             self.read::<4>(offset)?,
             little_endian,
             u32::from_le_bytes,
             u32::from_be_bytes,
-        ) as f64)
+       ) )
     }
 
-    pub fn get_float32(&self, offset: f64, little_endian: bool) -> JsResult<f64> {
+    pub fn get_float32(&self, offset: f64, little_endian: bool) -> JsResult<f32> {
         Ok(read_number(
             self.read::<4>(offset)?,
             little_endian,
             f32::from_le_bytes,
             f32::from_be_bytes,
-        ) as f64)
+       ) )
     }
 
     pub fn get_float64(&self, offset: f64, little_endian: bool) -> JsResult<f64> {

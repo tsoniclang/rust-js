@@ -15,16 +15,17 @@ fn atomic_wait_validates_backing_bounds_conversion_and_timeout() {
         atomics::store(&values, f64::NAN, 4_294_967_297.0).unwrap(),
         4_294_967_297.0
     );
-    assert_eq!(atomics::load(&values, 0.0).unwrap(), 1.0);
+    let loaded: i32 = atomics::load(&values, 0.0).unwrap();
+    assert_eq!(loaded, 1);
     let view = DataView::from_buffer(buffer.clone()).unwrap();
-    assert_eq!(view.get_int32(4.0, true).unwrap(), 1.0);
+    assert_eq!(view.get_int32(4.0, true).unwrap(), 1);
     let copy = buffer.slice_all();
     assert!(copy.shared_storage().is_some());
     assert_ne!(buffer, copy);
     values.set_number(0.0, 9.0);
     assert_eq!(
         Int32Array::from_buffer_only(copy).unwrap().get_number(1.0),
-        Some(1.0)
+        Some(1)
     );
     let started = Instant::now();
     assert_eq!(atomics::wait(&values, 0.0, 9.0, 20.0).unwrap(), "timed-out");
@@ -34,17 +35,18 @@ fn atomic_wait_validates_backing_bounds_conversion_and_timeout() {
     }
     let ordinary = Int32Array::new(1.0).unwrap();
     assert!(atomics::wait(&ordinary, 0.0, 0.0, 0.0).is_err());
-    assert_eq!(atomics::notify_all(&ordinary, 0.0).unwrap(), 0.0);
+    let notified: usize = atomics::notify_all(&ordinary, 0.0).unwrap();
+    assert_eq!(notified, 0);
     assert_eq!(atomics::store(&ordinary, 0.0, -3.0).unwrap(), -3.0);
-    assert_eq!(atomics::load(&ordinary, 0.0).unwrap(), -3.0);
+    assert_eq!(atomics::load(&ordinary, 0.0).unwrap(), -3);
     assert_eq!(
         ArrayBuffer::new_shared(f64::NAN).unwrap().byte_length(),
-        0.0
+        0
     );
-    assert_eq!(ArrayBuffer::new_shared(-0.5).unwrap().byte_length(), 0.0);
+    assert_eq!(ArrayBuffer::new_shared(-0.5).unwrap().byte_length(), 0);
     assert!(ArrayBuffer::new_shared((usize::MAX as u128 + 1) as f64).is_err());
-    assert_eq!(ArrayBuffer::new(f64::NAN).unwrap().byte_length(), 0.0);
-    assert_eq!(ArrayBuffer::new(-0.5).unwrap().byte_length(), 0.0);
+    assert_eq!(ArrayBuffer::new(f64::NAN).unwrap().byte_length(), 0);
+    assert_eq!(ArrayBuffer::new(-0.5).unwrap().byte_length(), 0);
     assert!(ArrayBuffer::new((usize::MAX as u128 + 1) as f64).is_err());
     assert_eq!(
         atomics::wait(&values, 0.0, 0.0, f64::MAX).unwrap(),
@@ -57,7 +59,7 @@ fn atomic_wait_validates_backing_bounds_conversion_and_timeout() {
         Int32Array::from_buffer_only(second)
             .unwrap()
             .get_number(1.0),
-        Some(9.0)
+        Some(9)
     );
 }
 
@@ -83,8 +85,8 @@ fn atomic_notification_selects_exact_address_and_waiter_count() {
         .collect();
     let deadline = Instant::now() + Duration::from_secs(3);
     loop {
-        assert_eq!(atomics::notify(&values, 0.0, 0.0).unwrap(), 0.0);
-        if atomics::notify(&values, 0.0, 1.0).unwrap() == 1.0 {
+        assert_eq!(atomics::notify(&values, 0.0, 0.0).unwrap(), 0);
+        if atomics::notify(&values, 0.0, 1.0).unwrap() == 1 {
             break;
         }
         assert!(Instant::now() < deadline);
@@ -94,8 +96,8 @@ fn atomic_notification_selects_exact_address_and_waiter_count() {
     assert!(first.0 < 2);
     assert_eq!(first.1, "ok");
     assert!(observed.recv_timeout(Duration::from_millis(20)).is_err());
-    let mut notified = 0.0;
-    while notified < 2.0 {
+    let mut notified = 0;
+    while notified < 2 {
         notified += atomics::notify_all(&values, 0.0).unwrap();
         notified += atomics::notify_all(&values, 1.0).unwrap();
         assert!(Instant::now() < deadline);
@@ -110,5 +112,5 @@ fn atomic_notification_selects_exact_address_and_waiter_count() {
     for worker in workers {
         worker.join().unwrap();
     }
-    assert_eq!(atomics::notify_all(&values, 0.0).unwrap(), 0.0);
+    assert_eq!(atomics::notify_all(&values, 0.0).unwrap(), 0);
 }

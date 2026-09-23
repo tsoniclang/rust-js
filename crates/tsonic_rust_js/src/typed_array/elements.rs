@@ -31,11 +31,14 @@ impl fmt::Display for TypedArrayKind {
 }
 
 pub trait TypedElement: Copy + Default + fmt::Display + 'static {
+    type Value: Copy;
     const KIND: TypedArrayKind;
     const BYTES_PER_ELEMENT: usize;
 
     fn from_number(value: f64) -> Self;
     fn to_number(self) -> f64;
+    fn into_value(self) -> Self::Value;
+    fn compare(self, other: Self) -> std::cmp::Ordering;
     fn write_bytes(self, output: &mut [u8]);
     fn read_bytes(bytes: &[u8]) -> Self;
 }
@@ -43,6 +46,7 @@ pub trait TypedElement: Copy + Default + fmt::Display + 'static {
 macro_rules! integer_element {
     ($type:ty, $kind:expr) => {
         impl TypedElement for $type {
+            type Value = Self;
             const KIND: TypedArrayKind = $kind;
             const BYTES_PER_ELEMENT: usize = std::mem::size_of::<$type>();
 
@@ -52,6 +56,14 @@ macro_rules! integer_element {
 
             fn to_number(self) -> f64 {
                 self as f64
+            }
+
+            fn into_value(self) -> Self::Value {
+                self
+            }
+
+            fn compare(self, other: Self) -> std::cmp::Ordering {
+                self.cmp(&other)
             }
 
             fn write_bytes(self, output: &mut [u8]) {
@@ -75,6 +87,7 @@ integer_element!(i32, TypedArrayKind::Int32);
 integer_element!(u32, TypedArrayKind::Uint32);
 
 impl TypedElement for f32 {
+    type Value = Self;
     const KIND: TypedArrayKind = TypedArrayKind::Float32;
     const BYTES_PER_ELEMENT: usize = 4;
 
@@ -84,6 +97,19 @@ impl TypedElement for f32 {
 
     fn to_number(self) -> f64 {
         self as f64
+    }
+
+    fn into_value(self) -> Self::Value {
+        self
+    }
+
+    fn compare(self, other: Self) -> std::cmp::Ordering {
+        match (self.is_nan(), other.is_nan()) {
+            (true, true) => std::cmp::Ordering::Equal,
+            (true, false) => std::cmp::Ordering::Greater,
+            (false, true) => std::cmp::Ordering::Less,
+            (false, false) => self.total_cmp(&other),
+        }
     }
 
     fn write_bytes(self, output: &mut [u8]) {
@@ -98,6 +124,7 @@ impl TypedElement for f32 {
 }
 
 impl TypedElement for f64 {
+    type Value = Self;
     const KIND: TypedArrayKind = TypedArrayKind::Float64;
     const BYTES_PER_ELEMENT: usize = 8;
 
@@ -107,6 +134,19 @@ impl TypedElement for f64 {
 
     fn to_number(self) -> f64 {
         self
+    }
+
+    fn into_value(self) -> Self::Value {
+        self
+    }
+
+    fn compare(self, other: Self) -> std::cmp::Ordering {
+        match (self.is_nan(), other.is_nan()) {
+            (true, true) => std::cmp::Ordering::Equal,
+            (true, false) => std::cmp::Ordering::Greater,
+            (false, true) => std::cmp::Ordering::Less,
+            (false, false) => self.total_cmp(&other),
+        }
     }
 
     fn write_bytes(self, output: &mut [u8]) {
@@ -130,6 +170,7 @@ impl fmt::Display for ClampedU8 {
 }
 
 impl TypedElement for ClampedU8 {
+    type Value = u8;
     const KIND: TypedArrayKind = TypedArrayKind::Uint8Clamped;
     const BYTES_PER_ELEMENT: usize = 1;
 
@@ -139,6 +180,14 @@ impl TypedElement for ClampedU8 {
 
     fn to_number(self) -> f64 {
         self.0 as f64
+    }
+
+    fn into_value(self) -> Self::Value {
+        self.0
+    }
+
+    fn compare(self, other: Self) -> std::cmp::Ordering {
+        self.0.cmp(&other.0)
     }
 
     fn write_bytes(self, output: &mut [u8]) {
