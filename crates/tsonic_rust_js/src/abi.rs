@@ -145,8 +145,8 @@ pub use crate::set::JsSet;
 pub use crate::string::{
     at as js_string_at, char_at as js_string_char_at, char_code_at as js_string_char_code_at,
     code_point_at as js_string_code_point_at, from_char_code as js_string_from_char_code,
-    from_code_point as js_string_from_code_point, is_well_formed as js_string_is_well_formed,
-    last_index_of as js_string_last_index_of,
+    from_code_point as js_string_from_code_point, from_value as string_from_value,
+    is_well_formed as js_string_is_well_formed, last_index_of as js_string_last_index_of,
     last_index_of_from_end as js_string_last_index_of_from_end, normalize as js_string_normalize,
     normalize_with_form as js_string_normalize_with_form, pad_end as js_string_pad_end,
     pad_end_with as js_string_pad_end_with, pad_start as js_string_pad_start,

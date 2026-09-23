@@ -70,7 +70,29 @@ macro_rules! impl_js_to_string {
     };
 }
 
-impl_js_to_string!(bool, i8, u8, i16, u16, i32, u32, i64, u64, isize, usize);
+impl_js_to_string!(bool, i8, u8, i16, u16, i32, u32, i64, u64, i128, u128, isize, usize);
+
+macro_rules! impl_source_string_value {
+    ($($value:ty),+ $(,)?) => {$(
+        impl JsToString for $value {
+            fn to_js_string(&self) -> String {
+                tsonic_rust_runtime::source_string(self)
+            }
+        }
+    )+};
+}
+
+impl_source_string_value!(
+    (),
+    tsonic_rust_runtime::Null,
+    tsonic_rust_runtime::Undefined,
+    tsonic_rust_runtime::BigInt,
+    tsonic_rust_runtime::TsonicError
+);
+
+pub fn from_value<Value: JsToString + ?Sized>(value: &Value) -> String {
+    value.to_js_string()
+}
 
 impl JsToString for String {
     fn to_js_string(&self) -> String {

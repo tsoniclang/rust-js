@@ -10,6 +10,15 @@ pub enum JsNumeric {
     BigInt(BigInt),
 }
 
+impl crate::string::JsToString for JsNumeric {
+    fn to_js_string(&self) -> String {
+        match self {
+            Self::Number(value) => crate::number::to_string(*value),
+            Self::BigInt(value) => value.to_string(),
+        }
+    }
+}
+
 impl tsonic_rust_runtime::ToSourceString for JsNumeric {
     fn to_source_string(&self) -> String {
         match self {
