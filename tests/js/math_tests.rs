@@ -38,12 +38,12 @@ fn math_max_min_with_empty_and_nan() {
 
 #[test]
 fn imul_and_clz32_and_shift_sign() {
-    assert_eq!(math::imul(2_147_483_647.0, 2.0), -2);
-    assert_eq!(math::imul(f64::NAN, f64::INFINITY), 0);
-    assert_eq!(math::imul(4_294_967_297.0, 2.0), 2);
-    assert_eq!(math::clz32(1.0), 31);
-    assert_eq!(math::clz32(f64::NAN), 32);
-    assert_eq!(math::clz32(0.0), 32);
+    assert_eq!(math::imul(2_147_483_647, 1), i32::MAX);
+    assert_eq!(math::imul(2_147_483_647, 2), -2);
+    assert_eq!(math::imul(-2, 3), -6);
+    assert_eq!(math::clz32(1), 31);
+    assert_eq!(math::clz32(-1), 0);
+    assert_eq!(math::clz32(0), 32);
     assert!(math::sign(-0.0).is_sign_negative());
     assert_eq!(math::sign(-12.0), -1.0);
     let random = math::random();

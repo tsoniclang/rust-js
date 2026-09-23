@@ -209,17 +209,7 @@ impl ObjectIdentityCarrier for ArrayBuffer {
 }
 
 pub(crate) fn to_index(value: f64) -> JsResult<usize> {
-    let integer = if value.is_nan() { 0.0 } else { value.trunc() };
-    if !integer.is_finite()
-        || integer < 0.0
-        || integer > 9_007_199_254_740_991.0
-        || integer > usize::MAX as f64
-    {
-        return Err(range_error(
-            "ArrayBuffer index is outside the supported range",
-        ));
-    }
-    Ok(integer as usize)
+    crate::coercion::native_length(value)
 }
 
 pub(crate) fn normalize_index(value: f64, max: usize) -> usize {

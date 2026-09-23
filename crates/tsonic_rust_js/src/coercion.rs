@@ -31,8 +31,12 @@ pub(crate) fn to_integer_or_infinity(value: f64) -> f64 {
     }
 }
 
-pub(crate) fn to_length(value: f64) -> u64 {
-    to_integer_or_infinity(value).clamp(0.0, crate::number::MAX_SAFE_INTEGER) as u64
+pub(crate) fn native_length(value: f64) -> crate::errors::JsResult<usize> {
+    const EXCLUSIVE_MAXIMUM: f64 = (usize::MAX as u128 + 1) as f64;
+    if value.fract() != 0.0 || !(0.0..EXCLUSIVE_MAXIMUM).contains(&value) {
+        return Err(crate::errors::range_error("length must be a non-negative native integer"));
+    }
+    Ok(value as usize)
 }
 
 pub(crate) fn normalize_slice_index(value: f64, length: usize) -> usize {

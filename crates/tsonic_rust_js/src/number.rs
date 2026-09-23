@@ -21,9 +21,21 @@ pub const POSITIVE_INFINITY: f64 = f64::INFINITY;
 pub const NEGATIVE_INFINITY: f64 = f64::NEG_INFINITY;
 pub const NAN: f64 = f64::NAN;
 
-pub trait JsNumberValue: Copy {
+pub trait JsNumberValue: Copy + NativeNumberPredicate {
     fn to_js_f64(self) -> f64;
     fn to_js_decimal_string(self) -> String;
+}
+
+pub trait NativeNumberPredicate {
+    fn native_is_integer(self) -> bool;
+    fn native_is_finite(self) -> bool;
+    fn native_is_nan(self) -> bool;
+}
+
+impl NativeNumberPredicate for &tsonic_rust_runtime::BigInt {
+    fn native_is_integer(self) -> bool { true }
+    fn native_is_finite(self) -> bool { true }
+    fn native_is_nan(self) -> bool { false }
 }
 
 pub trait JsIntegerValue: JsNumberValue {
@@ -33,6 +45,12 @@ pub trait JsIntegerValue: JsNumberValue {
 macro_rules! impl_signed_integer {
     ($($type:ty),+ $(,)?) => {
         $(
+            impl NativeNumberPredicate for $type {
+                fn native_is_integer(self) -> bool { true }
+                fn native_is_finite(self) -> bool { true }
+                fn native_is_nan(self) -> bool { false }
+            }
+
             impl JsNumberValue for $type {
                 fn to_js_f64(self) -> f64 {
                     self as f64
@@ -55,6 +73,12 @@ macro_rules! impl_signed_integer {
 macro_rules! impl_unsigned_integer {
     ($($type:ty),+ $(,)?) => {
         $(
+            impl NativeNumberPredicate for $type {
+                fn native_is_integer(self) -> bool { true }
+                fn native_is_finite(self) -> bool { true }
+                fn native_is_nan(self) -> bool { false }
+            }
+
             impl JsNumberValue for $type {
                 fn to_js_f64(self) -> f64 {
                     self as f64
@@ -77,6 +101,12 @@ macro_rules! impl_unsigned_integer {
 impl_signed_integer!(i8, i16, i32, i64, i128, isize);
 impl_unsigned_integer!(u8, u16, u32, u64, u128, usize);
 
+impl NativeNumberPredicate for f32 {
+    fn native_is_integer(self) -> bool { self.is_finite() && self.fract() == 0.0 }
+    fn native_is_finite(self) -> bool { self.is_finite() }
+    fn native_is_nan(self) -> bool { self.is_nan() }
+}
+
 impl JsNumberValue for f32 {
     fn to_js_f64(self) -> f64 {
         f64::from(self)
@@ -85,6 +115,12 @@ impl JsNumberValue for f32 {
     fn to_js_decimal_string(self) -> String {
         format_number(f64::from(self))
     }
+}
+
+impl NativeNumberPredicate for f64 {
+    fn native_is_integer(self) -> bool { self.is_finite() && self.fract() == 0.0 }
+    fn native_is_finite(self) -> bool { self.is_finite() }
+    fn native_is_nan(self) -> bool { self.is_nan() }
 }
 
 impl JsNumberValue for f64 {
@@ -249,20 +285,20 @@ pub fn parse_float(text: &str) -> f64 {
     })
 }
 
-pub fn is_nan(value: f64) -> bool {
-    value.is_nan()
+pub fn is_nan<T: NativeNumberPredicate>(value: T) -> bool {
+    value.native_is_nan()
 }
 
-pub fn is_finite(value: f64) -> bool {
-    value.is_finite()
+pub fn is_finite<T: NativeNumberPredicate>(value: T) -> bool {
+    value.native_is_finite()
 }
 
-pub fn is_integer(value: f64) -> bool {
-    value.is_finite() && value.fract() == 0.0
+pub fn is_integer<T: NativeNumberPredicate>(value: T) -> bool {
+    value.native_is_integer()
 }
 
-pub fn is_safe_integer(value: f64) -> bool {
-    is_integer(value) && (MIN_SAFE_INTEGER..=MAX_SAFE_INTEGER).contains(&value)
+pub fn is_safe_integer<T: NativeNumberPredicate>(value: T) -> bool {
+    value.native_is_integer()
 }
 
 pub fn to_fixed<T: JsNumberValue>(value: T, digits: Option<f64>) -> Result<String, JsError> {

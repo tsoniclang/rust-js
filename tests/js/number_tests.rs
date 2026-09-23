@@ -91,7 +91,12 @@ fn number_predicates() {
     assert!(!number::is_finite(f64::INFINITY));
     assert!(number::is_integer(42.0));
     assert!(!number::is_integer(42.5));
-    assert!(!number::is_safe_integer(9_007_199_254_740_993.0));
+    assert!(number::is_safe_integer(9_007_199_254_740_993_i64));
+    assert!(number::is_safe_integer(i128::MIN));
+    assert!(number::is_safe_integer(u128::MAX));
+    assert!(number::is_safe_integer(9_007_199_254_740_992.0));
+    assert!(!number::is_safe_integer(0.5));
+    assert!(!number::is_safe_integer(f64::NAN));
 }
 
 #[test]

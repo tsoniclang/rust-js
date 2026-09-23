@@ -1,7 +1,6 @@
 //! Math helper module.
 
 use std::sync::atomic::{AtomicU64, Ordering};
-use tsonic_rust_runtime::operators;
 
 static RANDOM_STATE: AtomicU64 = AtomicU64::new(0x9E3779B97F4A7C15);
 
@@ -62,9 +61,8 @@ pub fn ceil(value: f64) -> f64 {
 pub fn floor(value: f64) -> f64 {
     value.floor()
 }
-pub fn clz32(value: f64) -> i32 {
-    let bits = operators::to_uint32(value);
-    bits.leading_zeros() as i32
+pub fn clz32(value: i32) -> i32 {
+    value.leading_zeros() as i32
 }
 pub fn cos(value: f64) -> f64 {
     value.cos()
@@ -114,8 +112,8 @@ pub fn hypot(values: &[f64]) -> f64 {
     }
     maximum * sum.sqrt()
 }
-pub fn imul(left: f64, right: f64) -> i32 {
-    operators::to_uint32(left).wrapping_mul(operators::to_uint32(right)) as i32
+pub fn imul(left: i32, right: i32) -> i32 {
+    left.wrapping_mul(right)
 }
 pub fn log(value: f64) -> f64 {
     value.ln()

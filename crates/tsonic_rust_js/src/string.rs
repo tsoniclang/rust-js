@@ -4,7 +4,7 @@ use tsonic_rust_runtime::{JsError, JsErrorKind};
 use unicode_normalization::UnicodeNormalization;
 
 use crate::array::JsArray;
-use crate::coercion::{absolute_index, relative_index, to_integer_or_infinity, to_length};
+use crate::coercion::{absolute_index, native_length, relative_index, to_integer_or_infinity};
 use crate::errors::{type_error, JsResult};
 use crate::number::JsNumberValue;
 use crate::JsValue;
@@ -530,16 +530,14 @@ fn pad(
     filler: Option<&str>,
     at_start: bool,
 ) -> Result<String, JsError> {
-    let target_length = to_length(target_length);
-    if target_length <= value.len() as u64 {
+    let target_length = native_length(target_length)?;
+    if target_length <= value.len() {
         return Ok(value.to_string());
     }
     let filler = filler.unwrap_or(" ");
     if filler.is_empty() {
         return Ok(value.to_string());
     }
-    let target_length = usize::try_from(target_length)
-        .map_err(|_| crate::errors::range_error("invalid string length"))?;
     let needed = target_length - value.len();
     let repetitions = needed / filler.len();
     let remainder = native_slice(filler, 0, needed % filler.len())?;

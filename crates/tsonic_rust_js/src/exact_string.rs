@@ -1,7 +1,7 @@
 use unicode_normalization::UnicodeNormalization;
 
 use crate::array::JsArray;
-use crate::coercion::{absolute_index, relative_index, to_integer_or_infinity, to_length};
+use crate::coercion::{absolute_index, native_length, relative_index, to_integer_or_infinity};
 use crate::errors::{range_error, type_error, JsResult};
 use crate::regexp::string_replacement_arguments;
 use crate::{JsString, JsValue};
@@ -441,8 +441,8 @@ fn pad(
     filler: Option<&JsString>,
     at_start: bool,
 ) -> JsResult<JsString> {
-    let target_length = to_length(target_length);
-    if target_length <= value.len() as u64 {
+    let target_length = native_length(target_length)?;
+    if target_length <= value.len() {
         return Ok(value.clone());
     }
     let default_filler = JsString::from_utf8(" ");
@@ -450,8 +450,6 @@ fn pad(
     if filler.is_empty() {
         return Ok(value.clone());
     }
-    let target_length =
-        usize::try_from(target_length).map_err(|_| range_error("invalid string length"))?;
     let needed = target_length - value.len();
     let mut output = Vec::new();
     output

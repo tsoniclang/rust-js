@@ -37,15 +37,10 @@ fn atomic_wait_validates_backing_bounds_conversion_and_timeout() {
     assert_eq!(atomics::notify_all(&ordinary, 0.0).unwrap(), 0.0);
     assert_eq!(atomics::store(&ordinary, 0.0, -3.0).unwrap(), -3.0);
     assert_eq!(atomics::load(&ordinary, 0.0).unwrap(), -3.0);
-    assert_eq!(
-        ArrayBuffer::new_shared(f64::NAN).unwrap().byte_length(),
-        0.0
-    );
-    assert_eq!(ArrayBuffer::new_shared(-0.5).unwrap().byte_length(), 0.0);
-    assert!(ArrayBuffer::new_shared(9_007_199_254_740_992.0).is_err());
-    assert_eq!(ArrayBuffer::new(f64::NAN).unwrap().byte_length(), 0.0);
-    assert_eq!(ArrayBuffer::new(-0.5).unwrap().byte_length(), 0.0);
-    assert!(ArrayBuffer::new(9_007_199_254_740_992.0).is_err());
+    for invalid in [f64::NAN, -0.5, 0.5, f64::INFINITY, (usize::MAX as u128 + 1) as f64] {
+        assert!(ArrayBuffer::new_shared(invalid).is_err());
+        assert!(ArrayBuffer::new(invalid).is_err());
+    }
     assert_eq!(
         atomics::wait(&values, 0.0, 0.0, f64::MAX).unwrap(),
         "not-equal"

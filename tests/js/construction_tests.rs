@@ -18,7 +18,7 @@ fn compiler_provider_error_constructors_retain_kind_and_message() {
 fn bigint_width_selection_preserves_exact_signed_and_unsigned_bits() {
     for (bits, input, signed, unsigned) in [
         (0.0, "-17", "0", "0"),
-        (1.9, "3", "-1", "1"),
+        (1.0, "3", "-1", "1"),
         (7.0, "64", "-64", "64"),
         (7.0, "-129", "-1", "127"),
         (8.0, "255", "-1", "255"),
@@ -50,7 +50,7 @@ fn bigint_width_selection_preserves_exact_signed_and_unsigned_bits() {
         );
     }
     let value = BigInt::from_decimal_literal("9");
-    for width in [f64::NAN, -0.5, -0.0] {
+    for width in [0.0, -0.0] {
         assert_eq!(
             abi::bigint_as_int_n(width, &value).unwrap().to_string(),
             "0"
@@ -62,9 +62,12 @@ fn bigint_width_selection_preserves_exact_signed_and_unsigned_bits() {
     }
     for width in [
         -1.0,
+        -0.5,
+        1.9,
+        f64::NAN,
         f64::INFINITY,
         f64::NEG_INFINITY,
-        9_007_199_254_740_992.0,
+        18_446_744_073_709_551_616.0,
     ] {
         assert_eq!(
             abi::bigint_as_int_n(width, &value).unwrap_err().kind(),
@@ -76,11 +79,11 @@ fn bigint_width_selection_preserves_exact_signed_and_unsigned_bits() {
         );
     }
     assert_eq!(
-        abi::bigint_as_int_n(9_007_199_254_740_991.0, &value).unwrap(),
+        abi::bigint_as_int_n(9_007_199_254_740_992.0, &value).unwrap(),
         value
     );
     assert_eq!(
-        abi::bigint_as_uint_n(9_007_199_254_740_991.0, &value).unwrap(),
+        abi::bigint_as_uint_n(9_007_199_254_740_992.0, &value).unwrap(),
         value
     );
 }
@@ -93,7 +96,7 @@ fn bigint_radix_formatting_retains_all_integer_bits() {
         "-20000000000001"
     );
     assert_eq!(
-        abi::bigint_to_string_radix(&value, 2.9).unwrap(),
+        abi::bigint_to_string_radix(&value, 2.0).unwrap(),
         format!("-1{}1", "0".repeat(52))
     );
     let value = abi::bigint_from_string("35").unwrap();
@@ -124,8 +127,8 @@ fn native_bigint_operands_truncate_without_losing_high_bits() {
     pair!(usize::MAX, -1_isize, usize::BITS as f64);
     assert_eq!(abi::bigint_as_uint_n(129.0, &-1_i64).unwrap().to_string(), "680564733841876926926749214863536422911");
     assert_eq!(abi::bigint_as_int_n(256.0, &-1_i64).unwrap().to_string(), "-1");
-    assert_eq!(abi::bigint_as_uint_n(9_007_199_254_740_991.0, &9_u64).unwrap().to_string(), "9");
-    assert_eq!(abi::bigint_as_int_n(f64::NAN, &9_u64).unwrap().to_string(), "0");
+    assert_eq!(abi::bigint_as_uint_n(9_007_199_254_740_992.0, &9_u64).unwrap().to_string(), "9");
+    assert_eq!(abi::bigint_as_int_n(f64::NAN, &9_u64).unwrap_err().kind(), JsErrorKind::RangeError);
     assert_eq!(abi::bigint_as_int_n(-1.0, &9_u64).unwrap_err().kind(), JsErrorKind::RangeError);
 }
 
@@ -197,7 +200,7 @@ fn array_length_construction_initializes_native_values() {
     assert_eq!(item.len(), 1);
     assert_eq!(item.at(0.0), Some(3.0));
     assert_eq!(u32::MAX.array_length().unwrap(), u32::MAX as usize);
-    for length in [-1.0, 1.5, f64::NAN, f64::INFINITY, 4_294_967_296.0] {
+    for length in [-1.0, 1.5, f64::NAN, f64::INFINITY, (usize::MAX as u128 + 1) as f64] {
         assert_eq!(
             abi::array_construct_length::<String>(length)
                 .unwrap_err()
