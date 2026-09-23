@@ -6,6 +6,19 @@ fn text(value: impl AsRef<str>) -> String {
 }
 
 #[test]
+fn bigint_parsing_rejects_malformed_whole_tokens() {
+    for source in ["1\0", "1\0\0", "1\0\x32", "+1\0", "1 2", "+-1", "1e3"] {
+        assert_eq!(
+            tsonic_rust_js::bigint::from_string(source)
+                .unwrap_err()
+                .kind(),
+            "SyntaxError",
+            "{source:?}"
+        );
+    }
+}
+
+#[test]
 fn parse_int_promotes_only_after_exact_native_accumulator_overflow() {
     use num_bigint::BigUint;
     use num_traits::ToPrimitive;
