@@ -141,6 +141,35 @@ fn typed_comparators_receive_native_elements() {
 }
 
 #[test]
+fn closed_native_integer_construction_never_uses_the_floating_variant() {
+    use tsonic_rust_js::JsValue;
+    macro_rules! check_signed {
+        ($($source:ty),+ $(,)?) => {
+            $(for value in [<$source>::MIN, 0, <$source>::MAX] {
+                assert!(matches!(JsValue::from(value), JsValue::Integer(actual) if actual == i64::from(value)));
+            })+
+        };
+    }
+    macro_rules! check_unsigned {
+        ($($source:ty),+ $(,)?) => {
+            $(for value in [0, <$source>::MAX] {
+                assert!(matches!(JsValue::from(value), JsValue::UnsignedInteger(actual) if actual == u64::from(value)));
+            })+
+        };
+    }
+    check_signed!(i8, i16, i32, i64);
+    check_unsigned!(u8, u16, u32, u64);
+    assert!(
+        matches!(JsValue::from(isize::MIN), JsValue::Integer(actual) if actual == isize::MIN as i64)
+    );
+    assert!(
+        matches!(JsValue::from(usize::MAX), JsValue::UnsignedInteger(actual) if actual == usize::MAX as u64)
+    );
+    assert!(matches!(JsValue::from(1.5_f32), JsValue::Number(1.5)));
+    assert!(matches!(JsValue::from(1.5_f64), JsValue::Number(1.5)));
+}
+
+#[test]
 fn closed_native_integers_remain_exact_without_growing_the_value_carrier() {
     use tsonic_rust_js::{
         equality::{JsHash, JsSameValue, JsSameValueZero},

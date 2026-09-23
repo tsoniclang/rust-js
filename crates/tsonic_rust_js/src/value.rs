@@ -458,29 +458,19 @@ impl From<bool> for JsValue {
     }
 }
 
-macro_rules! impl_exact_number_from {
-    ($($source:ty),+ $(,)?) => {
+macro_rules! impl_native_number_from {
+    ($variant:ident, $carrier:ty; $($source:ty),+ $(,)?) => {
         $(impl From<$source> for JsValue {
             fn from(value: $source) -> Self {
-                Self::Number(f64::from(value))
+                Self::$variant(<$carrier>::from(value))
             }
         })+
     };
 }
 
-impl_exact_number_from!(i8, u8, i16, u16, i32, u32, f32, f64);
-
-impl From<i64> for JsValue {
-    fn from(value: i64) -> Self {
-        Self::Integer(value)
-    }
-}
-
-impl From<u64> for JsValue {
-    fn from(value: u64) -> Self {
-        Self::UnsignedInteger(value)
-    }
-}
+impl_native_number_from!(Integer, i64; i8, i16, i32, i64);
+impl_native_number_from!(UnsignedInteger, u64; u8, u16, u32, u64);
+impl_native_number_from!(Number, f64; f32, f64);
 
 impl From<isize> for JsValue {
     fn from(value: isize) -> Self {
