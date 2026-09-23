@@ -1,19 +1,23 @@
 use crate::errors::{range_error, JsResult};
-use crate::native_integer::{integer_or_infinity, native_length};
+use crate::numeric::IndexInput;
 
-pub(crate) fn repeat_shape(count: f64, length: impl FnOnce() -> usize) -> JsResult<(usize, usize)> {
-    let count = integer_or_infinity(count);
-    if count < 0.0 || !count.is_finite() {
+pub(crate) fn repeat_shape(
+    count: impl IndexInput,
+    length: impl FnOnce() -> usize,
+) -> JsResult<(usize, usize)> {
+    if !count.valid_repeat_count() {
         return Err(range_error("invalid repeat count"));
     }
-    if count == 0.0 {
+    if count.positive_index(usize::MAX) == 0 {
         return Ok((0, 0));
     }
     let length = length();
     if length == 0 {
         return Ok((0, 0));
     }
-    let count = native_length(count)?;
+    let count = count
+        .length_index()
+        .ok_or_else(|| range_error("invalid string length"))?;
     let length = length
         .checked_mul(count)
         .ok_or_else(|| range_error("invalid string length"))?;

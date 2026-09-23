@@ -136,7 +136,7 @@ fn slice_and_substring_behavior() {
     let abc = js("abc");
 
     assert_eq!(string::slice(&javascript, 1.0, Some(3.0)), js("av"));
-    assert_eq!(string::slice(&javascript, -3.0, None), js("ipt"));
+    assert_eq!(string::slice(&javascript, -3.0, None::<usize>), js("ipt"));
     assert_eq!(string::substring(&abc, 2.9, 0.0), js("ab"));
     assert_eq!(string::slice(&abc, 2.0, Some(1.0)), js(""));
     assert_eq!(

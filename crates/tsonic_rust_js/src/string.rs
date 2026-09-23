@@ -1,12 +1,14 @@
 //! Native UTF-8 string operations exposed by the source profile.
 
+use tsonic_rust_runtime::conversions::IntegerInput;
 use tsonic_rust_runtime::{JsError, JsErrorKind};
 use unicode_normalization::UnicodeNormalization;
 
 use crate::array::JsArray;
 use crate::errors::{type_error, JsResult};
-use crate::native_integer::{absolute_index, native_index, pad_length, relative_index};
+use crate::native_integer::{absolute_index, pad_length, relative_index, Integer32};
 use crate::number::JsNumberValue;
+use crate::numeric::IndexInput;
 use crate::JsValue;
 
 pub struct NativeStringIterator {
@@ -148,7 +150,7 @@ pub fn js_len(value: &str) -> usize {
     value.len()
 }
 
-pub fn char_at(value: &str, index: f64) -> Result<String, JsError> {
+pub fn char_at(value: &str, index: impl IndexInput) -> Result<String, JsError> {
     match absolute_index(index, value.len()) {
         Some(position) => Ok(native_slice(value, position, value.len())?
             .chars()
@@ -159,25 +161,29 @@ pub fn char_at(value: &str, index: f64) -> Result<String, JsError> {
     }
 }
 
-pub fn at(value: &str, index: f64) -> Result<Option<String>, JsError> {
+pub fn at(value: &str, index: impl IndexInput) -> Result<Option<String>, JsError> {
     relative_index(index, value.len())
-        .map(|position| char_at(value, position as f64))
+        .map(|position| char_at(value, position))
         .transpose()
 }
 
-pub fn char_code_at(value: &str, index: f64) -> f64 {
+pub fn char_code_at(value: &str, index: impl IndexInput) -> f64 {
     code_point_at(value, index)
         .map(f64::from)
         .unwrap_or(f64::NAN)
 }
 
-pub fn code_point_at(value: &str, index: f64) -> Option<u32> {
+pub fn code_point_at(value: &str, index: impl IndexInput) -> Option<u32> {
     let position = absolute_index(index, value.len())?;
     let character = value.get(position..)?.chars().next()?;
     Some(u32::from(character))
 }
 
-pub fn slice(value: &str, start: f64, end: Option<f64>) -> Result<String, JsError> {
+pub fn slice(
+    value: &str,
+    start: impl IndexInput,
+    end: Option<impl IndexInput>,
+) -> Result<String, JsError> {
     let from = crate::native_integer::normalize_slice_index(start, value.len());
     let to = end
         .map(|position| crate::native_integer::normalize_slice_index(position, value.len()))
@@ -188,11 +194,23 @@ pub fn slice(value: &str, start: f64, end: Option<f64>) -> Result<String, JsErro
     native_slice(value, from, to).map(str::to_owned)
 }
 
-pub fn slice_to(value: &str, start: f64, end: f64) -> Result<String, JsError> {
+pub fn slice_to(
+    value: &str,
+    start: impl IndexInput,
+    end: impl IndexInput,
+) -> Result<String, JsError> {
     slice(value, start, Some(end))
 }
 
-fn substring_with_end(value: &str, start: f64, end: Option<f64>) -> Result<String, JsError> {
+pub fn slice_from(value: &str, start: impl IndexInput) -> Result<String, JsError> {
+    slice(value, start, None::<usize>)
+}
+
+fn substring_with_end(
+    value: &str,
+    start: impl IndexInput,
+    end: Option<impl IndexInput>,
+) -> Result<String, JsError> {
     let mut start = clamped_position(start, value.len());
     let mut end = end
         .map(|position| clamped_position(position, value.len()))
@@ -203,22 +221,30 @@ fn substring_with_end(value: &str, start: f64, end: Option<f64>) -> Result<Strin
     native_slice(value, start, end).map(str::to_owned)
 }
 
-pub fn substring(value: &str, start: f64, end: f64) -> Result<String, JsError> {
+pub fn substring(
+    value: &str,
+    start: impl IndexInput,
+    end: impl IndexInput,
+) -> Result<String, JsError> {
     substring_with_end(value, start, Some(end))
 }
 
-fn substr_with_length(value: &str, start: f64, length: Option<f64>) -> Result<String, JsError> {
+fn substr_with_length(
+    value: &str,
+    start: impl IndexInput,
+    length: Option<impl IndexInput>,
+) -> Result<String, JsError> {
     let from = crate::native_integer::normalize_slice_index(start, value.len());
     let to = length
         .map(|length| {
-            from.saturating_add(native_index(length).max(0) as usize)
+            from.saturating_add(length.positive_index(usize::MAX))
                 .min(value.len())
         })
         .unwrap_or(value.len());
     native_slice(value, from, to).map(str::to_owned)
 }
 
-pub fn index_of(value: &str, search: &str, position: f64) -> isize {
+pub fn index_of(value: &str, search: &str, position: impl IndexInput) -> isize {
     let mut position = clamped_position(position, value.len());
     if search.is_empty() {
         return position as isize;
@@ -232,7 +258,11 @@ pub fn index_of(value: &str, search: &str, position: f64) -> isize {
         .unwrap_or(-1)
 }
 
-fn last_index_of_with_position(value: &str, search: &str, position: Option<f64>) -> isize {
+fn last_index_of_with_position(
+    value: &str,
+    search: &str,
+    position: Option<impl IndexInput>,
+) -> isize {
     let position = position
         .map(|position| clamped_position(position, value.len()))
         .unwrap_or(value.len());
@@ -252,18 +282,18 @@ fn last_index_of_with_position(value: &str, search: &str, position: Option<f64>)
         .unwrap_or(-1)
 }
 
-pub fn starts_with(value: &str, search: &str, position: f64) -> bool {
+pub fn starts_with(value: &str, search: &str, position: impl IndexInput) -> bool {
     let start = clamped_position(position, value.len());
     value
         .get(start..)
         .is_some_and(|suffix| suffix.starts_with(search))
 }
 
-pub fn last_index_of(value: &str, search: &str, position: f64) -> isize {
+pub fn last_index_of(value: &str, search: &str, position: impl IndexInput) -> isize {
     last_index_of_with_position(value, search, Some(position))
 }
 
-fn ends_with_position(value: &str, search: &str, end_position: Option<f64>) -> bool {
+fn ends_with_position(value: &str, search: &str, end_position: Option<impl IndexInput>) -> bool {
     let end = end_position
         .map(|end| clamped_position(end, value.len()))
         .unwrap_or(value.len());
@@ -272,7 +302,7 @@ fn ends_with_position(value: &str, search: &str, end_position: Option<f64>) -> b
         .is_some_and(|prefix| prefix.ends_with(search))
 }
 
-pub fn includes(value: &str, search: &str, position: f64) -> bool {
+pub fn includes(value: &str, search: &str, position: impl IndexInput) -> bool {
     index_of(value, search, position) >= 0
 }
 
@@ -288,7 +318,7 @@ pub fn ends_with_at_end(value: &str, search: &str) -> bool {
     value.ends_with(search)
 }
 
-pub fn ends_with(value: &str, search: &str, end_position: f64) -> bool {
+pub fn ends_with(value: &str, search: &str, end_position: impl IndexInput) -> bool {
     ends_with_position(value, search, Some(end_position))
 }
 
@@ -297,23 +327,27 @@ pub fn index_of_from_start(value: &str, search: &str) -> isize {
 }
 
 pub fn last_index_of_from_end(value: &str, search: &str) -> isize {
-    last_index_of_with_position(value, search, None)
+    last_index_of_with_position(value, search, None::<usize>)
 }
 
-pub fn substring_from(value: &str, start: f64) -> Result<String, JsError> {
-    substring_with_end(value, start, None)
+pub fn substring_from(value: &str, start: impl IndexInput) -> Result<String, JsError> {
+    substring_with_end(value, start, None::<usize>)
 }
 
-pub fn substr_from(value: &str, start: f64) -> Result<String, JsError> {
-    substr_with_length(value, start, None)
+pub fn substr_from(value: &str, start: impl IndexInput) -> Result<String, JsError> {
+    substr_with_length(value, start, None::<usize>)
 }
 
-pub fn substr(value: &str, start: f64, length: f64) -> Result<String, JsError> {
+pub fn substr(
+    value: &str,
+    start: impl IndexInput,
+    length: impl IndexInput,
+) -> Result<String, JsError> {
     substr_with_length(value, start, Some(length))
 }
 
-fn clamped_position(value: f64, length: usize) -> usize {
-    (native_index(value).max(0) as usize).min(length)
+fn clamped_position(value: impl IndexInput, length: usize) -> usize {
+    value.positive_index(length)
 }
 
 pub fn replace(value: &str, search: &str, replacement: &str) -> String {
@@ -465,7 +499,7 @@ fn append_replacement(
 fn split_with_limit(
     value: &str,
     separator: &str,
-    limit: Option<f64>,
+    limit: Option<impl Integer32>,
 ) -> Result<JsArray<String>, JsError> {
     let limit = crate::native_integer::split_limit(limit);
     if limit == 0 {
@@ -488,14 +522,18 @@ fn split_with_limit(
 }
 
 pub fn split_all(value: &str, separator: &str) -> Result<JsArray<String>, JsError> {
-    split_with_limit(value, separator, None)
+    split_with_limit(value, separator, None::<usize>)
 }
 
-pub fn split(value: &str, separator: &str, limit: f64) -> Result<JsArray<String>, JsError> {
+pub fn split(
+    value: &str,
+    separator: &str,
+    limit: impl Integer32,
+) -> Result<JsArray<String>, JsError> {
     split_with_limit(value, separator, Some(limit))
 }
 
-pub fn repeat(value: &str, count: f64) -> Result<String, JsError> {
+pub fn repeat(value: &str, count: impl IndexInput) -> Result<String, JsError> {
     let (count, _) = crate::string_capacity::repeat_shape(count, || js_len(value))?;
     if count == 0 {
         return Ok(String::new());
@@ -516,25 +554,33 @@ pub fn repeat(value: &str, count: f64) -> Result<String, JsError> {
     Ok(output)
 }
 
-pub fn pad_start(value: &str, target_length: f64) -> Result<String, JsError> {
+pub fn pad_start(value: &str, target_length: impl IndexInput) -> Result<String, JsError> {
     pad(value, target_length, None, true)
 }
 
-pub fn pad_start_with(value: &str, target_length: f64, filler: &str) -> Result<String, JsError> {
+pub fn pad_start_with(
+    value: &str,
+    target_length: impl IndexInput,
+    filler: &str,
+) -> Result<String, JsError> {
     pad(value, target_length, Some(filler), true)
 }
 
-pub fn pad_end(value: &str, target_length: f64) -> Result<String, JsError> {
+pub fn pad_end(value: &str, target_length: impl IndexInput) -> Result<String, JsError> {
     pad(value, target_length, None, false)
 }
 
-pub fn pad_end_with(value: &str, target_length: f64, filler: &str) -> Result<String, JsError> {
+pub fn pad_end_with(
+    value: &str,
+    target_length: impl IndexInput,
+    filler: &str,
+) -> Result<String, JsError> {
     pad(value, target_length, Some(filler), false)
 }
 
 fn pad(
     value: &str,
-    target_length: f64,
+    target_length: impl IndexInput,
     filler: Option<&str>,
     at_start: bool,
 ) -> Result<String, JsError> {
@@ -621,20 +667,23 @@ pub fn concat(value: &str, strings: &[&str]) -> String {
     output
 }
 
-pub fn from_char_code(code_units: &[f64]) -> Result<String, JsError> {
+pub fn from_char_code<Value: IntegerInput<u32>>(code_units: &[Value]) -> Result<String, JsError> {
     from_code_point(code_units)
 }
 
-pub fn from_code_point(code_points: &[f64]) -> Result<String, JsError> {
+pub fn from_code_point<Value: IntegerInput<u32>>(code_points: &[Value]) -> Result<String, JsError> {
     let mut output = String::new();
     for value in code_points {
-        if !value.is_finite() || value.fract() != 0.0 || *value < 0.0 || *value > 0x10FFFF as f64 {
-            return Err(JsError::new(
-                JsErrorKind::RangeError,
-                "fromCodePoint expects an integer between 0 and 0x10FFFF",
-            ));
-        }
-        let character = char::from_u32(*value as u32).ok_or_else(|| {
+        let point = value
+            .checked_integer()
+            .filter(|point| *point <= 0x10ffff)
+            .ok_or_else(|| {
+                JsError::new(
+                    JsErrorKind::RangeError,
+                    "fromCodePoint expects an integer between 0 and 0x10FFFF",
+                )
+            })?;
+        let character = char::from_u32(point).ok_or_else(|| {
             crate::errors::range_error("native string character must be a Unicode scalar")
         })?;
         output.push(character);

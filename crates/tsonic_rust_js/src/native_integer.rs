@@ -1,7 +1,3 @@
-pub(crate) fn native_index(value: f64) -> isize {
-    value as isize
-}
-
 pub(crate) fn integer_or_infinity(value: f64) -> f64 {
     if value.is_nan() {
         0.0
@@ -18,8 +14,8 @@ pub(crate) fn index_length(
         .ok_or_else(|| crate::errors::range_error("length must be a non-negative native integer"))
 }
 
-pub(crate) fn pad_length(value: f64) -> usize {
-    value as usize
+pub(crate) fn pad_length(value: impl crate::numeric::IndexInput) -> usize {
+    value.positive_index(usize::MAX)
 }
 
 pub trait Integer32 {
@@ -66,7 +62,7 @@ impl Integer32 for f64 {
     }
 }
 
-pub(crate) fn split_limit(value: Option<f64>) -> usize {
+pub(crate) fn split_limit(value: Option<impl Integer32>) -> usize {
     value.map_or(usize::MAX, |value| value.integer32() as usize)
 }
 
@@ -102,24 +98,10 @@ pub(crate) fn normalize_slice_index(
 
 #[cfg(test)]
 mod tests {
-    use super::{absolute_index, native_index, normalize_slice_index, relative_index};
+    use super::{absolute_index, normalize_slice_index, relative_index};
 
     #[test]
     fn indices_follow_native_casts_and_integer_bounds() {
-        for value in [
-            f64::NAN,
-            f64::INFINITY,
-            f64::NEG_INFINITY,
-            0.0,
-            -0.0,
-            1.9,
-            -1.9,
-            9_007_199_254_740_992.0,
-            isize::MIN as f64,
-            isize::MAX as f64,
-        ] {
-            assert_eq!(native_index(value), value as isize);
-        }
         assert_eq!(relative_index(-1.0, 3), Some(2));
         assert_eq!(relative_index(-4.0, 3), None);
         assert_eq!(relative_index(f64::NAN, 3), Some(0));

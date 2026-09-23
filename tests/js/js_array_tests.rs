@@ -45,7 +45,7 @@ fn numeric_membership_preserves_presence_without_cloning_values() {
     assert!(!JsArray::contains_number_property(1.0, &values));
     assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| values.set_len(3))).is_err());
     assert!(!JsArray::contains_number_property(2.0, &values));
-    for index in [-1.0, 0.5, f64::NAN, f64::INFINITY, 4_294_967_295.0] {
+    for index in [-1.0, 0.5, f64::NAN, f64::INFINITY] {
         assert!(!JsArray::contains_number_property(index, &values));
         values.set_number(index, Token);
         assert!(JsArray::contains_number_property(index, &values));

@@ -24,6 +24,10 @@ name = "native_result_carriers"
 path = "../../tests/native_result_carriers.rs"
 
 [[test]]
+name = "native_index_inputs"
+path = "../../tests/native_index_inputs.rs"
+
+[[test]]
 name = "no_forbidden_shortcuts"
 path = "../../tests/architecture/no_forbidden_shortcuts.rs"
 

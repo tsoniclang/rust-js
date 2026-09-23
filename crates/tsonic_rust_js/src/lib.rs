@@ -53,6 +53,7 @@ pub use intl::{
 };
 pub use js_string::JsString;
 pub use map::JsMap;
+pub use native_integer::Integer32;
 pub use object::{JsObject, JsPropertyValue};
 pub use promise::{JsPromise, PromiseFulfilledResult, PromiseRejectedResult, PromiseSettledResult};
 pub use set::JsSet;

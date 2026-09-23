@@ -1,6 +1,38 @@
 use tsonic_rust_js::{ArrayBuffer, DataView, Float32Array, Uint32Array, Uint8Array};
 
 #[test]
+fn ordinary_numeric_arrays_preserve_exact_native_elements() {
+    use tsonic_rust_js::{array::JsArray, Uint8ClampedArray};
+    let values = JsArray::from_dense(vec![9_007_199_254_740_993_u64, u64::MAX]);
+    let bytes = Uint8Array::from_array(&values).unwrap();
+    assert_eq!(bytes.get_number(0_usize), Some(1));
+    assert_eq!(bytes.get_number(1_usize), Some(255));
+    assert_eq!(
+        Uint32Array::from_array(&values)
+            .unwrap()
+            .get_number(1_usize),
+        Some(u32::MAX)
+    );
+    assert_eq!(
+        Uint8ClampedArray::from_array(&values)
+            .unwrap()
+            .get_number(0_usize),
+        Some(255)
+    );
+    assert!(bytes.set_from_array(&values, 1_usize).is_err());
+    assert_eq!(bytes.get_number(0_usize), Some(1));
+    bytes
+        .set_from_fixed_array(&[7_u64, 8_u64], 0_usize)
+        .unwrap();
+    assert_eq!(
+        values.with_values(|values| values[0]),
+        9_007_199_254_740_993
+    );
+    bytes.set_from_array_default(&values).unwrap();
+    assert_eq!(bytes.get_number(0_usize), Some(1));
+}
+
+#[test]
 fn native_indices_preserve_views_and_reject_unaddressable_offsets() {
     let buffer = ArrayBuffer::new(16_usize).unwrap();
     let view = DataView::from_buffer_length(buffer.clone(), 4_u64, 8_u32).unwrap();

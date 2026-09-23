@@ -13,7 +13,7 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
     assert!(dense.includes(&2, 0.0));
     assert_eq!(dense.index_of(&3, 0.0), 2);
     assert_eq!(dense.join(&text(",")), "1,2,3");
-    assert_eq!(dense.slice(1.0, None).values(), vec![2, 3]);
+    assert_eq!(dense.slice(1.0, None::<usize>).values(), vec![2, 3]);
     assert_eq!(dense.slice_to(0.0, 2.0).values(), vec![1, 2]);
     assert!(js::abi::number_is_finite(1.0));
     assert!(js::abi::number_is_integer(1.0));

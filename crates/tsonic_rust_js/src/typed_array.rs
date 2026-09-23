@@ -64,8 +64,10 @@ impl<T: TypedElement> TypedArray<T> {
         ))
     }
 
-    pub fn from_array(values: &JsArray<f64>) -> JsResult<Self> {
-        Self::from_numbers(values.iter_values())
+    pub fn from_array<Source: Copy + ConvertElement<T>>(
+        values: &JsArray<Source>,
+    ) -> JsResult<Self> {
+        values.with_values(Self::from_values)
     }
 
     pub fn from_typed_array<U: TypedElement + ConvertElement<T>>(
@@ -76,20 +78,26 @@ impl<T: TypedElement> TypedArray<T> {
         Ok(result)
     }
 
-    pub fn from_fixed_array<const LENGTH: usize>(values: &[f64; LENGTH]) -> JsResult<Self> {
-        Self::from_numbers(values.iter().copied())
+    pub fn from_fixed_array<Source: Copy + ConvertElement<T>, const LENGTH: usize>(
+        values: &[Source; LENGTH],
+    ) -> JsResult<Self> {
+        Self::from_values(values)
     }
 
-    pub fn from_vec(values: Vec<f64>) -> JsResult<Self> {
-        Self::from_numbers(values)
+    pub fn from_vec<Source: Copy + ConvertElement<T>>(values: Vec<Source>) -> JsResult<Self> {
+        Self::from_values(&values)
     }
 
-    pub fn from_numbers(values: impl IntoIterator<Item = f64>) -> JsResult<Self> {
-        let values: Vec<f64> = values.into_iter().collect();
+    pub fn from_numbers<Source: Copy + ConvertElement<T>>(
+        values: impl IntoIterator<Item = Source>,
+    ) -> JsResult<Self> {
+        let values: Vec<Source> = values.into_iter().collect();
+        Self::from_values(&values)
+    }
+
+    fn from_values<Source: Copy + ConvertElement<T>>(values: &[Source]) -> JsResult<Self> {
         let result = Self::with_length(values.len())?;
-        for (index, value) in values.into_iter().enumerate() {
-            result.set_usize(index, T::from_number(value));
-        }
+        result.set_from_values(values, 0_usize)?;
         Ok(result)
     }
 
@@ -296,20 +304,27 @@ impl<T: TypedElement> TypedArray<T> {
         self.clone()
     }
 
-    pub fn set_from_array(&self, source: &JsArray<f64>, offset: impl IndexInput) -> JsResult<()> {
-        self.set_from_numbers(source.iter_values(), offset)
-    }
-
-    pub fn set_from_array_default(&self, source: &JsArray<f64>) -> JsResult<()> {
-        self.set_from_array(source, 0.0)
-    }
-
-    pub fn set_from_fixed_array<const LENGTH: usize>(
+    pub fn set_from_array<Source: Copy + ConvertElement<T>>(
         &self,
-        source: &[f64; LENGTH],
+        source: &JsArray<Source>,
         offset: impl IndexInput,
     ) -> JsResult<()> {
-        self.set_from_numbers(source.iter().copied(), offset)
+        source.with_values(|values| self.set_from_values(values, offset))
+    }
+
+    pub fn set_from_array_default<Source: Copy + ConvertElement<T>>(
+        &self,
+        source: &JsArray<Source>,
+    ) -> JsResult<()> {
+        self.set_from_array(source, 0_usize)
+    }
+
+    pub fn set_from_fixed_array<Source: Copy + ConvertElement<T>, const LENGTH: usize>(
+        &self,
+        source: &[Source; LENGTH],
+        offset: impl IndexInput,
+    ) -> JsResult<()> {
+        self.set_from_values(source, offset)
     }
 
     pub fn set_from_typed_array<U: TypedElement + ConvertElement<T>>(
@@ -518,21 +533,27 @@ impl<T: TypedElement> TypedArray<T> {
         value.write_bytes(&mut self.view.buffer.as_mut_bytes()[start..end]);
     }
 
-    fn set_from_numbers(
+    fn set_from_values<Source: Copy + ConvertElement<T>>(
         &self,
-        source: impl IntoIterator<Item = f64>,
+        values: &[Source],
         offset: impl IndexInput,
     ) -> JsResult<()> {
         let offset = to_index(offset)?;
-        let values: Vec<f64> = source.into_iter().collect();
         if offset
             .checked_add(values.len())
             .is_none_or(|end| end > self.view.length)
         {
             return Err(range_error("typed array set source out of bounds"));
         }
-        for (index, value) in values.into_iter().enumerate() {
-            self.set_usize(offset + index, T::from_number(value));
+        let start = self.view.byte_offset + offset * T::BYTES_PER_ELEMENT;
+        let end = start + values.len() * T::BYTES_PER_ELEMENT;
+        let mut bytes = self.view.buffer.as_mut_bytes();
+        for (value, element) in values
+            .iter()
+            .copied()
+            .zip(bytes[start..end].chunks_exact_mut(T::BYTES_PER_ELEMENT))
+        {
+            value.convert_element().write_bytes(element);
         }
         Ok(())
     }

@@ -31,6 +31,21 @@ unsafe impl GlobalAlloc for CountingAllocator {
 static ALLOCATOR: CountingAllocator = CountingAllocator;
 
 #[test]
+fn numeric_array_copy_borrows_without_allocating_or_boxing_elements() {
+    use tsonic_rust_js::{array::JsArray, Uint8Array};
+    let values = JsArray::from_dense(vec![9_007_199_254_740_993_u64, u64::MAX]);
+    let bytes = Uint8Array::new(2_usize).unwrap();
+    TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
+    for _ in 0..1000 {
+        bytes.set_from_array(black_box(&values), 0_usize).unwrap();
+    }
+    let allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
+    assert_eq!(allocations, 0);
+    assert_eq!(bytes.get_number(0_usize), Some(1));
+    assert_eq!(bytes.get_number(1_usize), Some(255));
+}
+
+#[test]
 fn numeric_formatting_allocates_only_the_result_string() {
     let formats: [fn() -> String; 5] = [
         || 1.25_f64.fixed_string(1),
