@@ -21,13 +21,63 @@ pub fn from_boolean(value: bool) -> BigInt {
     from_integer(u8::from(value))
 }
 
-pub fn as_int_n(bits: f64, value: &BigInt) -> JsResult<BigInt> {
-    wrap_bits(bits, value, true)
+pub fn as_int_n<T: BigIntBitInput>(bits: f64, value: &T) -> JsResult<BigInt> {
+    value.truncate_bits(index_width(bits)?, true)
 }
 
-pub fn as_uint_n(bits: f64, value: &BigInt) -> JsResult<BigInt> {
-    wrap_bits(bits, value, false)
+pub fn as_uint_n<T: BigIntBitInput>(bits: f64, value: &T) -> JsResult<BigInt> {
+    value.truncate_bits(index_width(bits)?, false)
 }
+
+pub trait BigIntBitInput: bit_input::Sealed {
+    fn truncate_bits(&self, width: u64, signed: bool) -> JsResult<BigInt>;
+}
+
+mod bit_input {
+    pub trait Sealed {}
+}
+
+impl bit_input::Sealed for BigInt {}
+
+impl BigIntBitInput for BigInt {
+    fn truncate_bits(&self, width: u64, signed: bool) -> JsResult<BigInt> {
+        if width == 0 { return Ok(from_integer(0_u8)); }
+        let bytes = self.to_signed_bytes_le();
+        let negative = bytes.last().is_some_and(|byte| byte & 0x80 != 0);
+        if (signed || !negative) && width >= bytes.len() as u64 * 8 {
+            return Ok(self.clone());
+        }
+        wrap_signed_bytes(width, bytes, signed)
+    }
+}
+
+macro_rules! native_bit_inputs {
+    ($($native:ty),+ $(,)?) => {$(
+        impl bit_input::Sealed for $native {}
+        impl BigIntBitInput for $native {
+            fn truncate_bits(&self, width: u64, signed: bool) -> JsResult<BigInt> {
+                if width == 0 { return Ok(from_integer(0_u8)); }
+                let raw = *self as u128;
+                if width <= 128 {
+                    let mask = if width == 128 { u128::MAX } else { (1_u128 << width) - 1 };
+                    let truncated = raw & mask;
+                    return Ok(if signed && truncated & (1_u128 << (width - 1)) != 0 {
+                        from_integer((truncated | !mask) as i128)
+                    } else {
+                        from_integer(truncated)
+                    });
+                }
+                let negative = <$native>::MIN != 0 && (*self as i128) < 0;
+                if signed || !negative {
+                    return Ok(from_integer(*self));
+                }
+                wrap_signed_bytes(width, raw.to_le_bytes().to_vec(), signed)
+            }
+        }
+    )+};
+}
+
+native_bit_inputs!(i8, u8, i16, u16, i32, u32, i64, u64, i128, u128, isize, usize);
 
 pub fn to_string_radix(value: &BigInt, radix: f64) -> JsResult<String> {
     let radix = crate::coercion::to_integer_or_infinity(radix);
@@ -37,20 +87,16 @@ pub fn to_string_radix(value: &BigInt, radix: f64) -> JsResult<String> {
     Ok(value.to_str_radix(radix as u32))
 }
 
-fn wrap_bits(bits: f64, value: &BigInt, signed: bool) -> JsResult<BigInt> {
+fn index_width(bits: f64) -> JsResult<u64> {
     let width = crate::coercion::to_integer_or_infinity(bits);
     if !(0.0..=crate::number::MAX_SAFE_INTEGER).contains(&width) {
         return Err(range_error("BigInt bit width is outside the index range"));
     }
-    let width = width as u64;
-    if width == 0 {
-        return Ok(from_integer(0_u8));
-    }
-    let mut bytes = value.to_signed_bytes_le();
+    Ok(width as u64)
+}
+
+fn wrap_signed_bytes(width: u64, mut bytes: Vec<u8>, signed: bool) -> JsResult<BigInt> {
     let negative = bytes.last().is_some_and(|byte| byte & 0x80 != 0);
-    if (signed || !negative) && width >= bytes.len() as u64 * 8 {
-        return Ok(value.clone());
-    }
     let length = usize::try_from(width.div_ceil(8))
         .map_err(|_| range_error("BigInt result exceeds addressable storage"))?;
     let capacity = length
