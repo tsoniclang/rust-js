@@ -53,7 +53,7 @@ pub use crate::console::{
 pub use crate::data_view::DataView;
 pub use crate::date::JsDate;
 pub use crate::errors::{range_error, type_error, uri_error};
-pub use crate::globals::{is_finite, is_nan, to_number};
+pub use crate::globals::to_number;
 pub use crate::intl::{
     integer_to_locale_string, integer_to_locale_string_with_locale,
     integer_to_locale_string_with_locales, integer_to_locale_string_with_locales_options,

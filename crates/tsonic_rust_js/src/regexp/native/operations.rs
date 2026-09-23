@@ -37,7 +37,7 @@ pub(super) fn find(
 pub(super) fn execute(expression: &JsRegExp, input: &str) -> JsResult<Option<Match>> {
     let stateful = expression.global() || expression.sticky();
     let start = if stateful {
-        super::super::to_length(expression.last_index())
+        expression.last_index() as usize
     } else {
         0
     };

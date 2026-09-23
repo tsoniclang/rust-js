@@ -707,7 +707,7 @@ impl JsRegExp {
     fn execute_match(&self, input: &JsString) -> JsResult<Option<Match>> {
         let stateful = self.global() || self.sticky();
         let start = if stateful {
-            to_length(self.last_index())
+            self.last_index() as usize
         } else {
             0
         };
@@ -847,7 +847,7 @@ impl JsRegExp {
         input: &JsString,
         limit: Option<f64>,
     ) -> JsResult<JsArray<Option<JsString>>> {
-        let maximum = to_uint32(limit.unwrap_or(u32::MAX as f64));
+        let maximum = limit.map(crate::native_integer::native_length).transpose()?.unwrap_or(usize::MAX);
         let mut output = Vec::new();
         if maximum == 0 {
             return Ok(JsArray::new());
@@ -871,22 +871,22 @@ impl JsRegExp {
                 continue;
             }
             output.push(Some(input.slice(segment_start..cursor)));
-            if output.len() as u32 >= maximum {
+            if output.len() >= maximum {
                 break;
             }
             for capture_index in 1..result.len() {
                 output.push(result.group(capture_index));
-                if output.len() as u32 >= maximum {
+                if output.len() >= maximum {
                     break;
                 }
             }
-            if output.len() as u32 >= maximum {
+            if output.len() >= maximum {
                 break;
             }
             segment_start = result.end;
             cursor = result.end;
         }
-        if (output.len() as u32) < maximum {
+        if output.len() < maximum {
             output.push(Some(input.slice(segment_start..input.len())));
         }
         Ok(array_from_optional(output))
@@ -966,7 +966,7 @@ impl JsRegExp {
 
     fn advance_empty(&self, input: &JsString) {
         self.set_last_index(
-            input.advance_index(to_length(self.last_index()), self.full_unicode()) as f64,
+            input.advance_index(self.last_index() as usize, self.full_unicode()) as f64,
         );
     }
 
@@ -1459,16 +1459,6 @@ fn escape_source(pattern: &JsString) -> JsString {
     JsString::from_units(output)
 }
 
-fn to_length(value: f64) -> usize {
-    if value.is_nan() || value <= 0.0 {
-        0
-    } else if !value.is_finite() || value >= usize::MAX as f64 {
-        usize::MAX
-    } else {
-        value.floor() as usize
-    }
-}
-
 fn execution_budget(input_length: usize) -> u64 {
     const MINIMUM_STEPS: u64 = 1_000_000;
     const MAXIMUM_STEPS: u64 = 50_000_000;
@@ -1477,13 +1467,6 @@ fn execution_budget(input_length: usize) -> u64 {
         .unwrap_or(u64::MAX)
         .saturating_mul(STEPS_PER_CODE_UNIT)
         .clamp(MINIMUM_STEPS, MAXIMUM_STEPS)
-}
-
-fn to_uint32(value: f64) -> u32 {
-    if !value.is_finite() || value == 0.0 {
-        return 0;
-    }
-    value.trunc().rem_euclid(4_294_967_296.0) as u32
 }
 
 fn is_ascii_alphanumeric(unit: u16) -> bool {

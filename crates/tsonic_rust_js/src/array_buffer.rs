@@ -116,6 +116,10 @@ impl ArrayBuffer {
         })
     }
 
+    pub(crate) fn shares_storage(&self, other: &Self) -> bool {
+        self.storage_key() == other.storage_key()
+    }
+
     fn storage_key(&self) -> (u8, usize) {
         match &self.storage {
             BufferStorage::Ordinary(storage) => (0, Rc::as_ptr(storage) as usize),
@@ -209,17 +213,9 @@ impl ObjectIdentityCarrier for ArrayBuffer {
 }
 
 pub(crate) fn to_index(value: f64) -> JsResult<usize> {
-    crate::coercion::native_length(value)
+    crate::native_integer::native_length(value)
 }
 
 pub(crate) fn normalize_index(value: f64, max: usize) -> usize {
-    let integer = if value.is_nan() { 0.0 } else { value.trunc() };
-    let max = max as f64;
-    let clamped = if integer < 0.0 {
-        max + integer
-    } else {
-        integer
-    }
-    .clamp(0.0, max);
-    clamped as usize
+    crate::native_integer::normalize_slice_index(value, max)
 }

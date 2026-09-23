@@ -4,7 +4,7 @@ use tsonic_rust_runtime::{JsError, JsErrorKind};
 use unicode_normalization::UnicodeNormalization;
 
 use crate::array::JsArray;
-use crate::coercion::{absolute_index, native_length, relative_index, to_integer_or_infinity};
+use crate::native_integer::{absolute_index, native_length, relative_index, native_index};
 use crate::errors::{type_error, JsResult};
 use crate::number::JsNumberValue;
 use crate::JsValue;
@@ -146,9 +146,9 @@ pub fn code_point_at(value: &str, index: f64) -> Option<f64> {
 }
 
 pub fn slice(value: &str, start: f64, end: Option<f64>) -> Result<String, JsError> {
-    let from = crate::coercion::normalize_slice_index(start, value.len());
+    let from = crate::native_integer::normalize_slice_index(start, value.len());
     let to = end
-        .map(|position| crate::coercion::normalize_slice_index(position, value.len()))
+        .map(|position| crate::native_integer::normalize_slice_index(position, value.len()))
         .unwrap_or(value.len());
     if from > to {
         return Ok(String::new());
@@ -176,23 +176,10 @@ pub fn substring(value: &str, start: f64, end: f64) -> Result<String, JsError> {
 }
 
 fn substr_with_length(value: &str, start: f64, length: Option<f64>) -> Result<String, JsError> {
-    let start = to_integer_or_infinity(start);
-    let start = if start == f64::NEG_INFINITY {
-        0
-    } else if start < 0.0 {
-        (value.len() as f64 + start).max(0.0) as usize
-    } else {
-        start.min(value.len() as f64) as usize
-    };
-    let length = length.map(to_integer_or_infinity);
-    if length.is_some_and(|value| value <= 0.0) {
-        return Ok(String::new());
-    }
-    let end = length
-        .filter(|value| value.is_finite())
-        .map(|length| start.saturating_add(length as usize).min(value.len()))
+    let from = crate::native_integer::normalize_slice_index(start, value.len());
+    let to = length.map(|length| from.saturating_add(native_index(length).max(0) as usize).min(value.len()))
         .unwrap_or(value.len());
-    native_slice(value, start, end).map(str::to_owned)
+    native_slice(value, from, to).map(str::to_owned)
 }
 
 pub fn index_of(value: &str, search: &str, position: f64) -> isize {
@@ -290,14 +277,7 @@ pub fn substr(value: &str, start: f64, length: f64) -> Result<String, JsError> {
 }
 
 fn clamped_position(value: f64, length: usize) -> usize {
-    let integer = to_integer_or_infinity(value);
-    if integer == f64::NEG_INFINITY || integer <= 0.0 {
-        0
-    } else if integer == f64::INFINITY || integer >= length as f64 {
-        length
-    } else {
-        integer as usize
-    }
+    (native_index(value).max(0) as usize).min(length)
 }
 
 pub fn replace(value: &str, search: &str, replacement: &str) -> String {
@@ -451,7 +431,7 @@ fn split_with_limit(
     separator: &str,
     limit: Option<f64>,
 ) -> Result<JsArray<String>, JsError> {
-    let limit = limit.map(to_uint32).unwrap_or(u32::MAX) as usize;
+    let limit = limit.map(crate::native_integer::native_length).transpose()?.unwrap_or(usize::MAX);
     if limit == 0 {
         return Ok(JsArray::new());
     }
@@ -477,14 +457,6 @@ pub fn split_all(value: &str, separator: &str) -> Result<JsArray<String>, JsErro
 
 pub fn split(value: &str, separator: &str, limit: f64) -> Result<JsArray<String>, JsError> {
     split_with_limit(value, separator, Some(limit))
-}
-
-fn to_uint32(value: f64) -> u32 {
-    let integer = to_integer_or_infinity(value);
-    if !integer.is_finite() || integer == 0.0 {
-        return 0;
-    }
-    integer.rem_euclid(4_294_967_296.0) as u32
 }
 
 pub fn repeat(value: &str, count: f64) -> Result<String, JsError> {

@@ -31,7 +31,7 @@ impl JsSymbol {
     }
 
     pub fn create_number(description: f64) -> Self {
-        Self::with_description(Some(ryu_js::Buffer::new().format(description).to_owned()))
+        Self::with_description(Some(description.to_string()))
     }
 
     pub fn for_key(key: &str) -> Self {

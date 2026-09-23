@@ -1,7 +1,7 @@
 use unicode_normalization::UnicodeNormalization;
 
 use crate::array::JsArray;
-use crate::coercion::{absolute_index, native_length, relative_index, to_integer_or_infinity};
+use crate::native_integer::{absolute_index, native_length, relative_index, native_index};
 use crate::errors::{range_error, type_error, JsResult};
 use crate::regexp::string_replacement_arguments;
 use crate::{JsString, JsValue};
@@ -33,9 +33,9 @@ pub fn code_point_at(value: &JsString, index: f64) -> Option<f64> {
 }
 
 pub fn slice(value: &JsString, start: f64, end: Option<f64>) -> JsString {
-    let from = crate::coercion::normalize_slice_index(start, value.len());
+    let from = crate::native_integer::normalize_slice_index(start, value.len());
     let to = end
-        .map(|end| crate::coercion::normalize_slice_index(end, value.len()))
+        .map(|end| crate::native_integer::normalize_slice_index(end, value.len()))
         .unwrap_or(value.len());
     if from >= to {
         JsString::new()
@@ -68,21 +68,8 @@ pub fn substring_from(value: &JsString, start: f64) -> JsString {
 }
 
 fn substr_with_length(value: &JsString, start: f64, length: Option<f64>) -> JsString {
-    let start = to_integer_or_infinity(start);
-    let from = if start == f64::NEG_INFINITY {
-        0
-    } else if start < 0.0 {
-        (value.len() as f64 + start).max(0.0) as usize
-    } else {
-        start.min(value.len() as f64) as usize
-    };
-    let length = length.map(to_integer_or_infinity);
-    if length.is_some_and(|length| length <= 0.0) {
-        return JsString::new();
-    }
-    let to = length
-        .filter(|length| length.is_finite())
-        .map(|length| from.saturating_add(length as usize).min(value.len()))
+    let from = crate::native_integer::normalize_slice_index(start, value.len());
+    let to = length.map(|length| from.saturating_add(native_index(length).max(0) as usize).min(value.len()))
         .unwrap_or(value.len());
     value.slice(from..to)
 }
@@ -168,14 +155,7 @@ pub fn last_index_of_from_end(value: &JsString, search: &JsString) -> isize {
 }
 
 fn clamped_position(value: f64, length: usize) -> usize {
-    let integer = to_integer_or_infinity(value);
-    if integer == f64::NEG_INFINITY || integer <= 0.0 {
-        0
-    } else if integer == f64::INFINITY || integer >= length as f64 {
-        length
-    } else {
-        integer as usize
-    }
+    (native_index(value).max(0) as usize).min(length)
 }
 
 pub fn replace(value: &JsString, search: &JsString, replacement: &JsString) -> JsString {
@@ -354,9 +334,8 @@ fn substitution(
 fn split_with_limit(
     value: &JsString,
     separator: &JsString,
-    limit: Option<f64>,
+    limit: usize,
 ) -> JsArray<JsString> {
-    let limit = limit.map(to_uint32).unwrap_or(u32::MAX) as usize;
     if limit == 0 {
         return JsArray::new();
     }
@@ -383,19 +362,11 @@ fn split_with_limit(
 }
 
 pub fn split_all(value: &JsString, separator: &JsString) -> JsArray<JsString> {
-    split_with_limit(value, separator, None)
+    split_with_limit(value, separator, usize::MAX)
 }
 
-pub fn split(value: &JsString, separator: &JsString, limit: f64) -> JsArray<JsString> {
-    split_with_limit(value, separator, Some(limit))
-}
-
-fn to_uint32(value: f64) -> u32 {
-    if !value.is_finite() || value == 0.0 {
-        0
-    } else {
-        value.trunc().rem_euclid(4_294_967_296.0) as u32
-    }
+pub fn split(value: &JsString, separator: &JsString, limit: f64) -> JsResult<JsArray<JsString>> {
+    Ok(split_with_limit(value, separator, crate::native_integer::native_length(limit)?))
 }
 
 pub fn repeat(value: &JsString, count: f64) -> JsResult<JsString> {
@@ -561,13 +532,15 @@ pub fn concat(value: &JsString, strings: &[&JsString]) -> JsString {
     JsString::concat_strs(&parts)
 }
 
-pub fn from_char_code(code_units: &[f64]) -> JsString {
-    JsString::from_units(
-        code_units
-            .iter()
-            .map(|value| to_uint32(*value) as u16)
-            .collect::<Vec<_>>(),
-    )
+pub fn from_char_code(code_units: &[f64]) -> JsResult<JsString> {
+    let mut units = Vec::with_capacity(code_units.len());
+    for &value in code_units {
+        if value.fract() != 0.0 || !(0.0..=u16::MAX as f64).contains(&value) {
+            return Err(range_error("character code must be a native UTF-16 code unit"));
+        }
+        units.push(value as u16);
+    }
+    Ok(JsString::from_units(units))
 }
 
 pub fn from_code_point(code_points: &[f64]) -> JsResult<JsString> {

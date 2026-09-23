@@ -1,4 +1,4 @@
-use crate::coercion::native_length;
+use crate::native_integer::native_length;
 use crate::errors::{range_error, JsResult};
 
 pub(crate) fn repeat_shape(count: f64, length: impl FnOnce() -> usize) -> JsResult<(usize, usize)> {

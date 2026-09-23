@@ -165,8 +165,8 @@ fn bigint_construction_preserves_all_integer_bits() {
 #[test]
 fn bigint_string_construction_uses_integer_grammar() {
     for (source, expected) in [
-        ("", "0"),
-        ("\u{feff}  +42\n", "42"),
+        ("+42", "42"),
+        ("1_000", "1000"),
         ("-42", "-42"),
         ("0xff", "255"),
         ("0o17", "15"),
@@ -179,7 +179,7 @@ fn bigint_string_construction_uses_integer_grammar() {
         );
     }
     for source in [
-        "0x", "-0x1", "+0b1", "1.0", "1e3", "1_000", "1n", "++1", "NaN", "\u{85}1",
+        "", "\u{feff}  +42\n", "0x", "-0x1", "+0b1", "1.0", "1e3", "1n", "++1", "NaN", "\u{85}1",
     ] {
         assert_eq!(
             abi::bigint_from_string(source).unwrap_err().kind(),

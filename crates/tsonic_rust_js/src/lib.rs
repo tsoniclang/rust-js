@@ -8,7 +8,7 @@ pub mod array_buffer;
 pub mod atomics;
 pub mod bigint;
 pub mod boolean;
-mod coercion;
+mod native_integer;
 pub mod console;
 pub mod data_view;
 pub mod date;

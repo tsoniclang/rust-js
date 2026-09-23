@@ -1,7 +1,6 @@
 use crate::array_buffer::{to_index, ArrayBuffer};
 use crate::equality::{hash_identity, JsHash, JsSameValueZero, JsStrictEqual};
 use crate::errors::{range_error, JsResult};
-use crate::typed_array::integer_number;
 use std::rc::Rc;
 use tsonic_rust_runtime::{ObjectIdentity, ObjectIdentityCarrier};
 
@@ -194,21 +193,21 @@ impl DataView {
     pub fn set_int8(&self, offset: f64, value: f64) -> JsResult<()> {
         self.write(
             offset,
-            &(integer_number(value, 8, true) as i8).to_ne_bytes(),
+            &(value as i8).to_ne_bytes(),
         )
     }
 
     pub fn set_uint8(&self, offset: f64, value: f64) -> JsResult<()> {
         self.write(
             offset,
-            &(integer_number(value, 8, false) as u8).to_ne_bytes(),
+            &(value as u8).to_ne_bytes(),
         )
     }
 
     pub fn set_int16(&self, offset: f64, value: f64, little_endian: bool) -> JsResult<()> {
         self.write_endian(
             offset,
-            integer_number(value, 16, true) as i16,
+            value as i16,
             little_endian,
             i16::to_le_bytes,
             i16::to_be_bytes,
@@ -218,7 +217,7 @@ impl DataView {
     pub fn set_uint16(&self, offset: f64, value: f64, little_endian: bool) -> JsResult<()> {
         self.write_endian(
             offset,
-            integer_number(value, 16, false) as u16,
+            value as u16,
             little_endian,
             u16::to_le_bytes,
             u16::to_be_bytes,
@@ -228,7 +227,7 @@ impl DataView {
     pub fn set_int32(&self, offset: f64, value: f64, little_endian: bool) -> JsResult<()> {
         self.write_endian(
             offset,
-            integer_number(value, 32, true) as i32,
+            value as i32,
             little_endian,
             i32::to_le_bytes,
             i32::to_be_bytes,
@@ -238,7 +237,7 @@ impl DataView {
     pub fn set_uint32(&self, offset: f64, value: f64, little_endian: bool) -> JsResult<()> {
         self.write_endian(
             offset,
-            integer_number(value, 32, false) as u32,
+            value as u32,
             little_endian,
             u32::to_le_bytes,
             u32::to_be_bytes,

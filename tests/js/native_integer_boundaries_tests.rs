@@ -1,6 +1,38 @@
 use tsonic_rust_js::{abi, array::ArrayLength, bigint, JsErrorKind};
 
 #[test]
+fn split_limits_are_native_sizes_not_modulo_words() {
+    use tsonic_rust_js::{exact_string, regexp::JsRegExp, string, JsString};
+    let input = JsString::from_utf8("a,b,c");
+    let separator = JsString::from_utf8(",");
+    let expression = JsRegExp::new(separator.clone(), JsString::new()).unwrap();
+    for invalid in [-1.0, 1.5, f64::NAN, f64::INFINITY] {
+        assert!(string::split("a,b,c", ",", invalid).is_err());
+        assert!(exact_string::split(&input, &separator, invalid).is_err());
+        assert!(expression.split(&input, Some(invalid)).is_err());
+    }
+    if usize::BITS == 64 {
+        let limit = 4_294_967_296.0;
+        assert_eq!(string::split("a,b,c", ",", limit).unwrap().len(), 3);
+        assert_eq!(exact_string::split(&input, &separator, limit).unwrap().len(), 3);
+        assert_eq!(expression.split(&input, Some(limit)).unwrap().len(), 3);
+    }
+}
+
+#[test]
+fn typed_elements_use_native_rust_float_casts() {
+    use tsonic_rust_js::typed_array::TypedElement;
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -1.0, 1.9, 256.0, 4_294_967_296.0] {
+        assert_eq!(i8::from_number(value), value as i8);
+        assert_eq!(u8::from_number(value), value as u8);
+        assert_eq!(i16::from_number(value), value as i16);
+        assert_eq!(u16::from_number(value), value as u16);
+        assert_eq!(i32::from_number(value), value as i32);
+        assert_eq!(u32::from_number(value), value as u32);
+    }
+}
+
+#[test]
 fn native_truncation_preserves_fixed_width_results() {
     assert_eq!(bigint::as_int_native(64.0, &9_007_199_254_740_993_i64).unwrap(), 9_007_199_254_740_993);
     assert_eq!(bigint::as_uint_native(64.0, &-1_i64).unwrap(), u64::MAX as u128);

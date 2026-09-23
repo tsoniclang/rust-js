@@ -128,10 +128,9 @@ fn date_utc_matches_js_overflow_and_clipping() {
         JsDate::utc(2020.0, 0.0, 1.0, 25.0, 61.0, 61.0, 1001.0),
         1_577_930_522_001.0
     );
-    // Two-digit years map into 1900..=1999.
     assert_eq!(
-        JsDate::utc(99.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0),
-        915_148_800_000.0
+        JsDate::from_millis(JsDate::utc(99.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0)).to_iso_string().unwrap(),
+        "0099-01-01T00:00:00.000Z"
     );
     // Fractions truncate toward zero.
     assert_eq!(
@@ -141,7 +140,7 @@ fn date_utc_matches_js_overflow_and_clipping() {
     // Non-finite arguments and out-of-range results are NaN.
     assert!(JsDate::utc(f64::NAN, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0).is_nan());
     assert!(JsDate::utc(f64::INFINITY, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0).is_nan());
-    assert!(JsDate::utc(275_760.0, 8.0, 14.0, 0.0, 0.0, 0.0, 0.0).is_nan());
+    assert_eq!(JsDate::utc(275_760.0, 8.0, 14.0, 0.0, 0.0, 0.0, 0.0), 8.64e15 + 86_400_000.0);
     assert_eq!(
         JsDate::utc(275_760.0, 8.0, 13.0, 0.0, 0.0, 0.0, 0.0),
         8.64e15
@@ -248,14 +247,32 @@ fn every_utc_setter_arity_preserves_omitted_fields() {
 }
 
 #[test]
-fn date_setter_invalid_date_and_time_clip_rules_match_javascript() {
+fn date_setters_enforce_native_timestamp_bounds() {
     let invalid = JsDate::from_millis(f64::NAN);
     assert!(invalid.set_utc_seconds(1.0).is_nan());
     assert_eq!(invalid.set_utc_full_year(2000.0), 946_684_800_000.0);
     assert_eq!(invalid.to_iso_string().unwrap(), "2000-01-01T00:00:00.000Z");
-    assert!(invalid.set_time(8_640_000_000_000_001.0).is_nan());
+    assert_eq!(invalid.set_time(8_640_000_000_000_001.0), 8_640_000_000_000_001.0);
+    assert!(invalid.set_time(-(i64::MIN as f64)).is_nan());
     assert!(invalid.get_time().is_nan());
-    assert_eq!(invalid.set_time(-0.0).to_bits(), 0.0_f64.to_bits());
+    assert_eq!(invalid.set_time(-0.0).to_bits(), (-0.0_f64).to_bits());
+}
+
+#[test]
+fn date_utc_decomposes_the_native_timestamp_domain() {
+    for millis in [i64::MIN as f64, (i64::MAX - 1023) as f64, 9_007_199_254_740_992.0, -9_007_199_254_740_992.0] {
+        let date = JsDate::from_millis(millis);
+        assert_eq!(date.get_time(), millis);
+        assert!(date.to_iso_string().is_ok());
+        assert!(date.get_utc_full_year().is_finite());
+    }
+    for millis in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -(i64::MIN as f64), (i64::MIN as f64) * 2.0] {
+        let date = JsDate::from_millis(millis);
+        assert!(date.get_time().is_nan());
+        assert!(date.to_iso_string().is_err());
+    }
+    assert!(JsDate::utc(i32::MAX as f64, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0).is_nan());
+    assert!(JsDate::utc(i32::MIN as f64, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0).is_nan());
 }
 
 #[test]

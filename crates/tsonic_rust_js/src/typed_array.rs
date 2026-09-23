@@ -2,7 +2,7 @@
 //! and shared-backing-store `subarray` semantics.
 
 use std::cmp::Ordering;
-use std::fmt;
+use num_traits::AsPrimitive;
 use std::rc::Rc;
 use tsonic_rust_runtime::{ObjectIdentity, ObjectIdentityCarrier};
 
@@ -11,148 +11,8 @@ use crate::array_buffer::{normalize_index, to_index, ArrayBuffer};
 use crate::equality::{hash_identity, JsHash, JsSameValueZero, JsStrictEqual};
 use crate::errors::{range_error, JsResult};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TypedArrayKind {
-    Int8,
-    Uint8,
-    Uint8Clamped,
-    Int16,
-    Uint16,
-    Int32,
-    Uint32,
-    Float32,
-    Float64,
-}
-
-impl fmt::Display for TypedArrayKind {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(match self {
-            Self::Int8 => "Int8",
-            Self::Uint8 => "Uint8",
-            Self::Uint8Clamped => "Uint8Clamped",
-            Self::Int16 => "Int16",
-            Self::Uint16 => "Uint16",
-            Self::Int32 => "Int32",
-            Self::Uint32 => "Uint32",
-            Self::Float32 => "Float32",
-            Self::Float64 => "Float64",
-        })
-    }
-}
-
-pub trait TypedElement: Copy + Default {
-    const KIND: TypedArrayKind;
-    const BYTES_PER_ELEMENT: usize;
-
-    fn from_number(value: f64) -> Self;
-    fn to_number(self) -> f64;
-    fn write_bytes(self, output: &mut [u8]);
-    fn read_bytes(bytes: &[u8]) -> Self;
-}
-
-macro_rules! integer_element {
-    ($type:ty, $kind:expr, $bits:expr, $signed:expr) => {
-        impl TypedElement for $type {
-            const KIND: TypedArrayKind = $kind;
-            const BYTES_PER_ELEMENT: usize = std::mem::size_of::<$type>();
-
-            fn from_number(value: f64) -> Self {
-                integer_number(value, $bits, $signed) as $type
-            }
-
-            fn to_number(self) -> f64 {
-                self as f64
-            }
-
-            fn write_bytes(self, output: &mut [u8]) {
-                output.copy_from_slice(&self.to_le_bytes());
-            }
-
-            fn read_bytes(bytes: &[u8]) -> Self {
-                let mut slot = [0_u8; std::mem::size_of::<$type>()];
-                slot.copy_from_slice(bytes);
-                <$type>::from_le_bytes(slot)
-            }
-        }
-    };
-}
-
-integer_element!(i8, TypedArrayKind::Int8, 8, true);
-integer_element!(u8, TypedArrayKind::Uint8, 8, false);
-integer_element!(i16, TypedArrayKind::Int16, 16, true);
-integer_element!(u16, TypedArrayKind::Uint16, 16, false);
-integer_element!(i32, TypedArrayKind::Int32, 32, true);
-integer_element!(u32, TypedArrayKind::Uint32, 32, false);
-
-impl TypedElement for f32 {
-    const KIND: TypedArrayKind = TypedArrayKind::Float32;
-    const BYTES_PER_ELEMENT: usize = 4;
-
-    fn from_number(value: f64) -> Self {
-        value as f32
-    }
-
-    fn to_number(self) -> f64 {
-        self as f64
-    }
-
-    fn write_bytes(self, output: &mut [u8]) {
-        output.copy_from_slice(&self.to_le_bytes());
-    }
-
-    fn read_bytes(bytes: &[u8]) -> Self {
-        let mut slot = [0_u8; 4];
-        slot.copy_from_slice(bytes);
-        Self::from_le_bytes(slot)
-    }
-}
-
-impl TypedElement for f64 {
-    const KIND: TypedArrayKind = TypedArrayKind::Float64;
-    const BYTES_PER_ELEMENT: usize = 8;
-
-    fn from_number(value: f64) -> Self {
-        value
-    }
-
-    fn to_number(self) -> f64 {
-        self
-    }
-
-    fn write_bytes(self, output: &mut [u8]) {
-        output.copy_from_slice(&self.to_le_bytes());
-    }
-
-    fn read_bytes(bytes: &[u8]) -> Self {
-        let mut slot = [0_u8; 8];
-        slot.copy_from_slice(bytes);
-        Self::from_le_bytes(slot)
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct ClampedU8(pub u8);
-
-impl TypedElement for ClampedU8 {
-    const KIND: TypedArrayKind = TypedArrayKind::Uint8Clamped;
-    const BYTES_PER_ELEMENT: usize = 1;
-
-    fn from_number(value: f64) -> Self {
-        Self(to_uint8_clamp(value))
-    }
-
-    fn to_number(self) -> f64 {
-        self.0 as f64
-    }
-
-    fn write_bytes(self, output: &mut [u8]) {
-        output[0] = self.0;
-    }
-
-    fn read_bytes(bytes: &[u8]) -> Self {
-        Self(bytes[0])
-    }
-}
+mod elements;
+pub use elements::{ClampedU8, TypedArrayKind, TypedElement};
 
 #[derive(Debug)]
 struct TypedArrayView {
@@ -189,7 +49,10 @@ impl<T: TypedElement> TypedArray<T> {
     pub const BYTES_PER_ELEMENT: f64 = T::BYTES_PER_ELEMENT as f64;
 
     pub fn new(length: f64) -> JsResult<Self> {
-        let length = to_index(length)?;
+        Self::with_length(to_index(length)?)
+    }
+
+    fn with_length(length: usize) -> JsResult<Self> {
         let byte_length = length
             .checked_mul(T::BYTES_PER_ELEMENT)
             .ok_or_else(|| range_error("typed array length is outside the supported range"))?;
@@ -204,14 +67,9 @@ impl<T: TypedElement> TypedArray<T> {
         Self::from_numbers(values.iter_values())
     }
 
-    pub fn from_typed_array<U: TypedElement>(values: &TypedArray<U>) -> JsResult<Self> {
-        let result = Self::new(values.len() as f64)?;
-        for index in 0..values.len() {
-            let value = values
-                .get_usize(index)
-                .ok_or_else(|| range_error("typed array copy index is outside its view"))?;
-            result.set_usize(index, T::from_number(value.to_number()));
-        }
+    pub fn from_typed_array<U: TypedElement + AsPrimitive<T>>(values: &TypedArray<U>) -> JsResult<Self> {
+        let result = Self::with_length(values.len())?;
+        result.set_from_typed_array(values, 0.0)?;
         Ok(result)
     }
 
@@ -225,7 +83,7 @@ impl<T: TypedElement> TypedArray<T> {
 
     pub fn from_numbers(values: impl IntoIterator<Item = f64>) -> JsResult<Self> {
         let values: Vec<f64> = values.into_iter().collect();
-        let result = Self::new(values.len() as f64)?;
+        let result = Self::with_length(values.len())?;
         for (index, value) in values.into_iter().enumerate() {
             result.set_usize(index, T::from_number(value));
         }
@@ -318,18 +176,8 @@ impl<T: TypedElement> TypedArray<T> {
     }
 
     pub fn at(&self, index: f64) -> Option<f64> {
-        let integer = if index.is_nan() { 0.0 } else { index.trunc() };
-        let normalized = if integer < 0.0 {
-            self.view.length as f64 + integer
-        } else {
-            integer
-        };
-        if normalized < 0.0 || normalized >= self.view.length as f64 {
-            None
-        } else {
-            self.get_usize(normalized as usize)
-                .map(TypedElement::to_number)
-        }
+        self.get_usize(crate::native_integer::relative_index(index, self.view.length)?)
+            .map(TypedElement::to_number)
     }
 
     pub fn get_number(&self, index: f64) -> Option<f64> {
@@ -404,8 +252,8 @@ impl<T: TypedElement> TypedArray<T> {
     pub fn join(&self, separator: &str) -> String {
         (0..self.view.length)
             .map(|index| {
-                let value = self.get_usize(index).unwrap_or_default().to_number();
-                ryu_js::Buffer::new().format(value).to_owned()
+                let value = self.get_usize(index).unwrap_or_default();
+                value.to_string()
             })
             .collect::<Vec<_>>()
             .join(separator)
@@ -442,7 +290,7 @@ impl<T: TypedElement> TypedArray<T> {
         self.set_from_numbers(source.iter().copied(), offset)
     }
 
-    pub fn set_from_typed_array<U: TypedElement>(
+    pub fn set_from_typed_array<U: TypedElement + AsPrimitive<T>>(
         &self,
         source: &TypedArray<U>,
         offset: f64,
@@ -463,16 +311,50 @@ impl<T: TypedElement> TypedArray<T> {
             );
             return Ok(());
         }
-        self.set_from_numbers(
-            (0..source.view.length)
-                .map(|index| source.get_usize(index).unwrap_or_default().to_number()),
-            offset,
-        )
+        let offset = to_index(offset)?;
+        if offset.checked_add(source.len()).is_none_or(|end| end > self.len()) {
+            return Err(range_error("typed array set source out of bounds"));
+        }
+        let target_start = self.view.byte_offset + offset * T::BYTES_PER_ELEMENT;
+        let target_end = target_start + source.len() * T::BYTES_PER_ELEMENT;
+        let source_end = source.view.byte_offset + source.len() * U::BYTES_PER_ELEMENT;
+        let shared = self.view.buffer.shares_storage(&source.view.buffer);
+        let overlaps = shared
+            && target_start < source_end && source.view.byte_offset < target_end;
+        if overlaps {
+            let snapshot: Vec<T> = source.with_bytes(|bytes| bytes.chunks_exact(U::BYTES_PER_ELEMENT)
+                .map(|element| U::read_bytes(element).as_()).collect());
+            let mut target = self.view.buffer.as_mut_bytes();
+            for (value, element) in snapshot.into_iter().zip(target[target_start..target_end].chunks_exact_mut(T::BYTES_PER_ELEMENT)) {
+                value.write_bytes(element);
+            }
+        } else if shared {
+            let mut bytes = self.view.buffer.as_mut_bytes();
+            if target_end <= source.view.byte_offset {
+                let (target, input) = bytes.split_at_mut(source.view.byte_offset);
+                Self::copy_converted::<U>(&input[..source_end - source.view.byte_offset], &mut target[target_start..target_end]);
+            } else {
+                let (input, target) = bytes.split_at_mut(target_start);
+                Self::copy_converted::<U>(&input[source.view.byte_offset..source_end], &mut target[..target_end - target_start]);
+            }
+        } else {
+            let input = source.view.buffer.as_bytes();
+            let mut target = self.view.buffer.as_mut_bytes();
+            Self::copy_converted::<U>(&input[source.view.byte_offset..source_end], &mut target[target_start..target_end]);
+        }
+        Ok(())
+    }
+
+    fn copy_converted<U: TypedElement + AsPrimitive<T>>(source: &[u8], target: &mut [u8]) {
+        for (input, output) in source.chunks_exact(U::BYTES_PER_ELEMENT).zip(target.chunks_exact_mut(T::BYTES_PER_ELEMENT)) {
+            let value: T = U::read_bytes(input).as_();
+            value.write_bytes(output);
+        }
     }
 
     pub fn slice(&self, start: f64, end: Option<f64>) -> Self {
         let (start, end) = normalized_range(self.view.length, start, end);
-        let result = Self::new((end - start) as f64).expect("normalized typed array length");
+        let result = Self::with_length(end - start).expect("normalized typed array length");
         result.view.buffer.copy_bytes_from(
             0,
             &self.view.buffer,
@@ -659,34 +541,6 @@ fn normalized_range(length: usize, start: f64, end: Option<f64>) -> (usize, usiz
     (start, end.max(start))
 }
 
-pub(crate) fn integer_number(value: f64, bits: u32, signed: bool) -> i128 {
-    if !value.is_finite() || value == 0.0 {
-        return 0;
-    }
-    let modulus = 2_f64.powi(bits as i32);
-    let unsigned = value.trunc().rem_euclid(modulus);
-    if signed && unsigned >= modulus / 2.0 {
-        (unsigned - modulus) as i128
-    } else {
-        unsigned as i128
-    }
-}
-
-fn to_uint8_clamp(value: f64) -> u8 {
-    if value.is_nan() || value <= 0.0 {
-        return 0;
-    }
-    if value >= 255.0 {
-        return 255;
-    }
-    let floor = value.floor();
-    let fraction = value - floor;
-    if fraction > 0.5 || fraction == 0.5 && (floor as u8) % 2 == 1 {
-        floor as u8 + 1
-    } else {
-        floor as u8
-    }
-}
 
 fn same_value_zero_number(left: f64, right: f64) -> bool {
     left == right || left.is_nan() && right.is_nan()

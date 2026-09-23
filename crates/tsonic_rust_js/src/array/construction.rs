@@ -11,7 +11,7 @@ pub fn construct_length<T: Default>(length: impl ArrayLength) -> JsResult<JsArra
 
 impl ArrayLength for f64 {
     fn array_length(self) -> JsResult<usize> {
-        crate::coercion::native_length(self)
+        crate::native_integer::native_length(self)
     }
 }
 

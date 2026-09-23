@@ -179,16 +179,20 @@ fn split_and_repeat_and_trim() {
         vec![js("a"), js("b"), js("c")]
     );
     assert_eq!(
-        dense(string::split(&js("abc"), &js(""), 2.9)),
+        dense(string::split(&js("abc"), &js(""), 2.0).unwrap()),
         vec![js("a"), js("b")]
     );
     assert_eq!(
         dense(string::split_all(&js("a,,c"), &js(","))),
         vec![js("a"), js(""), js("c")]
     );
-    assert!(dense(string::split(&js("a,b"), &js(","), f64::NAN)).is_empty());
-    assert_eq!(string::repeat(&js("x"), 3.9).unwrap(), js("xxx"));
-    assert_eq!(string::repeat(&js("x"), f64::NAN).unwrap(), js(""));
+    for invalid in [f64::NAN, f64::INFINITY, -1.0, 2.9] {
+        assert!(string::split(&js("a,b"), &js(","), invalid).is_err());
+        assert!(native_string::split("a,b", ",", invalid).is_err());
+        assert!(string::repeat(&js("x"), invalid).is_err());
+    }
+    assert_eq!(string::repeat(&js("x"), 3.0).unwrap(), js("xxx"));
+    assert_eq!(string::repeat(&js("x"), 0.0).unwrap(), js(""));
     assert_eq!(
         string::repeat(&js("x"), -1.0).unwrap_err().kind(),
         JsErrorKind::RangeError
@@ -309,7 +313,10 @@ fn pad_helpers_and_case() {
 
 #[test]
 fn constructors() {
-    assert_eq!(string::from_char_code(&[65.9, 66.0]), js("AB"));
+    assert_eq!(string::from_char_code(&[65.0, 66.0]).unwrap(), js("AB"));
+    for invalid in [65.9, -1.0, 65536.0, f64::NAN, f64::INFINITY] {
+        assert!(string::from_char_code(&[invalid]).is_err());
+    }
     assert_eq!(
         string::from_code_point(&[0x1f600 as f64]).unwrap(),
         js("😀")
@@ -324,7 +331,7 @@ fn constructors() {
             .kind(),
         JsErrorKind::RangeError
     );
-    assert_eq!(string::from_char_code(&[0xD800 as f64]).units(), &[0xD800]);
+    assert_eq!(string::from_char_code(&[0xD800 as f64]).unwrap().units(), &[0xD800]);
 }
 
 #[test]

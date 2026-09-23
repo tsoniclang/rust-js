@@ -1,5 +1,6 @@
 use crate::errors::JsResult;
-use num_traits::{FromPrimitive, ToPrimitive};
+use num_traits::ToPrimitive;
+use super::SourceNumeric;
 use std::cmp::Ordering;
 use tsonic_rust_runtime::BigInt;
 
@@ -95,14 +96,7 @@ impl JsNumeric {
     }
 
     fn compare(&self, other: &Self) -> Option<Ordering> {
-        match (self, other) {
-            (Self::Number(left), Self::Number(right)) => left.partial_cmp(right),
-            (Self::BigInt(left), Self::BigInt(right)) => Some(left.cmp(right)),
-            (Self::BigInt(left), Self::Number(right)) => compare_bigint_number(left, *right),
-            (Self::Number(left), Self::BigInt(right)) => {
-                compare_bigint_number(right, *left).map(Ordering::reverse)
-            }
-        }
+        self.source_numeric().compare(other.source_numeric())
     }
 }
 
@@ -114,30 +108,6 @@ pub fn bigint_to_number(value: &BigInt) -> f64 {
         } else {
             f64::INFINITY
         }
-    })
-}
-
-fn compare_bigint_number(left: &BigInt, right: f64) -> Option<Ordering> {
-    if right.is_nan() {
-        return None;
-    }
-    if right == f64::INFINITY {
-        return Some(Ordering::Less);
-    }
-    if right == f64::NEG_INFINITY {
-        return Some(Ordering::Greater);
-    }
-    let integer = left.as_ref();
-    let truncated = num_bigint::BigInt::from_f64(right)?;
-    let ordering = integer.cmp(&truncated);
-    Some(if ordering == Ordering::Equal && right.fract() != 0.0 {
-        if right.is_sign_negative() {
-            Ordering::Greater
-        } else {
-            Ordering::Less
-        }
-    } else {
-        ordering
     })
 }
 

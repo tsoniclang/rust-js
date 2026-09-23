@@ -128,45 +128,12 @@ pub fn log2(value: f64) -> f64 {
     value.log2()
 }
 pub fn max(values: &[f64]) -> f64 {
-    if values.is_empty() {
-        return f64::NEG_INFINITY;
-    }
-    if values[0].is_nan() {
-        return f64::NAN;
-    }
-    let mut out = values[0];
-    for value in &values[1..] {
-        if value.is_nan() {
-            return f64::NAN;
-        }
-        if value.total_cmp(&out).is_gt() {
-            out = *value;
-        }
-    }
-    out
+    values.iter().copied().fold(f64::NEG_INFINITY, f64::max)
 }
 pub fn min(values: &[f64]) -> f64 {
-    if values.is_empty() {
-        return f64::INFINITY;
-    }
-    if values[0].is_nan() {
-        return f64::NAN;
-    }
-    let mut out = values[0];
-    for value in &values[1..] {
-        if value.is_nan() {
-            return f64::NAN;
-        }
-        if value.total_cmp(&out).is_lt() {
-            out = *value;
-        }
-    }
-    out
+    values.iter().copied().fold(f64::INFINITY, f64::min)
 }
 pub fn pow(base: f64, exponent: f64) -> f64 {
-    if base.abs() == 1.0 && exponent.is_infinite() {
-        return f64::NAN;
-    }
     base.powf(exponent)
 }
 pub fn random() -> f64 {
@@ -174,38 +141,10 @@ pub fn random() -> f64 {
     (bits as f64) / ((u64::MAX as f64) + 1.0)
 }
 pub fn round(value: f64) -> f64 {
-    if !value.is_finite() || value == 0.0 {
-        return value;
-    }
-    if value > 0.0 {
-        let floor = value.floor();
-        let fraction = value - floor;
-        return if fraction >= 0.5 { floor + 1.0 } else { floor };
-    }
-
-    let floor = value.floor();
-    let fraction = value - floor;
-    if fraction >= 0.5 {
-        let out = floor + 1.0;
-        if out == 0.0 {
-            -0.0
-        } else {
-            out
-        }
-    } else {
-        floor
-    }
+    value.round()
 }
 pub fn sign(value: f64) -> f64 {
-    if value.is_nan() {
-        value
-    } else if value > 0.0 {
-        1.0
-    } else if value < 0.0 {
-        -1.0
-    } else {
-        value
-    }
+    value.signum()
 }
 pub fn sin(value: f64) -> f64 {
     value.sin()

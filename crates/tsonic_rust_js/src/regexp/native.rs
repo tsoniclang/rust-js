@@ -617,7 +617,7 @@ pub fn regexp_split_native(
     input: &str,
     limit: Option<f64>,
 ) -> JsResult<JsArray<Option<String>>> {
-    let maximum = super::to_uint32(limit.unwrap_or(u32::MAX as f64)) as usize;
+    let maximum = limit.map(crate::native_integer::native_length).transpose()?.unwrap_or(usize::MAX);
     let mut output = Vec::new();
     if maximum == 0 {
         return Ok(JsArray::new());

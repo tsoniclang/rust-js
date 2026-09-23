@@ -3,7 +3,7 @@ use std::convert::Infallible;
 use std::rc::Rc;
 
 use super::statics::JsArrayConcatItem;
-use crate::coercion::{normalize_slice_index, relative_index, to_integer_or_infinity};
+use crate::native_integer::{normalize_slice_index, relative_index, native_index};
 use crate::equality::{hash_identity, JsHash, JsSameValueZero, JsStrictEqual};
 use tsonic_rust_runtime::{JsError, JsErrorKind, ObjectIdentity, ObjectIdentityCarrier};
 
@@ -505,14 +505,7 @@ impl<T> JsArray<T> {
     fn splice(&self, start: f64, delete_count: f64, items: impl IntoIterator<Item = T>) -> Self {
         let len = self.len();
         let start = normalize_slice_index(start, len);
-        let delete_count = to_integer_or_infinity(delete_count);
-        let delete_count = if delete_count <= 0.0 {
-            0
-        } else if delete_count == f64::INFINITY {
-            len.saturating_sub(start)
-        } else {
-            (delete_count as usize).min(len.saturating_sub(start))
-        };
+        let delete_count = (native_index(delete_count).max(0) as usize).min(len.saturating_sub(start));
         let removed = self
             .state
             .borrow_mut()
@@ -634,9 +627,9 @@ impl<T> JsArray<T> {
         T: Clone,
     {
         let state = self.state.borrow();
-        let start = crate::coercion::normalize_slice_index(start, state.values.len());
+        let start = crate::native_integer::normalize_slice_index(start, state.values.len());
         let end = end
-            .map(|value| crate::coercion::normalize_slice_index(value, state.values.len()))
+            .map(|value| crate::native_integer::normalize_slice_index(value, state.values.len()))
             .unwrap_or(state.values.len());
         if start >= end {
             return Self::new();
@@ -1322,30 +1315,17 @@ where
 }
 
 fn normalize_search_start(len: usize, from_index: f64) -> Option<usize> {
-    let from_index = to_integer_or_infinity(from_index);
-    if from_index == f64::INFINITY || from_index >= len as f64 {
-        return None;
-    }
-    if from_index == f64::NEG_INFINITY {
-        return Some(0);
-    }
-    if from_index >= 0.0 {
-        return Some(from_index as usize);
-    }
-    Some((len as f64 + from_index).max(0.0) as usize)
+    let position = normalize_slice_index(from_index, len);
+    (position < len).then_some(position)
 }
 
 fn normalize_last_search_start(len: usize, from_index: f64) -> Option<usize> {
     if len == 0 {
         return None;
     }
-    let from_index = to_integer_or_infinity(from_index);
-    if from_index == f64::NEG_INFINITY {
-        return None;
-    }
-    if from_index >= 0.0 {
+    let from_index = native_index(from_index);
+    if from_index >= 0 {
         return Some((from_index as usize).min(len - 1));
     }
-    let index = len as f64 + from_index;
-    (index >= 0.0).then_some(index as usize)
+    len.checked_sub(from_index.unsigned_abs())
 }
