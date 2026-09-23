@@ -96,7 +96,7 @@ impl JsDate {
     ) -> f64 {
         let year = year.trunc();
         let year = if (0.0..=99.0).contains(&year) {
-            year + 1900.0
+            1900.0 + year
         } else {
             year
         };
@@ -434,12 +434,10 @@ fn make_utc_millis(
 fn native_timestamp(value: f64) -> f64 {
     if !(i64::MIN as f64..-(i64::MIN as f64)).contains(&value) {
         f64::NAN
+    } else if value == 0.0 {
+        0.0
     } else {
-        if value == 0.0 {
-            0.0
-        } else {
-            value.trunc()
-        }
+        value.trunc()
     }
 }
 

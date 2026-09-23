@@ -43,7 +43,7 @@ mod tests {
 
     #[test]
     fn nonzero_repeat_counts_measure_length_once() {
-        for (input_length, count, expected) in [(0, 42.0, (0, 0)), (3, 3.0, (3, 9))] {
+        for (input_length, count, expected) in [(0, f64::MAX, (0, 0)), (3, 3.9, (3, 9))] {
             let mut measurements = 0;
             let shape = repeat_shape(count, || {
                 measurements += 1;

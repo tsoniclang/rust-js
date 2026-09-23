@@ -3,6 +3,7 @@ use std::cell::Cell;
 use std::hint::black_box;
 
 use tsonic_rust_js::abi::SourceNumeric;
+use tsonic_rust_js::number::JsNumberValue;
 use tsonic_rust_runtime::BigInt;
 
 struct CountingAllocator;
@@ -28,6 +29,25 @@ unsafe impl GlobalAlloc for CountingAllocator {
 
 #[global_allocator]
 static ALLOCATOR: CountingAllocator = CountingAllocator;
+
+#[test]
+fn numeric_formatting_allocates_only_the_result_string() {
+    let formats: [fn() -> String; 5] = [
+        || 1.25_f64.fixed_string(1),
+        || 1.25_f64.exponential_string(Some(1)),
+        || 1.25_f64.precision_string(2),
+        || 9007199254740993_i64.fixed_string(100),
+        || u128::MAX.precision_string(100),
+    ];
+    for format in formats {
+        TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
+        for _ in 0..1000 {
+            black_box(format());
+        }
+        let allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
+        assert_eq!(allocations, 1000);
+    }
+}
 
 #[test]
 fn native_numeric_conversion_and_borrowed_comparison_do_not_allocate() {

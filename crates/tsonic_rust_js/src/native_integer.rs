@@ -67,9 +67,13 @@ pub(crate) fn split_limit(value: Option<f64>) -> usize {
 }
 
 pub(crate) fn relative_index(value: f64, length: usize) -> Option<usize> {
-    let index = native_index(value);
-    let position = if index < 0 {
-        length.checked_sub(index.unsigned_abs())?
+    let index = integer_or_infinity(value);
+    const EXCLUSIVE_MAXIMUM: f64 = (usize::MAX as u128 + 1) as f64;
+    if index.abs() >= EXCLUSIVE_MAXIMUM {
+        return None;
+    }
+    let position = if index < 0.0 {
+        length.checked_sub((-index) as usize)?
     } else {
         index as usize
     };
@@ -77,7 +81,12 @@ pub(crate) fn relative_index(value: f64, length: usize) -> Option<usize> {
 }
 
 pub(crate) fn absolute_index(value: f64, length: usize) -> Option<usize> {
-    let position = usize::try_from(native_index(value)).ok()?;
+    let index = integer_or_infinity(value);
+    const EXCLUSIVE_MAXIMUM: f64 = (usize::MAX as u128 + 1) as f64;
+    if !(0.0..EXCLUSIVE_MAXIMUM).contains(&index) {
+        return None;
+    }
+    let position = index as usize;
     (position < length).then_some(position)
 }
 
@@ -92,9 +101,9 @@ pub(crate) fn native_length(value: f64) -> crate::errors::JsResult<usize> {
 }
 
 pub(crate) fn normalize_slice_index(value: f64, length: usize) -> usize {
-    let index = native_index(value);
-    if index < 0 {
-        length.saturating_sub(index.unsigned_abs())
+    let index = integer_or_infinity(value);
+    if index < 0.0 {
+        length.saturating_sub((-index) as usize)
     } else {
         (index as usize).min(length)
     }
@@ -122,10 +131,32 @@ mod tests {
         }
         assert_eq!(relative_index(-1.0, 3), Some(2));
         assert_eq!(relative_index(-4.0, 3), None);
+        assert_eq!(relative_index(f64::NAN, 3), Some(0));
+        assert_eq!(relative_index(1.9, 3), Some(1));
+        assert_eq!(relative_index(-1.9, 3), Some(2));
+        assert_eq!(relative_index(f64::INFINITY, usize::MAX), None);
+        assert_eq!(relative_index(f64::NEG_INFINITY, usize::MAX), None);
+        assert_eq!(relative_index(f64::MIN, usize::MAX), None);
         assert_eq!(absolute_index(-1.0, 3), None);
+        assert_eq!(absolute_index(f64::NAN, 3), Some(0));
+        assert_eq!(absolute_index(1.9, 3), Some(1));
+        assert_eq!(absolute_index(f64::INFINITY, usize::MAX), None);
+        assert_eq!(normalize_slice_index(f64::NAN, 3), 0);
+        assert_eq!(normalize_slice_index(1.9, 3), 1);
+        assert_eq!(normalize_slice_index(-1.9, 3), 2);
         assert_eq!(normalize_slice_index(-2.0, 3), 1);
         assert_eq!(normalize_slice_index(f64::NEG_INFINITY, 3), 0);
         assert_eq!(normalize_slice_index(f64::INFINITY, 3), 3);
+        assert_eq!(normalize_slice_index(f64::INFINITY, usize::MAX), usize::MAX);
+        let large_index = (isize::MAX as usize) + 1;
+        assert_eq!(
+            absolute_index(large_index as f64, usize::MAX),
+            Some(large_index)
+        );
+        assert_eq!(
+            relative_index(large_index as f64, usize::MAX),
+            Some(large_index)
+        );
         if usize::BITS == 64 {
             let length = usize::try_from(9_007_199_254_740_993_u64).unwrap();
             assert_eq!(relative_index(-1.0, length), Some(length - 1));
