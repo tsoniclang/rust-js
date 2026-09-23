@@ -1,6 +1,7 @@
 use crate::array_buffer::{to_index, ArrayBuffer};
 use crate::equality::{hash_identity, JsHash, JsSameValueZero, JsStrictEqual};
 use crate::errors::{range_error, JsResult};
+use crate::native_integer::Integer32;
 use std::rc::Rc;
 use tsonic_rust_runtime::{ObjectIdentity, ObjectIdentityCarrier};
 
@@ -191,17 +192,17 @@ impl DataView {
     }
 
     pub fn set_int8(&self, offset: f64, value: f64) -> JsResult<()> {
-        self.write(offset, &(value as i8).to_ne_bytes())
+        self.write(offset, &(value.integer32() as i8).to_ne_bytes())
     }
 
     pub fn set_uint8(&self, offset: f64, value: f64) -> JsResult<()> {
-        self.write(offset, &(value as u8).to_ne_bytes())
+        self.write(offset, &(value.integer32() as u8).to_ne_bytes())
     }
 
     pub fn set_int16(&self, offset: f64, value: f64, little_endian: bool) -> JsResult<()> {
         self.write_endian(
             offset,
-            value as i16,
+            value.integer32() as i16,
             little_endian,
             i16::to_le_bytes,
             i16::to_be_bytes,
@@ -211,7 +212,7 @@ impl DataView {
     pub fn set_uint16(&self, offset: f64, value: f64, little_endian: bool) -> JsResult<()> {
         self.write_endian(
             offset,
-            value as u16,
+            value.integer32() as u16,
             little_endian,
             u16::to_le_bytes,
             u16::to_be_bytes,
@@ -221,7 +222,7 @@ impl DataView {
     pub fn set_int32(&self, offset: f64, value: f64, little_endian: bool) -> JsResult<()> {
         self.write_endian(
             offset,
-            value as i32,
+            value.integer32() as i32,
             little_endian,
             i32::to_le_bytes,
             i32::to_be_bytes,
@@ -231,7 +232,7 @@ impl DataView {
     pub fn set_uint32(&self, offset: f64, value: f64, little_endian: bool) -> JsResult<()> {
         self.write_endian(
             offset,
-            value as u32,
+            value.integer32(),
             little_endian,
             u32::to_le_bytes,
             u32::to_be_bytes,

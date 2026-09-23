@@ -2,7 +2,8 @@ use tsonic_rust_js::{Int16Array, JsArray, Uint8Array};
 
 fn verify_native_pair<Source, Target>()
 where
-    Source: tsonic_rust_js::typed_array::TypedElement + num_traits::AsPrimitive<Target>,
+    Source: tsonic_rust_js::typed_array::TypedElement
+        + tsonic_rust_js::typed_array::ConvertElement<Target>,
     Target: tsonic_rust_js::typed_array::TypedElement,
 {
     use tsonic_rust_js::typed_array::TypedArray;
@@ -25,7 +26,7 @@ where
         .into_iter()
         .zip(expected.chunks_exact_mut(Target::BYTES_PER_ELEMENT))
     {
-        let converted: Target = Source::from_number(value).as_();
+        let converted: Target = Target::from_number(Source::from_number(value).to_number());
         converted.write_bytes(output);
     }
     let copy = TypedArray::<Target>::from_typed_array(&source).unwrap();

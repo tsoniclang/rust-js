@@ -2,7 +2,7 @@ use unicode_normalization::UnicodeNormalization;
 
 use crate::array::JsArray;
 use crate::errors::{range_error, type_error, JsResult};
-use crate::native_integer::{absolute_index, native_index, native_length, relative_index};
+use crate::native_integer::{absolute_index, native_index, pad_length, relative_index, Integer32};
 use crate::regexp::string_replacement_arguments;
 use crate::{JsString, JsValue};
 
@@ -365,12 +365,12 @@ pub fn split_all(value: &JsString, separator: &JsString) -> JsArray<JsString> {
     split_with_limit(value, separator, usize::MAX)
 }
 
-pub fn split(value: &JsString, separator: &JsString, limit: f64) -> JsResult<JsArray<JsString>> {
-    Ok(split_with_limit(
+pub fn split(value: &JsString, separator: &JsString, limit: f64) -> JsArray<JsString> {
+    split_with_limit(
         value,
         separator,
-        crate::native_integer::native_length(limit)?,
-    ))
+        crate::native_integer::split_limit(Some(limit)),
+    )
 }
 
 pub fn repeat(value: &JsString, count: f64) -> JsResult<JsString> {
@@ -416,7 +416,7 @@ fn pad(
     filler: Option<&JsString>,
     at_start: bool,
 ) -> JsResult<JsString> {
-    let target_length = native_length(target_length)?;
+    let target_length = pad_length(target_length);
     if target_length <= value.len() {
         return Ok(value.clone());
     }
@@ -536,17 +536,12 @@ pub fn concat(value: &JsString, strings: &[&JsString]) -> JsString {
     JsString::concat_strs(&parts)
 }
 
-pub fn from_char_code(code_units: &[f64]) -> JsResult<JsString> {
+pub fn from_char_code(code_units: &[f64]) -> JsString {
     let mut units = Vec::with_capacity(code_units.len());
     for &value in code_units {
-        if value.fract() != 0.0 || !(0.0..=u16::MAX as f64).contains(&value) {
-            return Err(range_error(
-                "character code must be a native UTF-16 code unit",
-            ));
-        }
-        units.push(value as u16);
+        units.push(value.integer32() as u16);
     }
-    Ok(JsString::from_units(units))
+    JsString::from_units(units)
 }
 
 pub fn from_code_point(code_points: &[f64]) -> JsResult<JsString> {

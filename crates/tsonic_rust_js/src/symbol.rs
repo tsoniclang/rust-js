@@ -31,7 +31,7 @@ impl JsSymbol {
     }
 
     pub fn create_number(description: f64) -> Self {
-        Self::with_description(Some(description.to_string()))
+        Self::with_description(Some(crate::number::to_string(description)))
     }
 
     pub fn for_key(key: &str) -> Self {

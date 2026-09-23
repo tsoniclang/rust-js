@@ -118,13 +118,12 @@ pub fn as_uint_native<T: BigIntBitInput>(bits: f64, value: &T) -> JsResult<u128>
 
 #[inline]
 fn native_width(bits: f64) -> JsResult<u32> {
-    let width = index_width(bits)?;
-    if width > 128 {
+    if bits.fract() != 0.0 || !(0.0..=128.0).contains(&bits) {
         return Err(range_error(
             "BigInt bit width exceeds the selected native result",
         ));
     }
-    Ok(width as u32)
+    Ok(bits as u32)
 }
 
 #[inline]
@@ -137,6 +136,7 @@ fn native_mask(width: u32) -> u128 {
 }
 
 pub fn to_string_radix(value: &BigInt, radix: f64) -> JsResult<String> {
+    let radix = crate::native_integer::integer_or_infinity(radix);
     if radix.fract() != 0.0 || !(2.0..=36.0).contains(&radix) {
         return Err(range_error("BigInt radix must be between 2 and 36"));
     }
@@ -144,6 +144,7 @@ pub fn to_string_radix(value: &BigInt, radix: f64) -> JsResult<String> {
 }
 
 fn index_width(bits: f64) -> JsResult<u64> {
+    let bits = crate::native_integer::integer_or_infinity(bits);
     if bits.fract() != 0.0 || !(0.0..18_446_744_073_709_551_616.0).contains(&bits) {
         return Err(range_error(
             "BigInt bit width must be a non-negative native integer",
@@ -176,13 +177,29 @@ fn wrap_signed_bytes(width: u64, mut bytes: Vec<u8>, signed: bool) -> JsResult<B
 }
 
 pub fn from_string(value: &str) -> JsResult<BigInt> {
-    let text = value;
+    let text = value.trim_matches(crate::number::is_ecmascript_whitespace);
+    if text.is_empty() {
+        return Ok(from_integer(0_u8));
+    }
     let (digits, radix) = match text.as_bytes() {
         [b'0', b'x' | b'X', ..] => (&text[2..], 16),
         [b'0', b'o' | b'O', ..] => (&text[2..], 8),
         [b'0', b'b' | b'B', ..] => (&text[2..], 2),
         _ => (text, 10),
     };
+    let unsigned = if radix == 10 {
+        digits.trim_start_matches(['+', '-'])
+    } else {
+        digits
+    };
+    if unsigned.is_empty()
+        || !unsigned
+            .bytes()
+            .all(|value| (value as char).is_digit(radix))
+        || (radix == 10 && digits.len() - unsigned.len() > 1)
+    {
+        return Err(syntax_error("Cannot convert the string to a BigInt"));
+    }
     let parsed = num_bigint::BigInt::parse_bytes(digits.as_bytes(), radix)
         .ok_or_else(|| syntax_error("Cannot convert the string to a BigInt"))?;
     Ok(from_integer(parsed))

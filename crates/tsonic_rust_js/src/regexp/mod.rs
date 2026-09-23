@@ -847,10 +847,7 @@ impl JsRegExp {
         input: &JsString,
         limit: Option<f64>,
     ) -> JsResult<JsArray<Option<JsString>>> {
-        let maximum = limit
-            .map(crate::native_integer::native_length)
-            .transpose()?
-            .unwrap_or(usize::MAX);
+        let maximum = crate::native_integer::split_limit(limit);
         let mut output = Vec::new();
         if maximum == 0 {
             return Ok(JsArray::new());

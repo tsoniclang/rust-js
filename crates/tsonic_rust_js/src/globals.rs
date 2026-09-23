@@ -1,5 +1,13 @@
 use crate::value::JsValue;
 
+pub fn is_nan(value: &JsValue) -> bool {
+    to_number(value).is_nan()
+}
+
+pub fn is_finite(value: &JsValue) -> bool {
+    to_number(value).is_finite()
+}
+
 pub fn to_number(value: &JsValue) -> f64 {
     match value {
         JsValue::Undefined => f64::NAN,
@@ -12,12 +20,12 @@ pub fn to_number(value: &JsValue) -> f64 {
             }
         }
         JsValue::Number(value) => *value,
-        JsValue::String(value) => crate::number::parse_float(value),
+        JsValue::String(value) => crate::number::numeric_string(value),
         JsValue::Utf16String(value) => {
             let Ok(text) = value.to_utf8() else {
                 return f64::NAN;
             };
-            crate::number::parse_float(&text)
+            crate::number::numeric_string(&text)
         }
         JsValue::Symbol(_)
         | JsValue::Object(_)

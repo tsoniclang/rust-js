@@ -8,7 +8,7 @@ pub trait IntlNumberInput {
 impl<Value: JsNumberValue> IntlNumberInput for Value {
     fn into_intl_decimal(self) -> (String, bool) {
         let text = self.to_js_decimal_string();
-        let negative_zero = text == "-0";
+        let negative_zero = self.is_negative_zero();
         (text, negative_zero)
     }
 }

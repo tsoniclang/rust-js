@@ -53,7 +53,7 @@ pub use crate::console::{
 pub use crate::data_view::DataView;
 pub use crate::date::JsDate;
 pub use crate::errors::{range_error, type_error, uri_error};
-pub use crate::globals::to_number;
+pub use crate::globals::{is_finite, is_nan, to_number};
 pub use crate::intl::{
     integer_to_locale_string, integer_to_locale_string_with_locale,
     integer_to_locale_string_with_locales, integer_to_locale_string_with_locales_options,
@@ -89,8 +89,9 @@ pub use crate::math::{
 pub use crate::number::{
     bigint_to_number, is_finite as number_is_finite, is_integer as number_is_integer,
     is_nan as number_is_nan, is_safe_integer as number_is_safe_integer,
-    parse_float as number_parse_float, parse_int_default as number_parse_int,
-    parse_int_radix as number_parse_int_radix, to_exponential_default as number_to_exponential,
+    numeric_string as number_from_string, parse_float as number_parse_float,
+    parse_int_default as number_parse_int, parse_int_radix as number_parse_int_radix,
+    to_exponential_default as number_to_exponential,
     to_exponential_digits as number_to_exponential_digits, to_fixed_default as number_to_fixed,
     to_fixed_digits as number_to_fixed_digits, to_precision_default as number_to_precision,
     to_precision_digits as number_to_precision_digits, to_string as number_to_string,

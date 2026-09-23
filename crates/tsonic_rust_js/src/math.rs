@@ -1,5 +1,6 @@
 //! Math helper module.
 
+use crate::native_integer::Integer32;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static RANDOM_STATE: AtomicU64 = AtomicU64::new(0x9E3779B97F4A7C15);
@@ -61,8 +62,9 @@ pub fn ceil(value: f64) -> f64 {
 pub fn floor(value: f64) -> f64 {
     value.floor()
 }
-pub fn clz32(value: i32) -> i32 {
-    value.leading_zeros() as i32
+pub fn clz32(value: impl Integer32) -> i32 {
+    let bits = value.integer32();
+    bits.leading_zeros() as i32
 }
 pub fn cos(value: f64) -> f64 {
     value.cos()
@@ -112,8 +114,8 @@ pub fn hypot(values: &[f64]) -> f64 {
     }
     maximum * sum.sqrt()
 }
-pub fn imul(left: i32, right: i32) -> i32 {
-    left.wrapping_mul(right)
+pub fn imul(left: impl Integer32, right: impl Integer32) -> i32 {
+    left.integer32().wrapping_mul(right.integer32()) as i32
 }
 pub fn log(value: f64) -> f64 {
     value.ln()
@@ -128,12 +130,45 @@ pub fn log2(value: f64) -> f64 {
     value.log2()
 }
 pub fn max(values: &[f64]) -> f64 {
-    values.iter().copied().fold(f64::NEG_INFINITY, f64::max)
+    if values.is_empty() {
+        return f64::NEG_INFINITY;
+    }
+    if values[0].is_nan() {
+        return f64::NAN;
+    }
+    let mut out = values[0];
+    for value in &values[1..] {
+        if value.is_nan() {
+            return f64::NAN;
+        }
+        if value.total_cmp(&out).is_gt() {
+            out = *value;
+        }
+    }
+    out
 }
 pub fn min(values: &[f64]) -> f64 {
-    values.iter().copied().fold(f64::INFINITY, f64::min)
+    if values.is_empty() {
+        return f64::INFINITY;
+    }
+    if values[0].is_nan() {
+        return f64::NAN;
+    }
+    let mut out = values[0];
+    for value in &values[1..] {
+        if value.is_nan() {
+            return f64::NAN;
+        }
+        if value.total_cmp(&out).is_lt() {
+            out = *value;
+        }
+    }
+    out
 }
 pub fn pow(base: f64, exponent: f64) -> f64 {
+    if base.abs() == 1.0 && exponent.is_infinite() {
+        return f64::NAN;
+    }
     base.powf(exponent)
 }
 pub fn random() -> f64 {
@@ -141,10 +176,38 @@ pub fn random() -> f64 {
     (bits as f64) / ((u64::MAX as f64) + 1.0)
 }
 pub fn round(value: f64) -> f64 {
-    value.round()
+    if !value.is_finite() || value == 0.0 {
+        return value;
+    }
+    if value > 0.0 {
+        let floor = value.floor();
+        let fraction = value - floor;
+        return if fraction >= 0.5 { floor + 1.0 } else { floor };
+    }
+
+    let floor = value.floor();
+    let fraction = value - floor;
+    if fraction >= 0.5 {
+        let out = floor + 1.0;
+        if out == 0.0 {
+            -0.0
+        } else {
+            out
+        }
+    } else {
+        floor
+    }
 }
 pub fn sign(value: f64) -> f64 {
-    value.signum()
+    if value.is_nan() {
+        value
+    } else if value > 0.0 {
+        1.0
+    } else if value < 0.0 {
+        -1.0
+    } else {
+        value
+    }
 }
 pub fn sin(value: f64) -> f64 {
     value.sin()

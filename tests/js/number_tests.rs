@@ -1,97 +1,97 @@
+use tsonic_rust_js::equality::{same_value_zero_f64, strict_equal_f64};
 use tsonic_rust_js::number;
 
-#[test]
-fn safe_integer_query_uses_the_selected_native_precision() {
-    assert!(number::is_safe_integer(9_007_199_254_740_991_f64));
-    assert!(!number::is_safe_integer(9_007_199_254_740_992_f64));
-    assert!(number::is_safe_integer(16_777_215_f32));
-    assert!(!number::is_safe_integer(16_777_216_f32));
-    assert!(number::is_safe_integer(u128::MAX));
-    assert!(number::is_safe_integer(i128::MIN));
-    assert!(number::is_safe_integer(9_007_199_254_740_993_u64));
+fn text(value: impl AsRef<str>) -> String {
+    value.as_ref().to_owned()
 }
 
 #[test]
-fn parse_integer_uses_the_native_integer_domain_and_full_token() {
-    use num_bigint::BigInt;
+fn parse_int_promotes_only_after_exact_native_accumulator_overflow() {
+    use num_bigint::BigUint;
+    use num_traits::ToPrimitive;
     for radix in 2_u32..=36 {
         for value in [
-            i128::MIN,
-            -9_007_199_254_740_993,
-            -1,
-            0,
+            0_u128,
             1,
             9_007_199_254_740_993,
-            i128::MAX,
+            u64::MAX as u128,
+            u64::MAX as u128 + 1,
+            u128::MAX,
         ] {
-            let digits = BigInt::from(value).to_str_radix(radix);
-            let expected = i128::from_str_radix(&digits, radix).unwrap() as f64;
+            let exact = BigUint::from(value);
+            let digits = exact.to_str_radix(radix);
+            let expected = exact.to_f64().unwrap();
             assert_eq!(
-                number::parse_int(&digits, Some(radix as f64)).to_bits(),
-                expected.to_bits()
+                number::parse_int(&digits, Some(radix as f64)),
+                expected,
+                "{radix}: {digits}"
+            );
+            assert_eq!(
+                number::parse_int(&format!("-{digits}"), Some(radix as f64)).to_bits(),
+                (-expected).to_bits()
             );
         }
+        let digits = "1".repeat(2048);
+        let exact = BigUint::parse_bytes(digits.as_bytes(), radix).unwrap();
+        assert_eq!(
+            number::parse_int(&digits, Some(radix as f64)),
+            exact.to_f64().unwrap_or(f64::INFINITY)
+        );
     }
-    for text in [
-        "",
-        " 42",
-        "42 ",
-        "1e2",
-        "0x10",
-        "123abc",
-        "1e+",
-        "-",
-        "\u{feff}42",
-        "170141183460469231731687303715884105728",
-        "-170141183460469231731687303715884105729",
-    ] {
-        assert!(number::parse_int(text, None).is_nan(), "{text}");
-    }
-    for radix in [
-        0.0,
-        1.0,
-        37.0,
-        2.5,
-        4_294_967_298.0,
-        f64::NAN,
-        f64::INFINITY,
-    ] {
-        assert!(number::parse_int("10", Some(radix)).is_nan());
-    }
-    assert_eq!(number::parse_int("-0", None).to_bits(), 0_f64.to_bits());
 }
 
 #[test]
-fn parse_float_delegates_to_rust_from_str() {
-    for text in [
-        "0",
-        "-0",
-        "3.25",
-        "-3.25e1",
-        "1e400",
-        "NaN",
-        "inf",
-        "-inf",
-        "Infinity",
-        "+Infinity",
-        " 1.5",
-        "1.5 ",
-        "1.5x",
-        "0x10",
-        "1e",
-        "1e+",
-        "",
-        "-",
-        "+",
-    ] {
-        let actual = number::parse_float(text);
-        match text.parse::<f64>() {
-            Ok(expected) if !expected.is_nan() => {
-                assert_eq!(actual.to_bits(), expected.to_bits(), "{text}")
-            }
-            _ => assert!(actual.is_nan(), "{text}"),
-        }
-    }
+fn parse_int_radix_examples() {
+    assert_eq!(number::parse_int(&text("ff"), Some(16.0)), 255.0);
+    assert!(number::parse_int(&text("08"), Some(10.0)).is_finite());
+    assert!(number::parse_int(&text("08"), None).is_finite());
+    assert_eq!(number::parse_int(&text("08"), None), 8.0);
+    assert!(number::parse_int(&text("xyz"), None).is_nan());
+    assert!(number::parse_int(&text("2"), Some(1.0)).is_nan());
+    assert_eq!(number::parse_int(&text("0x10"), Some(10.0)), 0.0);
+    assert_eq!(number::parse_int(&text("0x10"), None), 16.0);
+    assert_eq!(number::parse_int(&text("10"), Some(4_294_967_298.0)), 2.0);
+    assert!(number::parse_int(&text("-0"), None).is_sign_negative());
+    assert_eq!(number::parse_int(&text("\u{feff}42"), None), 42.0,);
+    assert!(number::parse_int(&text("\u{85}42"), None).is_nan());
+    assert!(number::parse_int(&text("1".repeat(309)), Some(10.0)).is_finite());
+}
+
+#[test]
+fn parse_float_prefix_parse() {
+    assert_eq!(number::parse_float(&text("  +1.5x")), 1.5);
+    assert_eq!(number::parse_float(&text("  -1.5e+2")), -150.0);
+    assert_eq!(number::parse_float(&text("1.5x")), 1.5);
+    assert_eq!(number::parse_float(&text("0x10")), 0.0);
+    assert_eq!(number::parse_float(&text("-3.25e1")), -32.5);
+    assert_eq!(number::parse_float(&text("1e")), 1.0);
+    assert_eq!(number::parse_float(&text("1e+")), 1.0);
+    assert_eq!(number::parse_float(&text("Infinityx")), f64::INFINITY);
+    assert!(number::parse_float(&text("infinityx")).is_nan());
+    assert!(number::parse_float(&text("x")).is_nan());
+    assert!(
+        number::parse_float(&text("Infinity")).is_infinite()
+            && number::parse_float(&text("Infinity")).is_sign_positive()
+    );
+    assert!(
+        number::parse_float(&text("+Infinity")).is_infinite()
+            && number::parse_float(&text("+Infinity")).is_sign_positive()
+    );
+    assert!(
+        number::parse_float(&text("-Infinity")).is_infinite()
+            && number::parse_float(&text("-Infinity")).is_sign_negative()
+    );
+}
+
+#[test]
+fn number_predicates() {
+    assert!(number::is_nan(f64::NAN));
+    assert!(!number::is_nan(1.2));
+    assert!(number::is_finite(0.0));
+    assert!(!number::is_finite(f64::INFINITY));
+    assert!(number::is_integer(42.0));
+    assert!(!number::is_integer(42.5));
+    assert!(!number::is_safe_integer(9_007_199_254_740_993.0));
 }
 
 #[test]
@@ -115,48 +115,73 @@ fn number_constants_are_exposed() {
 }
 
 #[test]
-fn floating_text_uses_each_native_width_and_formatter() {
-    for value in [
-        -0.0_f64,
-        0.0,
-        1e-7,
-        1e21,
-        12.5,
-        2.55,
-        f64::MIN_POSITIVE,
-        f64::from_bits(1),
-        f64::MAX,
-        f64::NAN,
-        f64::INFINITY,
-        f64::NEG_INFINITY,
-    ] {
-        assert_eq!(number::to_string(value), value.to_string());
-        assert_eq!(number::to_precision_default(value), value.to_string());
-        assert_eq!(number::to_fixed_default(value), format!("{value:.0}"));
-        assert_eq!(number::to_exponential_default(value), format!("{value:e}"));
-        for digits in [0_usize, 1, 2, 100, 101] {
-            assert_eq!(
-                number::to_fixed_digits(value, digits as f64).unwrap(),
-                format!("{value:.digits$}")
-            );
-            assert_eq!(
-                number::to_exponential_digits(value, digits as f64).unwrap(),
-                format!("{value:.digits$e}")
-            );
-            assert_eq!(
-                number::to_precision_digits(value, (digits + 1) as f64).unwrap(),
-                format!("{value:.digits$e}")
-            );
-        }
-    }
-    for value in [0.1_f32, f32::MIN_POSITIVE, f32::MAX, -0.0] {
-        assert_eq!(number::to_string(value), value.to_string());
-        assert_eq!(
-            number::to_fixed_digits(value, 3.0).unwrap(),
-            format!("{value:.3}")
-        );
-        assert_eq!(number::to_exponential_default(value), format!("{value:e}"));
-    }
+fn number_formatting_rules() {
+    assert_eq!(number::to_fixed(1.2345, Some(2.0)).unwrap(), "1.23");
+    assert_eq!(number::to_fixed(2.55, Some(1.0)).unwrap(), "2.5");
+    assert_eq!(number::to_fixed(1e21, Some(2.0)).unwrap(), "1e+21");
+    assert_eq!(
+        number::to_fixed(1.234, Some(101.0)).unwrap_err().kind(),
+        tsonic_rust_runtime::JsErrorKind::RangeError
+    );
+    assert_eq!(number::to_string_radix(255_i32, 16.0).unwrap(), "ff");
+    assert_eq!(
+        number::to_string_radix(255_i32, 37.0).unwrap_err().kind(),
+        tsonic_rust_runtime::JsErrorKind::RangeError
+    );
+    assert_eq!(number::to_exponential(12.5, Some(1.0)).unwrap(), "1.3e+1");
+    assert_eq!(number::to_exponential(12.5, None).unwrap(), "1.25e+1");
+    assert_eq!(number::to_precision(12.345, Some(2.0)).unwrap(), "12");
+    assert_eq!(number::to_precision(2.55, Some(4.0)).unwrap(), "2.550");
+    assert_eq!(
+        number::to_precision(12.345, Some(0.0)).unwrap_err().kind(),
+        tsonic_rust_runtime::JsErrorKind::RangeError
+    );
+}
+
+#[test]
+fn same_value_zero_and_strict_equal_for_nans_and_zeroes() {
+    assert!(same_value_zero_f64(f64::NAN, f64::NAN));
+    assert!(!strict_equal_f64(f64::NAN, f64::NAN));
+    assert!(same_value_zero_f64(0.0, -0.0));
+    assert!(strict_equal_f64(0.0, -0.0));
+}
+
+#[test]
+fn parse_float_invalid_leading_sign_combinations() {
+    assert!(number::parse_float(&text("-")).is_nan());
+    assert!(number::parse_float(&text("+")).is_nan());
+    assert!(number::parse_float(&text("  +Infinity")).is_infinite());
+    assert!(number::parse_float(&text("0x1.2")).is_finite());
+    assert_eq!(number::parse_float(&text("0x1.2")), 0.0);
+}
+
+#[test]
+fn number_to_string_radix_rules() {
+    assert_eq!(number::to_string_radix(0_i32, 16.0).unwrap(), "0");
+    assert_eq!(number::to_string_radix(-255_i32, 16.0).unwrap(), "-ff");
+    assert_eq!(
+        number::to_string_radix(255_i32, 1.0).unwrap_err().kind(),
+        tsonic_rust_runtime::JsErrorKind::RangeError
+    );
+}
+
+#[test]
+fn number_formatting_matches_ecmascript_edge_shapes() {
+    assert_eq!(number::to_string(-0.0), "0");
+    assert_eq!(number::to_string(1e-7), "1e-7");
+    assert_eq!(number::to_string(1e20), "100000000000000000000");
+    assert_eq!(number::to_exponential_default(0.0), "0e+0");
+    assert_eq!(number::to_exponential_default(-0.0), "0e+0");
+    assert_eq!(number::to_exponential_digits(1e-7, 2.0).unwrap(), "1.00e-7");
+    assert_eq!(
+        number::to_precision_digits(0.0012, 4.0).unwrap(),
+        "0.001200"
+    );
+    assert_eq!(
+        number::to_precision_digits(9.999999999999998, 2.0).unwrap(),
+        "10"
+    );
+    assert_eq!(number::value_of(42_i32), 42);
 }
 
 #[test]
@@ -175,7 +200,10 @@ fn integer_text_never_passes_through_floating_point() {
             number::to_fixed_digits(value, 2.0).unwrap(),
             format!("{value}.00")
         );
-        assert_eq!(number::to_exponential_default(value), format!("{value:e}"));
+        assert_eq!(
+            number::parse_float(&number::to_exponential_default(value)),
+            value as f64
+        );
         for radix in 2_u32..=36 {
             assert_eq!(
                 number::to_string_radix(value, radix as f64).unwrap(),
@@ -194,26 +222,4 @@ fn integer_text_never_passes_through_floating_point() {
     }
     assert_eq!(number::value_of(i128::MAX), i128::MAX);
     assert_eq!(number::value_of(u128::MAX), u128::MAX);
-}
-
-#[test]
-fn formatting_rejects_invalid_counts_without_coercion_or_large_allocations() {
-    for count in [-1.0, 0.5, f64::NAN, f64::INFINITY, usize::MAX as f64] {
-        assert!(number::to_fixed_digits(1.0, count).is_err());
-        assert!(number::to_exponential_digits(1.0, count).is_err());
-        assert!(number::to_precision_digits(1.0, count).is_err());
-    }
-    assert!(number::to_precision_digits(1.0, 0.0).is_err());
-    for radix in [0.0, 1.0, 2.5, 37.0, f64::NAN, f64::INFINITY] {
-        assert!(number::to_string_radix(42_i32, radix).is_err());
-    }
-}
-
-#[test]
-fn same_value_zero_and_strict_equal_for_nans_and_zeroes() {
-    use tsonic_rust_js::equality::{same_value_zero_f64, strict_equal_f64};
-    assert!(same_value_zero_f64(f64::NAN, f64::NAN));
-    assert!(!strict_equal_f64(f64::NAN, f64::NAN));
-    assert!(same_value_zero_f64(0.0, -0.0));
-    assert!(strict_equal_f64(0.0, -0.0));
 }

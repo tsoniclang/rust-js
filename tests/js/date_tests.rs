@@ -132,7 +132,7 @@ fn date_utc_matches_js_overflow_and_clipping() {
         JsDate::from_millis(JsDate::utc(99.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0))
             .to_iso_string()
             .unwrap(),
-        "0099-01-01T00:00:00.000Z"
+        "1999-01-01T00:00:00.000Z"
     );
     // Fractions truncate toward zero.
     assert_eq!(
@@ -263,7 +263,7 @@ fn date_setters_enforce_native_timestamp_bounds() {
     );
     assert!(invalid.set_time(-(i64::MIN as f64)).is_nan());
     assert!(invalid.get_time().is_nan());
-    assert_eq!(invalid.set_time(-0.0).to_bits(), (-0.0_f64).to_bits());
+    assert_eq!(invalid.set_time(-0.0).to_bits(), 0.0_f64.to_bits());
 }
 
 #[test]

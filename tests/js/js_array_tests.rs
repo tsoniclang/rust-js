@@ -288,7 +288,7 @@ fn canonical_array_receiver_entrypoints_preserve_js_results() {
 }
 
 #[test]
-fn array_join_formats_floating_numbers_with_native_semantics() {
+fn array_join_formats_floating_numbers_with_javascript_semantics() {
     let values = JsArray::from_dense(vec![
         2.0_f64,
         -0.0,
@@ -297,10 +297,10 @@ fn array_join_formats_floating_numbers_with_native_semantics() {
         f64::NEG_INFINITY,
     ]);
 
-    assert_eq!(values.join(","), "2,-0,NaN,inf,-inf");
+    assert_eq!(values.join(","), "2,0,NaN,Infinity,-Infinity");
 
     let single_precision = JsArray::from_dense(vec![2.5_f32, -0.0]);
-    assert_eq!(single_precision.join(","), "2.5,-0");
+    assert_eq!(single_precision.join(","), "2.5,0");
 }
 
 #[test]

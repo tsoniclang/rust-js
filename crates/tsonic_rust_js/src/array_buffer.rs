@@ -213,7 +213,7 @@ impl ObjectIdentityCarrier for ArrayBuffer {
 }
 
 pub(crate) fn to_index(value: f64) -> JsResult<usize> {
-    crate::native_integer::native_length(value)
+    crate::native_integer::index_length(value)
 }
 
 pub(crate) fn normalize_index(value: f64, max: usize) -> usize {

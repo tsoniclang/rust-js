@@ -18,7 +18,7 @@ fn compiler_provider_error_constructors_retain_kind_and_message() {
 fn bigint_width_selection_preserves_exact_signed_and_unsigned_bits() {
     for (bits, input, signed, unsigned) in [
         (0.0, "-17", "0", "0"),
-        (1.0, "3", "-1", "1"),
+        (1.9, "3", "-1", "1"),
         (7.0, "64", "-64", "64"),
         (7.0, "-129", "-1", "127"),
         (8.0, "255", "-1", "255"),
@@ -50,7 +50,7 @@ fn bigint_width_selection_preserves_exact_signed_and_unsigned_bits() {
         );
     }
     let value = BigInt::from_decimal_literal("9");
-    for width in [0.0, -0.0] {
+    for width in [f64::NAN, -0.5, -0.0] {
         assert_eq!(
             abi::bigint_as_int_n(width, &value).unwrap().to_string(),
             "0"
@@ -62,9 +62,6 @@ fn bigint_width_selection_preserves_exact_signed_and_unsigned_bits() {
     }
     for width in [
         -1.0,
-        -0.5,
-        1.9,
-        f64::NAN,
         f64::INFINITY,
         f64::NEG_INFINITY,
         18_446_744_073_709_551_616.0,
@@ -96,7 +93,7 @@ fn bigint_radix_formatting_retains_all_integer_bits() {
         "-20000000000001"
     );
     assert_eq!(
-        abi::bigint_to_string_radix(&value, 2.0).unwrap(),
+        abi::bigint_to_string_radix(&value, 2.9).unwrap(),
         format!("-1{}1", "0".repeat(52))
     );
     let value = abi::bigint_from_string("35").unwrap();
@@ -109,50 +106,6 @@ fn bigint_radix_formatting_retains_all_integer_bits() {
             JsErrorKind::RangeError
         );
     }
-}
-
-#[test]
-fn native_bigint_operands_truncate_without_losing_high_bits() {
-    macro_rules! pair {
-        ($unsigned:expr, $signed:expr, $bits:expr) => {
-            assert_eq!(
-                abi::bigint_as_int_n($bits, &$unsigned).unwrap().to_string(),
-                "-1"
-            );
-            assert_eq!(
-                abi::bigint_as_uint_n($bits, &$signed).unwrap(),
-                abi::bigint_from_integer($unsigned)
-            );
-        };
-    }
-    pair!(u8::MAX, -1_i8, 8.0);
-    pair!(u16::MAX, -1_i16, 16.0);
-    pair!(u32::MAX, -1_i32, 32.0);
-    pair!(u64::MAX, -1_i64, 64.0);
-    pair!(u128::MAX, -1_i128, 128.0);
-    pair!(usize::MAX, -1_isize, usize::BITS as f64);
-    assert_eq!(
-        abi::bigint_as_uint_n(129.0, &-1_i64).unwrap().to_string(),
-        "680564733841876926926749214863536422911"
-    );
-    assert_eq!(
-        abi::bigint_as_int_n(256.0, &-1_i64).unwrap().to_string(),
-        "-1"
-    );
-    assert_eq!(
-        abi::bigint_as_uint_n(9_007_199_254_740_992.0, &9_u64)
-            .unwrap()
-            .to_string(),
-        "9"
-    );
-    assert_eq!(
-        abi::bigint_as_int_n(f64::NAN, &9_u64).unwrap_err().kind(),
-        JsErrorKind::RangeError
-    );
-    assert_eq!(
-        abi::bigint_as_int_n(-1.0, &9_u64).unwrap_err().kind(),
-        JsErrorKind::RangeError
-    );
 }
 
 #[test]
@@ -188,8 +141,8 @@ fn bigint_construction_preserves_all_integer_bits() {
 #[test]
 fn bigint_string_construction_uses_integer_grammar() {
     for (source, expected) in [
-        ("+42", "42"),
-        ("1_000", "1000"),
+        ("", "0"),
+        ("\u{feff}  +42\n", "42"),
         ("-42", "-42"),
         ("0xff", "255"),
         ("0o17", "15"),
@@ -202,17 +155,7 @@ fn bigint_string_construction_uses_integer_grammar() {
         );
     }
     for source in [
-        "",
-        "\u{feff}  +42\n",
-        "0x",
-        "-0x1",
-        "+0b1",
-        "1.0",
-        "1e3",
-        "1n",
-        "++1",
-        "NaN",
-        "\u{85}1",
+        "0x", "-0x1", "+0b1", "1.0", "1e3", "1_000", "1n", "++1", "NaN", "\u{85}1",
     ] {
         assert_eq!(
             abi::bigint_from_string(source).unwrap_err().kind(),
@@ -296,4 +239,48 @@ fn empty_objects_keep_identity_when_boxed_as_closed_values() {
         Some("{}".to_owned())
     );
     assert_ne!(boxed, JsValue::Undefined);
+}
+
+#[test]
+fn native_bigint_operands_truncate_without_losing_high_bits() {
+    macro_rules! pair {
+        ($unsigned:expr, $signed:expr, $bits:expr) => {
+            assert_eq!(
+                abi::bigint_as_int_n($bits, &$unsigned).unwrap().to_string(),
+                "-1"
+            );
+            assert_eq!(
+                abi::bigint_as_uint_n($bits, &$signed).unwrap(),
+                abi::bigint_from_integer($unsigned)
+            );
+        };
+    }
+    pair!(u8::MAX, -1_i8, 8.0);
+    pair!(u16::MAX, -1_i16, 16.0);
+    pair!(u32::MAX, -1_i32, 32.0);
+    pair!(u64::MAX, -1_i64, 64.0);
+    pair!(u128::MAX, -1_i128, 128.0);
+    pair!(usize::MAX, -1_isize, usize::BITS as f64);
+    assert_eq!(
+        abi::bigint_as_uint_n(129.0, &-1_i64).unwrap().to_string(),
+        "680564733841876926926749214863536422911"
+    );
+    assert_eq!(
+        abi::bigint_as_int_n(256.0, &-1_i64).unwrap().to_string(),
+        "-1"
+    );
+    assert_eq!(
+        abi::bigint_as_uint_n(9_007_199_254_740_992.0, &9_u64)
+            .unwrap()
+            .to_string(),
+        "9"
+    );
+    assert_eq!(
+        abi::bigint_as_int_n(f64::NAN, &9_u64).unwrap(),
+        abi::bigint_from_integer(0_u8)
+    );
+    assert_eq!(
+        abi::bigint_as_int_n(-1.0, &9_u64).unwrap_err().kind(),
+        JsErrorKind::RangeError
+    );
 }

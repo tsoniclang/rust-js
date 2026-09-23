@@ -556,7 +556,7 @@ impl IntlNumberFormat {
             append("nan", "NaN");
             return;
         }
-        if text == "inf" || text == "-inf" {
+        if text == "Infinity" || text == "-Infinity" {
             if text.starts_with('-') {
                 append("minusSign", "-");
             }

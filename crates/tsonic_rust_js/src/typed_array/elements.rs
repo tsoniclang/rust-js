@@ -1,4 +1,4 @@
-use num_traits::AsPrimitive;
+use crate::native_integer::Integer32;
 use std::fmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,7 +47,7 @@ macro_rules! integer_element {
             const BYTES_PER_ELEMENT: usize = std::mem::size_of::<$type>();
 
             fn from_number(value: f64) -> Self {
-                value as $type
+                value.integer32() as $type
             }
 
             fn to_number(self) -> f64 {
@@ -166,23 +166,59 @@ fn to_uint8_clamp(value: f64) -> u8 {
     }
 }
 
-impl<Target: Copy + 'static> AsPrimitive<Target> for ClampedU8
+pub trait ConvertElement<Target> {
+    fn convert_element(self) -> Target;
+}
+
+impl<Target> ConvertElement<Target> for ClampedU8
 where
-    u8: AsPrimitive<Target>,
+    u8: ConvertElement<Target>,
 {
-    fn as_(self) -> Target {
-        self.0.as_()
+    fn convert_element(self) -> Target {
+        self.0.convert_element()
     }
 }
 
-macro_rules! clamped_element {
-    ($($source:ty),+ $(,)?) => {
-        $(
-            impl AsPrimitive<ClampedU8> for $source {
-                fn as_(self) -> ClampedU8 { ClampedU8::from_number(self as f64) }
-            }
-        )+
-    };
+macro_rules! native_conversion {
+    ($source:ty; $($target:ty),+ $(,)?) => {$(
+        impl ConvertElement<$target> for $source {
+            #[inline]
+            fn convert_element(self) -> $target { self as $target }
+        }
+    )+};
 }
 
-clamped_element!(i8, u8, i16, u16, i32, u32, f32, f64);
+macro_rules! integer_conversion {
+    ($($source:ty),+ $(,)?) => {$(
+        native_conversion!($source; i8, u8, i16, u16, i32, u32, f32, f64);
+        impl ConvertElement<ClampedU8> for $source {
+            #[inline]
+            fn convert_element(self) -> ClampedU8 {
+                ClampedU8((self as i64).clamp(0, 255) as u8)
+            }
+        }
+    )+};
+}
+
+macro_rules! float_integer_conversion {
+    ($source:ty; $($target:ty),+ $(,)?) => {$(
+        impl ConvertElement<$target> for $source {
+            #[inline]
+            fn convert_element(self) -> $target { self.integer32() as $target }
+        }
+    )+};
+}
+
+macro_rules! float_conversion {
+    ($($source:ty),+ $(,)?) => {$(
+        native_conversion!($source; f32, f64);
+        float_integer_conversion!($source; i8, u8, i16, u16, i32, u32);
+        impl ConvertElement<ClampedU8> for $source {
+            #[inline]
+            fn convert_element(self) -> ClampedU8 { ClampedU8::from_number(self as f64) }
+        }
+    )+};
+}
+
+integer_conversion!(i8, u8, i16, u16, i32, u32);
+float_conversion!(f32, f64);

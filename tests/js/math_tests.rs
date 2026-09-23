@@ -26,10 +26,10 @@ fn constants_are_exposed() {
 fn math_max_min_with_empty_and_nan() {
     assert_eq!(math::max(&[]), f64::NEG_INFINITY);
     assert_eq!(math::min(&[]), f64::INFINITY);
-    assert_eq!(math::max(&[1.0, f64::NAN]), 1.0);
-    assert_eq!(math::min(&[1.0, f64::NAN]), 1.0);
-    assert_eq!(math::max(&[f64::NAN, 1.0]), 1.0);
-    assert_eq!(math::min(&[f64::NAN, 1.0]), 1.0);
+    assert!(math::max(&[1.0, f64::NAN]).is_nan());
+    assert!(math::min(&[1.0, f64::NAN]).is_nan());
+    assert!(math::max(&[f64::NAN, 1.0]).is_nan());
+    assert!(math::min(&[f64::NAN, 1.0]).is_nan());
     assert_eq!(math::max(&[-0.0, 0.0]), 0.0);
     assert_eq!(math::max(&[0.0, -0.0]), 0.0);
     assert_eq!(math::min(&[-0.0, 0.0]), -0.0);
@@ -38,12 +38,12 @@ fn math_max_min_with_empty_and_nan() {
 
 #[test]
 fn imul_and_clz32_and_shift_sign() {
-    assert_eq!(math::imul(2_147_483_647, 1), i32::MAX);
-    assert_eq!(math::imul(2_147_483_647, 2), -2);
-    assert_eq!(math::imul(-2, 3), -6);
-    assert_eq!(math::clz32(1), 31);
-    assert_eq!(math::clz32(-1), 0);
-    assert_eq!(math::clz32(0), 32);
+    assert_eq!(math::imul(2_147_483_647.0, 2.0), -2);
+    assert_eq!(math::imul(f64::NAN, f64::INFINITY), 0);
+    assert_eq!(math::imul(4_294_967_297.0, 2.0), 2);
+    assert_eq!(math::clz32(1.0), 31);
+    assert_eq!(math::clz32(f64::NAN), 32);
+    assert_eq!(math::clz32(0.0), 32);
     assert!(math::sign(-0.0).is_sign_negative());
     assert_eq!(math::sign(-12.0), -1.0);
     let random = math::random();
@@ -58,9 +58,9 @@ fn basic_math_helpers() {
     assert_eq!(math::atan(0.0), 0.0);
     assert_eq!(math::atan2(0.0, -1.0), std::f64::consts::PI);
     assert_eq!(math::round(1.5), 2.0);
-    assert_eq!(math::round(-0.5), -1.0);
-    assert_eq!(math::round(-1.5), -2.0);
-    assert_eq!(math::round(-2.5), -3.0);
+    assert_eq!(math::round(-0.5), -0.0);
+    assert_eq!(math::round(-1.5), -1.0);
+    assert_eq!(math::round(-2.5), -2.0);
     assert_eq!(math::trunc(1.9), 1.0);
     assert_eq!(math::trunc(-1.9), -1.0);
     assert_eq!(math::floor(1.9), 1.0);
@@ -75,11 +75,8 @@ fn basic_math_helpers() {
     assert!(math::hypot(&[f64::MAX / 2.0, f64::MAX / 2.0]).is_finite());
     assert_eq!(math::log(1.0), 0.0);
     assert_eq!(math::pow(2.0, 3.0), 8.0);
-    assert_eq!(math::pow(1.0, f64::INFINITY), 1_f64.powf(f64::INFINITY));
-    assert_eq!(
-        math::pow(-1.0, f64::NEG_INFINITY),
-        (-1_f64).powf(f64::NEG_INFINITY)
-    );
+    assert!(math::pow(1.0, f64::INFINITY).is_nan());
+    assert!(math::pow(-1.0, f64::NEG_INFINITY).is_nan());
     assert_eq!(math::sin(0.0), 0.0);
     assert_eq!(math::sqrt(9.0), 3.0);
     assert_eq!(math::tan(0.0), 0.0);

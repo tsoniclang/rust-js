@@ -10,20 +10,11 @@ fn boolean_primitive_methods_preserve_javascript_text_and_value() {
 }
 
 #[test]
-fn numeric_globals_use_native_parsing_and_numeric_predicates() {
-    assert!(abi::number_is_nan(f64::NAN));
-    assert!(!abi::number_is_nan(i128::MIN));
-    assert!(abi::number_is_finite(u128::MAX));
+fn coercive_number_globals_follow_closed_value_rules() {
+    assert!(abi::is_nan(&JsValue::Undefined));
+    assert!(!abi::is_nan(&JsValue::Utf16String(js(" 42 "))));
+    assert!(abi::is_finite(&JsValue::Bool(true)));
     assert_eq!(abi::to_number(&JsValue::Null), 0.0);
-    for text in ["42", " 42 ", "", "inf", "1e300", "123abc", "\u{feff}42"] {
-        let expected = text.parse::<f64>().unwrap_or(f64::NAN);
-        for value in [
-            JsValue::String(text.to_owned()),
-            JsValue::Utf16String(js(text)),
-        ] {
-            assert_eq!(abi::to_number(&value).to_bits(), expected.to_bits());
-        }
-    }
 }
 
 #[test]

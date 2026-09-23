@@ -5,7 +5,7 @@ use unicode_normalization::UnicodeNormalization;
 
 use crate::array::JsArray;
 use crate::errors::{type_error, JsResult};
-use crate::native_integer::{absolute_index, native_index, native_length, relative_index};
+use crate::native_integer::{absolute_index, native_index, pad_length, relative_index};
 use crate::number::JsNumberValue;
 use crate::JsValue;
 
@@ -90,11 +90,19 @@ impl JsToString for f32 {
     fn to_js_string(&self) -> String {
         self.to_js_decimal_string()
     }
+
+    fn write_js_string(&self, output: &mut String) {
+        output.push_str(ryu_js::Buffer::new().format(*self));
+    }
 }
 
 impl JsToString for f64 {
     fn to_js_string(&self) -> String {
         self.to_js_decimal_string()
+    }
+
+    fn write_js_string(&self, output: &mut String) {
+        output.push_str(ryu_js::Buffer::new().format(*self));
     }
 }
 
@@ -435,10 +443,7 @@ fn split_with_limit(
     separator: &str,
     limit: Option<f64>,
 ) -> Result<JsArray<String>, JsError> {
-    let limit = limit
-        .map(crate::native_integer::native_length)
-        .transpose()?
-        .unwrap_or(usize::MAX);
+    let limit = crate::native_integer::split_limit(limit);
     if limit == 0 {
         return Ok(JsArray::new());
     }
@@ -509,7 +514,7 @@ fn pad(
     filler: Option<&str>,
     at_start: bool,
 ) -> Result<String, JsError> {
-    let target_length = native_length(target_length)?;
+    let target_length = pad_length(target_length);
     if target_length <= value.len() {
         return Ok(value.to_string());
     }

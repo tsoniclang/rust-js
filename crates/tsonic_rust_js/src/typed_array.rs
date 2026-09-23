@@ -1,7 +1,7 @@
 //! JavaScript typed-array carriers with exact numeric conversion, copy `slice`,
 //! and shared-backing-store `subarray` semantics.
 
-use num_traits::AsPrimitive;
+pub use elements::ConvertElement;
 use std::cmp::Ordering;
 use std::rc::Rc;
 use tsonic_rust_runtime::{ObjectIdentity, ObjectIdentityCarrier};
@@ -67,7 +67,7 @@ impl<T: TypedElement> TypedArray<T> {
         Self::from_numbers(values.iter_values())
     }
 
-    pub fn from_typed_array<U: TypedElement + AsPrimitive<T>>(
+    pub fn from_typed_array<U: TypedElement + ConvertElement<T>>(
         values: &TypedArray<U>,
     ) -> JsResult<Self> {
         let result = Self::with_length(values.len())?;
@@ -295,7 +295,7 @@ impl<T: TypedElement> TypedArray<T> {
         self.set_from_numbers(source.iter().copied(), offset)
     }
 
-    pub fn set_from_typed_array<U: TypedElement + AsPrimitive<T>>(
+    pub fn set_from_typed_array<U: TypedElement + ConvertElement<T>>(
         &self,
         source: &TypedArray<U>,
         offset: f64,
@@ -332,7 +332,7 @@ impl<T: TypedElement> TypedArray<T> {
             let snapshot: Vec<T> = source.with_bytes(|bytes| {
                 bytes
                     .chunks_exact(U::BYTES_PER_ELEMENT)
-                    .map(|element| U::read_bytes(element).as_())
+                    .map(|element| U::read_bytes(element).convert_element())
                     .collect()
             });
             let mut target = self.view.buffer.as_mut_bytes();
@@ -368,12 +368,12 @@ impl<T: TypedElement> TypedArray<T> {
         Ok(())
     }
 
-    fn copy_converted<U: TypedElement + AsPrimitive<T>>(source: &[u8], target: &mut [u8]) {
+    fn copy_converted<U: TypedElement + ConvertElement<T>>(source: &[u8], target: &mut [u8]) {
         for (input, output) in source
             .chunks_exact(U::BYTES_PER_ELEMENT)
             .zip(target.chunks_exact_mut(T::BYTES_PER_ELEMENT))
         {
-            let value: T = U::read_bytes(input).as_();
+            let value: T = U::read_bytes(input).convert_element();
             value.write_bytes(output);
         }
     }
