@@ -243,7 +243,7 @@ macro_rules! integer_conversion {
         impl ConvertElement<ClampedU8> for $source {
             #[inline]
             fn convert_element(self) -> ClampedU8 {
-                ClampedU8((self as i64).clamp(0, 255) as u8)
+                ClampedU8(self.clamp(0, 255 as $source) as u8)
             }
         }
     )+};
@@ -269,5 +269,11 @@ macro_rules! float_conversion {
     )+};
 }
 
-integer_conversion!(i8, u8, i16, u16, i32, u32);
+integer_conversion!(u8, i16, u16, i32, u32, i64, u64, isize, usize, i128, u128);
+native_conversion!(i8; i8, u8, i16, u16, i32, u32, f32, f64);
+impl ConvertElement<ClampedU8> for i8 {
+    fn convert_element(self) -> ClampedU8 {
+        ClampedU8(self.max(0) as u8)
+    }
+}
 float_conversion!(f32, f64);

@@ -4,9 +4,9 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use tsonic_rust_runtime::{Callable, JsError, TsonicError, TsonicResult};
 use crate::number::NativeNumberPredicate;
 use num_traits::ToPrimitive;
+use tsonic_rust_runtime::{Callable, JsError, TsonicError, TsonicResult};
 
 static NEXT_TIMER_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -150,7 +150,10 @@ mod tests {
 
     #[test]
     fn timer_identifiers_retain_native_precision() {
-        assert_eq!(timer_id(9_007_199_254_740_993_u64), Some(9_007_199_254_740_993));
+        assert_eq!(
+            timer_id(9_007_199_254_740_993_u64),
+            Some(9_007_199_254_740_993)
+        );
         assert_eq!(timer_id(u64::MAX), Some(u64::MAX));
         assert_eq!(timer_id(7_i32), Some(7));
         assert_eq!(timer_id(7.0), Some(7));

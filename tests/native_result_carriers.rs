@@ -1,4 +1,67 @@
-use tsonic_rust_js::{ArrayBuffer, DataView, Float32Array, Uint8Array, Uint32Array};
+use tsonic_rust_js::{ArrayBuffer, DataView, Float32Array, Uint32Array, Uint8Array};
+
+#[test]
+fn native_indices_preserve_views_and_reject_unaddressable_offsets() {
+    let buffer = ArrayBuffer::new(16_usize).unwrap();
+    let view = DataView::from_buffer_length(buffer.clone(), 4_u64, 8_u32).unwrap();
+    view.set_uint32(0_usize, 17_u32, true).unwrap();
+    let words = Uint32Array::from_buffer_length(buffer.clone(), 4_u32, 2_usize).unwrap();
+    assert_eq!(words.get_number(0_u64), Some(17));
+    let alias = words.subarray_to(0_i64, 1_usize);
+    alias.set_number(0_usize, 29_u32);
+    assert_eq!(view.get_uint32(0_u64, true).unwrap(), 29);
+    let copied = words.slice_to(0_usize, 1_u64);
+    copied.set_number(0_u64, 37_u32);
+    assert_eq!(words.at(-2_i64), Some(29));
+    assert_eq!(words.at(-0.5_f64), Some(29));
+    assert_eq!(words.get_number(usize::MAX), None);
+    assert_eq!(words.at(i128::MIN), None);
+    assert_eq!(words.subarray_to(i128::MIN, u128::MAX).length(), 2);
+    assert_eq!(buffer.slice_to(usize::MAX, u128::MAX).byte_length(), 0);
+    assert!(view.get_uint32(usize::MAX, true).is_err());
+    assert!(DataView::from_buffer_offset(buffer.clone(), u64::MAX).is_err());
+    assert!(Uint32Array::from_buffer_offset(buffer.clone(), 1_u32).is_err());
+    assert!(Uint32Array::from_buffer_length(buffer, 0_usize, usize::MAX).is_err());
+}
+
+#[test]
+fn binary_writes_keep_exact_native_integer_bits() {
+    let view = DataView::from_buffer(ArrayBuffer::new(8.0).unwrap()).unwrap();
+    view.set_uint32(0.0, 9007199254740993_i64, true).unwrap();
+    assert_eq!(view.get_uint32(0.0, true).unwrap(), 1);
+    view.set_int32(0.0, u64::MAX, false).unwrap();
+    assert_eq!(view.get_int32(0.0, false).unwrap(), -1);
+    view.set_uint16(0.0, u128::MAX, true).unwrap();
+    assert_eq!(view.get_uint16(0.0, true).unwrap(), u16::MAX);
+    view.set_int16(0.0, i128::MIN + 1, false).unwrap();
+    assert_eq!(view.get_int16(0.0, false).unwrap(), 1);
+    view.set_int8(0.0, i64::MIN + 255).unwrap();
+    assert_eq!(view.get_int8(0.0).unwrap(), -1);
+    view.set_uint8(0.0, u64::MAX).unwrap();
+    assert_eq!(view.get_uint8(0.0).unwrap(), u8::MAX);
+    view.set_uint32(0.0, -1.5, false).unwrap();
+    assert_eq!(view.get_uint32(0.0, false).unwrap(), u32::MAX);
+}
+
+#[test]
+fn typed_writes_and_fill_keep_native_integers_and_clamping() {
+    let words = Uint32Array::new(2.0).unwrap();
+    words.set_number(0.0, 9007199254740993_i64);
+    assert_eq!(words.get_number(0.0), Some(1));
+    words.fill_from(u128::MAX, 1.0);
+    assert_eq!(words.get_number(1.0), Some(u32::MAX));
+    words.fill_all(-1.5);
+    assert_eq!(words.get_number(0.0), Some(u32::MAX));
+    let clamped = tsonic_rust_js::Uint8ClampedArray::new(2.0).unwrap();
+    clamped.set_number(0.0, u128::MAX);
+    clamped.set_number(1.0, i128::MIN);
+    assert_eq!(clamped.get_number(0.0), Some(u8::MAX));
+    assert_eq!(clamped.get_number(1.0), Some(0));
+    clamped.fill_all(2.5);
+    assert_eq!(clamped.get_number(0.0), Some(2));
+    words.set_number(-1.0, 17_i64);
+    assert_eq!(words.get_number(0.0), Some(u32::MAX));
+}
 
 #[test]
 fn binary_results_keep_native_storage_types() {
@@ -32,7 +95,76 @@ fn binary_results_keep_native_storage_types() {
 #[test]
 fn typed_comparators_receive_native_elements() {
     let values = Uint32Array::from_numbers([u32::MAX as f64, 7.0, 0.0]).unwrap();
-    values.sort_by(|left: u32, right: u32| if left < right { -1.0 } else if left > right { 1.0 } else { 0.0 });
+    values.sort_by(|left: u32, right: u32| {
+        if left < right {
+            -1.0
+        } else if left > right {
+            1.0
+        } else {
+            0.0
+        }
+    });
     assert_eq!(values.get_number(0.0), Some(0));
     assert_eq!(values.get_number(2.0), Some(u32::MAX));
+}
+
+#[test]
+fn closed_native_integers_remain_exact_without_growing_the_value_carrier() {
+    use tsonic_rust_js::{
+        equality::{JsHash, JsSameValue, JsSameValueZero},
+        JsValue,
+    };
+    if usize::BITS == 64 {
+        assert_eq!(std::mem::size_of::<JsValue>(), 40);
+        assert_eq!(std::mem::align_of::<JsValue>(), 8);
+    }
+    for value in [
+        i64::MIN,
+        -9_007_199_254_740_993,
+        -1,
+        0,
+        9_007_199_254_740_993,
+        i64::MAX,
+    ] {
+        let boxed = JsValue::from(value);
+        assert!(matches!(boxed, JsValue::Integer(stored) if stored == value));
+        assert_eq!(boxed, boxed.clone());
+        assert_eq!(boxed.inspect(), value.to_string());
+        assert_eq!(
+            tsonic_rust_js::json::stringify(&boxed).unwrap(),
+            Some(value.to_string())
+        );
+    }
+    for value in [0_u64, 9_007_199_254_740_993, u64::MAX] {
+        let boxed = JsValue::from(value);
+        assert!(matches!(boxed, JsValue::UnsignedInteger(stored) if stored == value));
+        assert_eq!(boxed.inspect(), value.to_string());
+        assert_eq!(
+            tsonic_rust_js::json::stringify(&boxed).unwrap(),
+            Some(value.to_string())
+        );
+    }
+    for value in [-1_i64, 0, 1, 9_007_199_254_740_992] {
+        let native = JsValue::from(value);
+        let floating = JsValue::Number(value as f64);
+        assert_eq!(native, floating);
+        assert_eq!(native.js_hash(), floating.js_hash());
+        if value >= 0 {
+            let unsigned = JsValue::from(value as u64);
+            assert_eq!(unsigned, native);
+            assert_eq!(unsigned.js_hash(), native.js_hash());
+        }
+    }
+    let exact = JsValue::from(9_007_199_254_740_993_u64);
+    assert_ne!(exact, JsValue::from(9_007_199_254_740_992_u64));
+    assert_ne!(exact, JsValue::Number(9_007_199_254_740_993_u64 as f64));
+    assert_ne!(JsValue::from(u64::MAX), JsValue::Number(u64::MAX as f64));
+    assert_ne!(JsValue::from(i64::MAX), JsValue::Number(i64::MAX as f64));
+    assert_ne!(JsValue::from(-1_i64), JsValue::from(u64::MAX));
+    assert!(!JsValue::from(0_i64).same_value(&JsValue::Number(-0.0)));
+    assert!(JsValue::from(0_i64).same_value_zero(&JsValue::Number(-0.0)));
+    assert_eq!(
+        JsValue::from(0_i64).js_hash(),
+        JsValue::Number(-0.0).js_hash()
+    );
 }

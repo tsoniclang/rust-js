@@ -1,8 +1,8 @@
 //! Differential RegExp execution against committed Node oracle vectors.
 
+use num_traits::ToPrimitive;
 use std::path::Path;
 use std::process::Command;
-use num_traits::ToPrimitive;
 
 use tsonic_rust_js::json;
 use tsonic_rust_js::regexp::{JsRegExp, JsRegExpExecArray, JsRegExpMatchArray};
@@ -300,8 +300,14 @@ fn regexp_runtime_matches_all_committed_node_vectors() {
                     .search(&input)
                     .map_err(|error| format!("{label}: {error:?}"))
                     .and_then(|actual| {
-                        assert_eq!(expected.fract(), 0.0, "oracle search index must be integral");
-                        let expected = expected.to_isize().expect("oracle search index must fit isize");
+                        assert_eq!(
+                            expected.fract(),
+                            0.0,
+                            "oracle search index must be integral"
+                        );
+                        let expected = expected
+                            .to_isize()
+                            .expect("oracle search index must fit isize");
                         (actual == expected)
                             .then_some(())
                             .ok_or_else(|| format!("{label}: expected {expected}, got {actual}"))

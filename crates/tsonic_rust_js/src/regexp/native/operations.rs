@@ -76,12 +76,7 @@ pub(super) fn build(expression: &JsRegExp, input: &str, matched: Match) -> RegEx
         );
         let named: BTreeMap<_, _> = matched
             .named_groups()
-            .map(|(name, range)| {
-                (
-                    name.to_owned(),
-                    range.map(|span| (span.start, span.end)),
-                )
-            })
+            .map(|(name, range)| (name.to_owned(), range.map(|span| (span.start, span.end))))
             .collect();
         RegExpIndices {
             values,
@@ -200,7 +195,7 @@ pub(super) fn replacement_arguments(input: &str, matched: &Match) -> JsArray<JsV
             })
         })
         .collect();
-    arguments.push(JsValue::Number(matched.start() as f64));
+    arguments.push(JsValue::from(matched.start()));
     arguments.push(JsValue::String((input).to_owned()));
     if matched.named_groups().next().is_some() {
         let mut groups = crate::JsObject::new();

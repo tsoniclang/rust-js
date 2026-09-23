@@ -20,6 +20,8 @@ pub fn to_number(value: &JsValue) -> f64 {
             }
         }
         JsValue::Number(value) => *value,
+        JsValue::Integer(value) => *value as f64,
+        JsValue::UnsignedInteger(value) => *value as f64,
         JsValue::String(value) => crate::number::numeric_string(value),
         JsValue::Utf16String(value) => {
             let Ok(text) = value.to_utf8() else {

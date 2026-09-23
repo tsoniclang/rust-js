@@ -37,7 +37,8 @@ where
         JsArray::from_values((0..self.len()).map(|index| {
             self.get_usize(index)
                 .expect("checked typed-array index invariant violated")
-                .into_value().into()
+                .into_value()
+                .into()
         }))
     }
 }

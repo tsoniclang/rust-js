@@ -909,7 +909,9 @@ impl JsRegExp {
         self.set_last_index(0.0);
         let result = self.exec(input);
         self.set_last_index(previous);
-        Ok(result?.map(|matched| matched.index() as isize).unwrap_or(-1))
+        Ok(result?
+            .map(|matched| matched.index() as isize)
+            .unwrap_or(-1))
     }
 
     pub fn to_string_value(&self) -> JsString {
@@ -1311,7 +1313,7 @@ pub(crate) fn string_replacement_arguments(
 ) -> JsArray<JsValue> {
     JsArray::from_dense(vec![
         JsValue::Utf16String(matched.clone()),
-        JsValue::Number(offset as f64),
+        JsValue::from(offset),
         JsValue::Utf16String(input.clone()),
     ])
 }
@@ -1326,7 +1328,7 @@ fn regexp_replacement_arguments(matched: &JsRegExpExecArray, input: &JsString) -
             None => JsValue::Undefined,
         });
     }
-    values.push(JsValue::Number(matched.index() as f64));
+    values.push(JsValue::from(matched.index()));
     values.push(JsValue::Utf16String(input.clone()));
     if let Some(groups) = matched.groups() {
         let entries = groups

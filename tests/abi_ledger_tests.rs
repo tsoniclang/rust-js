@@ -55,10 +55,7 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
     assert!(js::abi::regexp_test_native(&re, "xabbc").unwrap());
     re.set_last_index(0.0);
     let first = js::abi::regexp_exec_native(&re, "xabbc").unwrap().unwrap();
-    assert_eq!(
-        (first.index(), first.index() + first.text().len()),
-        (1, 5)
-    );
+    assert_eq!((first.index(), first.index() + first.text().len()), (1, 5));
     re.set_last_index(0.0);
     assert_eq!(
         js::abi::regexp_replace_native(&re, "abc abbc", "[$1]").unwrap(),

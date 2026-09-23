@@ -166,7 +166,9 @@ pub fn at(value: &str, index: f64) -> Result<Option<String>, JsError> {
 }
 
 pub fn char_code_at(value: &str, index: f64) -> f64 {
-    code_point_at(value, index).map(f64::from).unwrap_or(f64::NAN)
+    code_point_at(value, index)
+        .map(f64::from)
+        .unwrap_or(f64::NAN)
 }
 
 pub fn code_point_at(value: &str, index: f64) -> Option<u32> {
@@ -404,7 +406,7 @@ where
         output.push_str(&value[consumed..offset]);
         let arguments = JsArray::from_dense(vec![
             JsValue::String((matched).to_owned()),
-            JsValue::Number(offset as f64),
+            JsValue::from(offset),
             JsValue::String((value).to_owned()),
         ]);
         output.push_str(&replacer(arguments)?);

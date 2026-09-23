@@ -7,6 +7,7 @@ use tsonic_rust_runtime::{ObjectIdentity, ObjectIdentityCarrier};
 
 use crate::equality::{hash_identity, JsHash, JsSameValueZero, JsStrictEqual};
 use crate::errors::{range_error, JsResult};
+use crate::numeric::IndexInput;
 
 mod bytes;
 mod shared;
@@ -53,7 +54,7 @@ impl JsStrictEqual for ArrayBuffer {
 }
 
 impl ArrayBuffer {
-    pub fn new(byte_length: f64) -> JsResult<Self> {
+    pub fn new(byte_length: impl IndexInput) -> JsResult<Self> {
         let byte_length = to_index(byte_length)?;
         Ok(Self {
             storage: BufferStorage::Ordinary(Rc::new(RefCell::new(vec![0_u8; byte_length]))),
@@ -68,7 +69,7 @@ impl ArrayBuffer {
         }
     }
 
-    pub fn new_shared(byte_length: f64) -> JsResult<Self> {
+    pub fn new_shared(byte_length: impl IndexInput) -> JsResult<Self> {
         let byte_length = to_index(byte_length)?;
         let mut bytes = Vec::new();
         bytes
@@ -167,15 +168,15 @@ impl ArrayBuffer {
         }
     }
 
-    pub fn slice(&self, start: f64, end: Option<f64>) -> Self {
+    pub fn slice<Index: IndexInput>(&self, start: Index, end: Option<Index>) -> Self {
         let bytes = self.as_bytes();
         let max = bytes.len();
-        let s = normalize_index(start, max);
-        let e = normalize_index(end.unwrap_or(max as f64), max);
-        let copied = if e <= s {
+        let start = normalize_index(start, max);
+        let end = end.map_or(max, |value| normalize_index(value, max));
+        let copied = if end <= start {
             Vec::new()
         } else {
-            bytes[s..e].to_vec()
+            bytes[start..end].to_vec()
         };
         match &self.storage {
             BufferStorage::Ordinary(_) => Self::from_bytes(copied),
@@ -189,12 +190,13 @@ impl ArrayBuffer {
         self.slice(0.0, None)
     }
 
-    pub fn slice_from(&self, start: f64) -> Self {
+    pub fn slice_from(&self, start: impl IndexInput) -> Self {
         self.slice(start, None)
     }
 
-    pub fn slice_to(&self, start: f64, end: f64) -> Self {
-        self.slice(start, Some(end))
+    pub fn slice_to(&self, start: impl IndexInput, end: impl IndexInput) -> Self {
+        let length = self.byte_length();
+        self.slice(start.clamped_index(length), Some(end.clamped_index(length)))
     }
 
     pub fn byte_length(&self) -> usize {
@@ -208,10 +210,10 @@ impl ObjectIdentityCarrier for ArrayBuffer {
     }
 }
 
-pub(crate) fn to_index(value: f64) -> JsResult<usize> {
+pub(crate) fn to_index(value: impl IndexInput) -> JsResult<usize> {
     crate::native_integer::index_length(value)
 }
 
-pub(crate) fn normalize_index(value: f64, max: usize) -> usize {
+pub(crate) fn normalize_index(value: impl IndexInput, max: usize) -> usize {
     crate::native_integer::normalize_slice_index(value, max)
 }

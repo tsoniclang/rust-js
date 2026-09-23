@@ -915,6 +915,14 @@ fn integer_option(
         {
             Ok(Some(value as u16))
         }
+        JsValue::Integer(value) if value >= i64::from(minimum) && value <= i64::from(maximum) => {
+            Ok(Some(value as u16))
+        }
+        JsValue::UnsignedInteger(value)
+            if value >= u64::from(minimum) && value <= u64::from(maximum) =>
+        {
+            Ok(Some(value as u16))
+        }
         _ => Err(range_error(format!(
             "Intl option '{name}' is outside its supported range"
         ))),

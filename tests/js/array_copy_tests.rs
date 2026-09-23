@@ -75,7 +75,7 @@ fn mapped_copies_collect_each_requested_value_in_order() {
         visited.push((value, index));
         value * 2
     });
-    assert_eq!(visited, vec![(4, 0.0), (7, 1.0), (9, 2.0)]);
+    assert_eq!(visited, vec![(4, 0), (7, 1), (9, 2)]);
     assert_eq!(copy.values(), vec![8, 14, 18]);
     let text =
         array_from_string_map_with_index("a😀b", |value, index| format!("{index}:{value}"));

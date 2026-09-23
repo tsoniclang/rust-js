@@ -5,6 +5,7 @@ where
     Source: tsonic_rust_js::typed_array::TypedElement
         + tsonic_rust_js::typed_array::ConvertElement<Target>,
     Target: tsonic_rust_js::typed_array::TypedElement,
+    f64: tsonic_rust_js::typed_array::ConvertElement<Source>,
 {
     use tsonic_rust_js::typed_array::TypedArray;
     let input = [
@@ -231,6 +232,8 @@ fn typed_array_view_constructors_subarrays_and_sorts_are_closed() {
     assert_eq!(bounded.subarray_to(1.0, 3.0).length(), 2);
     bounded.sort_default();
     assert_eq!(bounded.get_number(0.0), Some(1));
-    bounded.try_sort_by(|left, right| Ok(f64::from(right) - f64::from(left))).unwrap();
+    bounded
+        .try_sort_by(|left, right| Ok(f64::from(right) - f64::from(left)))
+        .unwrap();
     assert_eq!(bounded.get_number(0.0), Some(4));
 }

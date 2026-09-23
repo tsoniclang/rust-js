@@ -271,6 +271,8 @@ fn normalize_property_list(values: &JsValue) -> JsResult<Vec<PropertyKey>> {
             JsValue::String(value) => PropertyKey::Native(value),
             JsValue::Utf16String(value) => PropertyKey::exact(value),
             JsValue::Number(value) => PropertyKey::Native(crate::number::to_string(value)),
+            JsValue::Integer(value) => PropertyKey::Native(value.to_string()),
+            JsValue::UnsignedInteger(value) => PropertyKey::Native(value.to_string()),
             _ => continue,
         };
         if !properties.contains(&key) {
@@ -394,6 +396,14 @@ where
             }
             JsValue::Number(value) => {
                 self.push_str(&json_number(*value))?;
+                Ok(true)
+            }
+            JsValue::Integer(value) => {
+                self.push_str(&value.to_string())?;
+                Ok(true)
+            }
+            JsValue::UnsignedInteger(value) => {
+                self.push_str(&value.to_string())?;
                 Ok(true)
             }
             JsValue::String(value) => {

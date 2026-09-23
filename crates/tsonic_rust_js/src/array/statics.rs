@@ -30,13 +30,13 @@ where
 
 pub fn from_string_map_with_index<U, F>(value: &str, mut callback: F) -> super::JsArray<U>
 where
-    F: FnMut(String, f64) -> U,
+    F: FnMut(String, usize) -> U,
 {
     super::JsArray::from_values(
         value
             .chars()
             .enumerate()
-            .map(|(index, scalar)| callback(scalar.to_string(), index as f64)),
+            .map(|(index, scalar)| callback(scalar.to_string(), index)),
     )
 }
 
@@ -62,13 +62,13 @@ pub fn from_string_try_map_with_index<U, E, F>(
     mut callback: F,
 ) -> Result<super::JsArray<U>, E>
 where
-    F: FnMut(String, f64) -> Result<U, E>,
+    F: FnMut(String, usize) -> Result<U, E>,
 {
     super::JsArray::try_from_values(
         value
             .chars()
             .enumerate()
-            .map(|(index, scalar)| callback(scalar.to_string(), index as f64)),
+            .map(|(index, scalar)| callback(scalar.to_string(), index)),
     )
 }
 
@@ -96,14 +96,14 @@ where
 
 pub fn from_vec_map_with_index<T: Clone, U, F>(values: &[T], mut callback: F) -> super::JsArray<U>
 where
-    F: FnMut(T, f64) -> U,
+    F: FnMut(T, usize) -> U,
 {
     super::JsArray::from_values(
         values
             .iter()
             .cloned()
             .enumerate()
-            .map(|(index, value)| callback(value, index as f64)),
+            .map(|(index, value)| callback(value, index)),
     )
 }
 
@@ -132,14 +132,14 @@ pub fn from_vec_try_map_with_index<T: Clone, U, E, F>(
     mut callback: F,
 ) -> Result<super::JsArray<U>, E>
 where
-    F: FnMut(T, f64) -> Result<U, E>,
+    F: FnMut(T, usize) -> Result<U, E>,
 {
     super::JsArray::try_from_values(
         values
             .iter()
             .cloned()
             .enumerate()
-            .map(|(index, value)| callback(value, index as f64)),
+            .map(|(index, value)| callback(value, index)),
     )
 }
 

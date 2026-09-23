@@ -10,6 +10,7 @@ use crate::array::JsArray;
 use crate::array_buffer::{normalize_index, to_index, ArrayBuffer};
 use crate::equality::{hash_identity, JsHash, JsSameValueZero, JsStrictEqual};
 use crate::errors::{range_error, JsResult};
+use crate::numeric::IndexInput;
 
 mod elements;
 pub use elements::{ClampedU8, TypedArrayKind, TypedElement};
@@ -48,7 +49,7 @@ impl TypedArray<u8> {
 impl<T: TypedElement> TypedArray<T> {
     pub const BYTES_PER_ELEMENT: usize = T::BYTES_PER_ELEMENT;
 
-    pub fn new(length: f64) -> JsResult<Self> {
+    pub fn new(length: impl IndexInput) -> JsResult<Self> {
         Self::with_length(to_index(length)?)
     }
 
@@ -92,10 +93,10 @@ impl<T: TypedElement> TypedArray<T> {
         Ok(result)
     }
 
-    pub fn from_buffer(
+    pub fn from_buffer<Index: IndexInput>(
         buffer: ArrayBuffer,
-        byte_offset: f64,
-        length: Option<f64>,
+        byte_offset: Index,
+        length: Option<Index>,
     ) -> JsResult<Self> {
         let byte_offset = to_index(byte_offset)?;
         let buffer_length = buffer.byte_length();
@@ -123,16 +124,16 @@ impl<T: TypedElement> TypedArray<T> {
         Self::from_buffer(buffer, 0.0, None)
     }
 
-    pub fn from_buffer_offset(buffer: ArrayBuffer, byte_offset: f64) -> JsResult<Self> {
+    pub fn from_buffer_offset(buffer: ArrayBuffer, byte_offset: impl IndexInput) -> JsResult<Self> {
         Self::from_buffer(buffer, byte_offset, None)
     }
 
     pub fn from_buffer_length(
         buffer: ArrayBuffer,
-        byte_offset: f64,
-        length: f64,
+        byte_offset: impl IndexInput,
+        length: impl IndexInput,
     ) -> JsResult<Self> {
-        Self::from_buffer(buffer, byte_offset, Some(length))
+        Self::from_buffer(buffer, to_index(byte_offset)?, Some(to_index(length)?))
     }
 
     pub fn buffer(&self) -> ArrayBuffer {
@@ -177,7 +178,7 @@ impl<T: TypedElement> TypedArray<T> {
         self.view.length == 0
     }
 
-    pub fn at(&self, index: f64) -> Option<T::Value> {
+    pub fn at(&self, index: impl IndexInput) -> Option<T::Value> {
         self.get_usize(crate::native_integer::relative_index(
             index,
             self.view.length,
@@ -185,23 +186,25 @@ impl<T: TypedElement> TypedArray<T> {
         .map(TypedElement::into_value)
     }
 
-    pub fn get_number(&self, index: f64) -> Option<T::Value> {
-        if !index.is_finite() || index.fract() != 0.0 {
-            return None;
-        }
-        let index = crate::native_integer::absolute_index(index, self.view.length)?;
+    pub fn get_number(&self, index: impl IndexInput) -> Option<T::Value> {
+        let index = index.checked_integer()?;
         self.get_usize(index).map(TypedElement::into_value)
     }
 
-    pub fn set_number(&self, index: f64, value: f64) {
-        if index.is_finite() && index >= 0.0 && index.fract() == 0.0 {
-            self.set_usize(index as usize, T::from_number(value));
+    pub fn set_number<Value: ConvertElement<T>>(&self, index: impl IndexInput, value: Value) {
+        if let Some(index) = index.checked_integer() {
+            self.set_usize(index, value.convert_element());
         }
     }
 
-    pub fn fill(&self, value: f64, start: f64, end: Option<f64>) -> Self {
+    pub fn fill<Value: ConvertElement<T>, Index: IndexInput>(
+        &self,
+        value: Value,
+        start: Index,
+        end: Option<Index>,
+    ) -> Self {
         let (start, end) = normalized_range(self.view.length, start, end);
-        let value = T::from_number(value);
+        let value = value.convert_element();
         let mut storage = self.view.buffer.as_mut_bytes();
         let bytes = &mut storage[self.view.byte_offset + start * T::BYTES_PER_ELEMENT
             ..self.view.byte_offset + end * T::BYTES_PER_ELEMENT];
@@ -217,19 +220,32 @@ impl<T: TypedElement> TypedArray<T> {
         self.clone()
     }
 
-    pub fn fill_all(&self, value: f64) -> Self {
+    pub fn fill_all<Value: ConvertElement<T>>(&self, value: Value) -> Self {
         self.fill(value, 0.0, None)
     }
 
-    pub fn fill_from(&self, value: f64, start: f64) -> Self {
+    pub fn fill_from<Value: ConvertElement<T>>(
+        &self,
+        value: Value,
+        start: impl IndexInput,
+    ) -> Self {
         self.fill(value, start, None)
     }
 
-    pub fn fill_to(&self, value: f64, start: f64, end: f64) -> Self {
-        self.fill(value, start, Some(end))
+    pub fn fill_to<Value: ConvertElement<T>>(
+        &self,
+        value: Value,
+        start: impl IndexInput,
+        end: impl IndexInput,
+    ) -> Self {
+        self.fill(
+            value,
+            start.clamped_index(self.view.length),
+            Some(end.clamped_index(self.view.length)),
+        )
     }
 
-    pub fn includes(&self, search: f64, from_index: f64) -> bool {
+    pub fn includes(&self, search: f64, from_index: impl IndexInput) -> bool {
         let start = normalize_index(from_index, self.view.length);
         (start..self.view.length).any(|index| {
             self.get_usize(index)
@@ -241,7 +257,7 @@ impl<T: TypedElement> TypedArray<T> {
         self.includes(search, 0.0)
     }
 
-    pub fn index_of(&self, search: f64, from_index: f64) -> isize {
+    pub fn index_of(&self, search: f64, from_index: impl IndexInput) -> isize {
         let start = normalize_index(from_index, self.view.length);
         (start..self.view.length)
             .find(|index| {
@@ -280,7 +296,7 @@ impl<T: TypedElement> TypedArray<T> {
         self.clone()
     }
 
-    pub fn set_from_array(&self, source: &JsArray<f64>, offset: f64) -> JsResult<()> {
+    pub fn set_from_array(&self, source: &JsArray<f64>, offset: impl IndexInput) -> JsResult<()> {
         self.set_from_numbers(source.iter_values(), offset)
     }
 
@@ -291,7 +307,7 @@ impl<T: TypedElement> TypedArray<T> {
     pub fn set_from_fixed_array<const LENGTH: usize>(
         &self,
         source: &[f64; LENGTH],
-        offset: f64,
+        offset: impl IndexInput,
     ) -> JsResult<()> {
         self.set_from_numbers(source.iter().copied(), offset)
     }
@@ -299,7 +315,7 @@ impl<T: TypedElement> TypedArray<T> {
     pub fn set_from_typed_array<U: TypedElement + ConvertElement<T>>(
         &self,
         source: &TypedArray<U>,
-        offset: f64,
+        offset: impl IndexInput,
     ) -> JsResult<()> {
         if T::KIND == U::KIND && T::BYTES_PER_ELEMENT == U::BYTES_PER_ELEMENT {
             let offset = to_index(offset)?;
@@ -379,7 +395,7 @@ impl<T: TypedElement> TypedArray<T> {
         }
     }
 
-    pub fn slice(&self, start: f64, end: Option<f64>) -> Self {
+    pub fn slice<Index: IndexInput>(&self, start: Index, end: Option<Index>) -> Self {
         let (start, end) = normalized_range(self.view.length, start, end);
         let result = Self::with_length(end - start).expect("normalized typed array length");
         result.view.buffer.copy_bytes_from(
@@ -395,15 +411,18 @@ impl<T: TypedElement> TypedArray<T> {
         self.slice(0.0, None)
     }
 
-    pub fn slice_from(&self, start: f64) -> Self {
+    pub fn slice_from(&self, start: impl IndexInput) -> Self {
         self.slice(start, None)
     }
 
-    pub fn slice_to(&self, start: f64, end: f64) -> Self {
-        self.slice(start, Some(end))
+    pub fn slice_to(&self, start: impl IndexInput, end: impl IndexInput) -> Self {
+        self.slice(
+            start.clamped_index(self.view.length),
+            Some(end.clamped_index(self.view.length)),
+        )
     }
 
-    pub fn subarray(&self, start: f64, end: Option<f64>) -> Self {
+    pub fn subarray<Index: IndexInput>(&self, start: Index, end: Option<Index>) -> Self {
         let (start, end) = normalized_range(self.view.length, start, end);
         Self::from_view(
             self.view.buffer.clone(),
@@ -416,12 +435,15 @@ impl<T: TypedElement> TypedArray<T> {
         self.subarray(0.0, None)
     }
 
-    pub fn subarray_from(&self, start: f64) -> Self {
+    pub fn subarray_from(&self, start: impl IndexInput) -> Self {
         self.subarray(start, None)
     }
 
-    pub fn subarray_to(&self, start: f64, end: f64) -> Self {
-        self.subarray(start, Some(end))
+    pub fn subarray_to(&self, start: impl IndexInput, end: impl IndexInput) -> Self {
+        self.subarray(
+            start.clamped_index(self.view.length),
+            Some(end.clamped_index(self.view.length)),
+        )
     }
 
     pub fn sort_default(&self) -> Self {
@@ -453,15 +475,17 @@ impl<T: TypedElement> TypedArray<T> {
     ) -> tsonic_rust_runtime::TsonicResult<Self> {
         let mut values = self.values();
         let mut failure = None;
-        values.sort_by(|left, right| match compare(left.into_value(), right.into_value()) {
-            Ok(order) if order < 0.0 => Ordering::Less,
-            Ok(order) if order > 0.0 => Ordering::Greater,
-            Ok(_) => Ordering::Equal,
-            Err(error) => {
-                failure = Some(error);
-                Ordering::Equal
-            }
-        });
+        values.sort_by(
+            |left, right| match compare(left.into_value(), right.into_value()) {
+                Ok(order) if order < 0.0 => Ordering::Less,
+                Ok(order) if order > 0.0 => Ordering::Greater,
+                Ok(_) => Ordering::Equal,
+                Err(error) => {
+                    failure = Some(error);
+                    Ordering::Equal
+                }
+            },
+        );
         if let Some(error) = failure {
             return Err(error);
         }
@@ -494,7 +518,11 @@ impl<T: TypedElement> TypedArray<T> {
         value.write_bytes(&mut self.view.buffer.as_mut_bytes()[start..end]);
     }
 
-    fn set_from_numbers(&self, source: impl IntoIterator<Item = f64>, offset: f64) -> JsResult<()> {
+    fn set_from_numbers(
+        &self,
+        source: impl IntoIterator<Item = f64>,
+        offset: impl IndexInput,
+    ) -> JsResult<()> {
         let offset = to_index(offset)?;
         let values: Vec<f64> = source.into_iter().collect();
         if offset
@@ -562,9 +590,13 @@ impl<T: TypedElement> ObjectIdentityCarrier for TypedArray<T> {
     }
 }
 
-fn normalized_range(length: usize, start: f64, end: Option<f64>) -> (usize, usize) {
+fn normalized_range<Index: IndexInput>(
+    length: usize,
+    start: Index,
+    end: Option<Index>,
+) -> (usize, usize) {
     let start = normalize_index(start, length);
-    let end = normalize_index(end.unwrap_or(length as f64), length);
+    let end = end.map_or(length, |value| normalize_index(value, length));
     (start, end.max(start))
 }
 

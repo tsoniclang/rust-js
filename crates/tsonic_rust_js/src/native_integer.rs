@@ -10,8 +10,12 @@ pub(crate) fn integer_or_infinity(value: f64) -> f64 {
     }
 }
 
-pub(crate) fn index_length(value: f64) -> crate::errors::JsResult<usize> {
-    native_length(integer_or_infinity(value))
+pub(crate) fn index_length(
+    value: impl crate::numeric::IndexInput,
+) -> crate::errors::JsResult<usize> {
+    value
+        .length_index()
+        .ok_or_else(|| crate::errors::range_error("length must be a non-negative native integer"))
 }
 
 pub(crate) fn pad_length(value: f64) -> usize {
@@ -66,47 +70,34 @@ pub(crate) fn split_limit(value: Option<f64>) -> usize {
     value.map_or(usize::MAX, |value| value.integer32() as usize)
 }
 
-pub(crate) fn relative_index(value: f64, length: usize) -> Option<usize> {
-    let index = integer_or_infinity(value);
-    const EXCLUSIVE_MAXIMUM: f64 = (usize::MAX as u128 + 1) as f64;
-    if index.abs() >= EXCLUSIVE_MAXIMUM {
-        return None;
-    }
-    let position = if index < 0.0 {
-        length.checked_sub((-index) as usize)?
-    } else {
-        index as usize
-    };
+pub(crate) fn relative_index(
+    value: impl crate::numeric::IndexInput,
+    length: usize,
+) -> Option<usize> {
+    value.relative_index(length)
+}
+
+pub(crate) fn absolute_index(
+    value: impl crate::numeric::IndexInput,
+    length: usize,
+) -> Option<usize> {
+    let position = value.length_index()?;
     (position < length).then_some(position)
 }
 
-pub(crate) fn absolute_index(value: f64, length: usize) -> Option<usize> {
-    let index = integer_or_infinity(value);
-    const EXCLUSIVE_MAXIMUM: f64 = (usize::MAX as u128 + 1) as f64;
-    if !(0.0..EXCLUSIVE_MAXIMUM).contains(&index) {
-        return None;
-    }
-    let position = index as usize;
-    (position < length).then_some(position)
+pub(crate) fn native_length(
+    value: impl crate::numeric::IndexInput,
+) -> crate::errors::JsResult<usize> {
+    value
+        .checked_integer()
+        .ok_or_else(|| crate::errors::range_error("length must be a non-negative native integer"))
 }
 
-pub(crate) fn native_length(value: f64) -> crate::errors::JsResult<usize> {
-    const EXCLUSIVE_MAXIMUM: f64 = (usize::MAX as u128 + 1) as f64;
-    if value.fract() != 0.0 || !(0.0..EXCLUSIVE_MAXIMUM).contains(&value) {
-        return Err(crate::errors::range_error(
-            "length must be a non-negative native integer",
-        ));
-    }
-    Ok(value as usize)
-}
-
-pub(crate) fn normalize_slice_index(value: f64, length: usize) -> usize {
-    let index = integer_or_infinity(value);
-    if index < 0.0 {
-        length.saturating_sub((-index) as usize)
-    } else {
-        (index as usize).min(length)
-    }
+pub(crate) fn normalize_slice_index(
+    value: impl crate::numeric::IndexInput,
+    length: usize,
+) -> usize {
+    value.clamped_index(length)
 }
 
 #[cfg(test)]

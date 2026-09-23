@@ -662,7 +662,7 @@ impl<T> JsArray<T> {
     fn map_with<U, F>(&self, mut mapper: F) -> JsArray<U>
     where
         T: Clone,
-        F: FnMut(T, f64, Self) -> U,
+        F: FnMut(T, usize, Self) -> U,
     {
         let length = self.len();
         let output = JsArray::with_capacity(length);
@@ -670,7 +670,7 @@ impl<T> JsArray<T> {
             let value = self
                 .get(index)
                 .expect("Array.map cannot create holes after its source is shortened");
-            output.push(mapper(value, index as f64, self.clone()));
+            output.push(mapper(value, index, self.clone()));
         }
         output
     }
@@ -694,7 +694,7 @@ impl<T> JsArray<T> {
     pub fn map_with_index<U, F>(&self, mut mapper: F) -> JsArray<U>
     where
         T: Clone,
-        F: FnMut(T, f64) -> U,
+        F: FnMut(T, usize) -> U,
     {
         self.map_with(|value, index, _| mapper(value, index))
     }
@@ -702,7 +702,7 @@ impl<T> JsArray<T> {
     pub fn map_with_array<U, F>(&self, mapper: F) -> JsArray<U>
     where
         T: Clone,
-        F: FnMut(T, f64, Self) -> U,
+        F: FnMut(T, usize, Self) -> U,
     {
         self.map_with(mapper)
     }
@@ -710,13 +710,13 @@ impl<T> JsArray<T> {
     fn filter_with<F>(&self, mut predicate: F) -> Self
     where
         T: Clone,
-        F: FnMut(T, f64, Self) -> bool,
+        F: FnMut(T, usize, Self) -> bool,
     {
         let length = self.len();
         let output = Self::new();
         for index in 0..length {
             if let Some(value) = self.get(index) {
-                if predicate(value.clone(), index as f64, self.clone()) {
+                if predicate(value.clone(), index, self.clone()) {
                     output.push(value);
                 }
             }
@@ -743,7 +743,7 @@ impl<T> JsArray<T> {
     pub fn filter_with_index<F>(&self, mut predicate: F) -> Self
     where
         T: Clone,
-        F: FnMut(T, f64) -> bool,
+        F: FnMut(T, usize) -> bool,
     {
         self.filter_with(|value, index, _| predicate(value, index))
     }
@@ -751,7 +751,7 @@ impl<T> JsArray<T> {
     pub fn filter_with_array<F>(&self, predicate: F) -> Self
     where
         T: Clone,
-        F: FnMut(T, f64, Self) -> bool,
+        F: FnMut(T, usize, Self) -> bool,
     {
         self.filter_with(predicate)
     }
@@ -759,13 +759,13 @@ impl<T> JsArray<T> {
     fn reduce_with<U, F>(&self, initial: U, mut reducer: F) -> U
     where
         T: Clone,
-        F: FnMut(U, T, f64, Self) -> U,
+        F: FnMut(U, T, usize, Self) -> U,
     {
         let length = self.len();
         let mut accumulator = initial;
         for index in 0..length {
             if let Some(value) = self.get(index) {
-                accumulator = reducer(accumulator, value, index as f64, self.clone());
+                accumulator = reducer(accumulator, value, index, self.clone());
             }
         }
         accumulator
@@ -800,7 +800,7 @@ impl<T> JsArray<T> {
     pub fn reduce_with_index<U, F>(&self, initial: U, mut reducer: F) -> U
     where
         T: Clone,
-        F: FnMut(U, T, f64) -> U,
+        F: FnMut(U, T, usize) -> U,
     {
         self.reduce_with(initial, |accumulator, value, index, _| {
             reducer(accumulator, value, index)
@@ -810,7 +810,7 @@ impl<T> JsArray<T> {
     pub fn reduce_with_array<U, F>(&self, initial: U, reducer: F) -> U
     where
         T: Clone,
-        F: FnMut(U, T, f64, Self) -> U,
+        F: FnMut(U, T, usize, Self) -> U,
     {
         self.reduce_with(initial, reducer)
     }
@@ -818,7 +818,7 @@ impl<T> JsArray<T> {
     fn reduce_from_first_with<F>(&self, mut reducer: F) -> Result<T, JsError>
     where
         T: Clone,
-        F: FnMut(T, T, f64, Self) -> T,
+        F: FnMut(T, T, usize, Self) -> T,
     {
         let length = self.len();
         let Some((first_index, mut accumulator)) =
@@ -831,7 +831,7 @@ impl<T> JsArray<T> {
         };
         for index in first_index + 1..length {
             if let Some(value) = self.get(index) {
-                accumulator = reducer(accumulator, value, index as f64, self.clone());
+                accumulator = reducer(accumulator, value, index, self.clone());
             }
         }
         Ok(accumulator)
@@ -864,7 +864,7 @@ impl<T> JsArray<T> {
     pub fn reduce_from_first_with_index<F>(&self, mut reducer: F) -> Result<T, JsError>
     where
         T: Clone,
-        F: FnMut(T, T, f64) -> T,
+        F: FnMut(T, T, usize) -> T,
     {
         self.reduce_from_first_with(|accumulator, value, index, _| {
             reducer(accumulator, value, index)
@@ -874,7 +874,7 @@ impl<T> JsArray<T> {
     pub fn reduce_from_first_with_array<F>(&self, reducer: F) -> Result<T, JsError>
     where
         T: Clone,
-        F: FnMut(T, T, f64, Self) -> T,
+        F: FnMut(T, T, usize, Self) -> T,
     {
         self.reduce_from_first_with(reducer)
     }
@@ -898,7 +898,7 @@ impl<T> JsArray<T> {
     pub fn for_each_value_index<F>(&self, mut callback: F)
     where
         T: Clone,
-        F: FnMut(T, f64),
+        F: FnMut(T, usize),
     {
         self.for_each_with(|value, index, _| callback(value, index));
     }
@@ -906,7 +906,7 @@ impl<T> JsArray<T> {
     pub fn for_each<F>(&self, callback: F)
     where
         T: Clone,
-        F: FnMut(T, f64, Self),
+        F: FnMut(T, usize, Self),
     {
         self.for_each_with(callback);
     }
@@ -914,12 +914,12 @@ impl<T> JsArray<T> {
     fn for_each_with<F>(&self, mut callback: F)
     where
         T: Clone,
-        F: FnMut(T, f64, Self),
+        F: FnMut(T, usize, Self),
     {
         let length = self.len();
         for index in 0..length {
             if let Some(value) = self.get(index) {
-                callback(value, index as f64, self.clone());
+                callback(value, index, self.clone());
             }
         }
     }
@@ -927,12 +927,12 @@ impl<T> JsArray<T> {
     fn find_with<F>(&self, mut predicate: F) -> Option<T>
     where
         T: Clone,
-        F: FnMut(T, f64, Self) -> bool,
+        F: FnMut(T, usize, Self) -> bool,
     {
         let length = self.len();
         for index in 0..length {
             if let Some(value) = self.get(index) {
-                if predicate(value.clone(), index as f64, self.clone()) {
+                if predicate(value.clone(), index, self.clone()) {
                     return Some(value);
                 }
             }
@@ -959,7 +959,7 @@ impl<T> JsArray<T> {
     pub fn find_with_index<F>(&self, mut predicate: F) -> Option<T>
     where
         T: Clone,
-        F: FnMut(T, f64) -> bool,
+        F: FnMut(T, usize) -> bool,
     {
         self.find_with(|value, index, _| predicate(value, index))
     }
@@ -967,7 +967,7 @@ impl<T> JsArray<T> {
     pub fn find_with_array<F>(&self, predicate: F) -> Option<T>
     where
         T: Clone,
-        F: FnMut(T, f64, Self) -> bool,
+        F: FnMut(T, usize, Self) -> bool,
     {
         self.find_with(predicate)
     }
@@ -975,12 +975,12 @@ impl<T> JsArray<T> {
     fn find_index_with<F>(&self, mut predicate: F) -> isize
     where
         T: Clone,
-        F: FnMut(T, f64, Self) -> bool,
+        F: FnMut(T, usize, Self) -> bool,
     {
         let length = self.len();
         for index in 0..length {
             if let Some(value) = self.get(index) {
-                if predicate(value, index as f64, self.clone()) {
+                if predicate(value, index, self.clone()) {
                     return index as isize;
                 }
             }
@@ -1007,7 +1007,7 @@ impl<T> JsArray<T> {
     pub fn find_index_with_index<F>(&self, mut predicate: F) -> isize
     where
         T: Clone,
-        F: FnMut(T, f64) -> bool,
+        F: FnMut(T, usize) -> bool,
     {
         self.find_index_with(|value, index, _| predicate(value, index))
     }
@@ -1015,7 +1015,7 @@ impl<T> JsArray<T> {
     pub fn find_index_with_array<F>(&self, predicate: F) -> isize
     where
         T: Clone,
-        F: FnMut(T, f64, Self) -> bool,
+        F: FnMut(T, usize, Self) -> bool,
     {
         self.find_index_with(predicate)
     }
@@ -1023,11 +1023,11 @@ impl<T> JsArray<T> {
     fn find_last_with<F>(&self, mut predicate: F) -> Option<T>
     where
         T: Clone,
-        F: FnMut(T, f64, Self) -> bool,
+        F: FnMut(T, usize, Self) -> bool,
     {
         for index in (0..self.len()).rev() {
             if let Some(value) = self.get(index) {
-                if predicate(value.clone(), index as f64, self.clone()) {
+                if predicate(value.clone(), index, self.clone()) {
                     return Some(value);
                 }
             }
@@ -1054,7 +1054,7 @@ impl<T> JsArray<T> {
     pub fn find_last_with_index<F>(&self, mut predicate: F) -> Option<T>
     where
         T: Clone,
-        F: FnMut(T, f64) -> bool,
+        F: FnMut(T, usize) -> bool,
     {
         self.find_last_with(|value, index, _| predicate(value, index))
     }
@@ -1062,7 +1062,7 @@ impl<T> JsArray<T> {
     pub fn find_last_with_array<F>(&self, predicate: F) -> Option<T>
     where
         T: Clone,
-        F: FnMut(T, f64, Self) -> bool,
+        F: FnMut(T, usize, Self) -> bool,
     {
         self.find_last_with(predicate)
     }
@@ -1070,11 +1070,11 @@ impl<T> JsArray<T> {
     fn find_last_index_with<F>(&self, mut predicate: F) -> isize
     where
         T: Clone,
-        F: FnMut(T, f64, Self) -> bool,
+        F: FnMut(T, usize, Self) -> bool,
     {
         for index in (0..self.len()).rev() {
             if let Some(value) = self.get(index) {
-                if predicate(value, index as f64, self.clone()) {
+                if predicate(value, index, self.clone()) {
                     return index as isize;
                 }
             }
@@ -1101,7 +1101,7 @@ impl<T> JsArray<T> {
     pub fn find_last_index_with_index<F>(&self, mut predicate: F) -> isize
     where
         T: Clone,
-        F: FnMut(T, f64) -> bool,
+        F: FnMut(T, usize) -> bool,
     {
         self.find_last_index_with(|value, index, _| predicate(value, index))
     }
@@ -1109,7 +1109,7 @@ impl<T> JsArray<T> {
     pub fn find_last_index_with_array<F>(&self, predicate: F) -> isize
     where
         T: Clone,
-        F: FnMut(T, f64, Self) -> bool,
+        F: FnMut(T, usize, Self) -> bool,
     {
         self.find_last_index_with(predicate)
     }
@@ -1117,12 +1117,12 @@ impl<T> JsArray<T> {
     fn some_with<F>(&self, mut predicate: F) -> bool
     where
         T: Clone,
-        F: FnMut(T, f64, Self) -> bool,
+        F: FnMut(T, usize, Self) -> bool,
     {
         let length = self.len();
         (0..length).any(|index| {
             self.get(index)
-                .is_some_and(|value| predicate(value, index as f64, self.clone()))
+                .is_some_and(|value| predicate(value, index, self.clone()))
         })
     }
 
@@ -1145,7 +1145,7 @@ impl<T> JsArray<T> {
     pub fn some_with_index<F>(&self, mut predicate: F) -> bool
     where
         T: Clone,
-        F: FnMut(T, f64) -> bool,
+        F: FnMut(T, usize) -> bool,
     {
         self.some_with(|value, index, _| predicate(value, index))
     }
@@ -1153,7 +1153,7 @@ impl<T> JsArray<T> {
     pub fn some_with_array<F>(&self, predicate: F) -> bool
     where
         T: Clone,
-        F: FnMut(T, f64, Self) -> bool,
+        F: FnMut(T, usize, Self) -> bool,
     {
         self.some_with(predicate)
     }
@@ -1161,12 +1161,12 @@ impl<T> JsArray<T> {
     fn every_with<F>(&self, mut predicate: F) -> bool
     where
         T: Clone,
-        F: FnMut(T, f64, Self) -> bool,
+        F: FnMut(T, usize, Self) -> bool,
     {
         let length = self.len();
         (0..length).all(|index| {
             self.get(index)
-                .is_none_or(|value| predicate(value, index as f64, self.clone()))
+                .is_none_or(|value| predicate(value, index, self.clone()))
         })
     }
 
@@ -1189,7 +1189,7 @@ impl<T> JsArray<T> {
     pub fn every_with_index<F>(&self, mut predicate: F) -> bool
     where
         T: Clone,
-        F: FnMut(T, f64) -> bool,
+        F: FnMut(T, usize) -> bool,
     {
         self.every_with(|value, index, _| predicate(value, index))
     }
@@ -1197,7 +1197,7 @@ impl<T> JsArray<T> {
     pub fn every_with_array<F>(&self, predicate: F) -> bool
     where
         T: Clone,
-        F: FnMut(T, f64, Self) -> bool,
+        F: FnMut(T, usize, Self) -> bool,
     {
         self.every_with(predicate)
     }

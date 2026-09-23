@@ -22,6 +22,7 @@ pub mod map;
 pub mod math;
 mod native_integer;
 pub mod number;
+pub mod numeric;
 pub mod object;
 pub mod promise;
 pub mod regexp;

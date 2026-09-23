@@ -39,10 +39,7 @@ fn atomic_wait_validates_backing_bounds_conversion_and_timeout() {
     assert_eq!(notified, 0);
     assert_eq!(atomics::store(&ordinary, 0.0, -3.0).unwrap(), -3.0);
     assert_eq!(atomics::load(&ordinary, 0.0).unwrap(), -3);
-    assert_eq!(
-        ArrayBuffer::new_shared(f64::NAN).unwrap().byte_length(),
-        0
-    );
+    assert_eq!(ArrayBuffer::new_shared(f64::NAN).unwrap().byte_length(), 0);
     assert_eq!(ArrayBuffer::new_shared(-0.5).unwrap().byte_length(), 0);
     assert!(ArrayBuffer::new_shared((usize::MAX as u128 + 1) as f64).is_err());
     assert_eq!(ArrayBuffer::new(f64::NAN).unwrap().byte_length(), 0);
