@@ -3,9 +3,9 @@
 mod borrowed;
 mod numeric;
 mod source_numeric;
+pub use borrowed::NumericRef;
 pub use numeric::{bigint_to_number, JsNumeric};
 pub use source_numeric::SourceNumeric;
-pub use borrowed::NumericRef;
 
 use std::fmt::{Display, LowerExp, Write};
 use tsonic_rust_runtime::{JsError, JsErrorKind};
@@ -29,14 +29,24 @@ pub trait JsNumberValue: Copy + NativeNumberPredicate + Display + LowerExp {
 
 pub trait NativeNumberPredicate {
     fn native_is_integer(self) -> bool;
+    fn native_is_safe_integer(self) -> bool;
     fn native_is_finite(self) -> bool;
     fn native_is_nan(self) -> bool;
 }
 
 impl NativeNumberPredicate for &tsonic_rust_runtime::BigInt {
-    fn native_is_integer(self) -> bool { true }
-    fn native_is_finite(self) -> bool { true }
-    fn native_is_nan(self) -> bool { false }
+    fn native_is_integer(self) -> bool {
+        true
+    }
+    fn native_is_safe_integer(self) -> bool {
+        true
+    }
+    fn native_is_finite(self) -> bool {
+        true
+    }
+    fn native_is_nan(self) -> bool {
+        false
+    }
 }
 
 pub trait JsIntegerValue: JsNumberValue {
@@ -48,6 +58,7 @@ macro_rules! impl_signed_integer {
         $(
             impl NativeNumberPredicate for $type {
                 fn native_is_integer(self) -> bool { true }
+                fn native_is_safe_integer(self) -> bool { true }
                 fn native_is_finite(self) -> bool { true }
                 fn native_is_nan(self) -> bool { false }
             }
@@ -76,6 +87,7 @@ macro_rules! impl_unsigned_integer {
         $(
             impl NativeNumberPredicate for $type {
                 fn native_is_integer(self) -> bool { true }
+                fn native_is_safe_integer(self) -> bool { true }
                 fn native_is_finite(self) -> bool { true }
                 fn native_is_nan(self) -> bool { false }
             }
@@ -103,9 +115,18 @@ impl_signed_integer!(i8, i16, i32, i64, i128, isize);
 impl_unsigned_integer!(u8, u16, u32, u64, u128, usize);
 
 impl NativeNumberPredicate for f32 {
-    fn native_is_integer(self) -> bool { self.is_finite() && self.fract() == 0.0 }
-    fn native_is_finite(self) -> bool { self.is_finite() }
-    fn native_is_nan(self) -> bool { self.is_nan() }
+    fn native_is_integer(self) -> bool {
+        self.is_finite() && self.fract() == 0.0
+    }
+    fn native_is_safe_integer(self) -> bool {
+        self.native_is_integer() && self.abs() <= ((1_u64 << Self::MANTISSA_DIGITS) - 1) as f32
+    }
+    fn native_is_finite(self) -> bool {
+        self.is_finite()
+    }
+    fn native_is_nan(self) -> bool {
+        self.is_nan()
+    }
 }
 
 impl JsNumberValue for f32 {
@@ -115,9 +136,18 @@ impl JsNumberValue for f32 {
 }
 
 impl NativeNumberPredicate for f64 {
-    fn native_is_integer(self) -> bool { self.is_finite() && self.fract() == 0.0 }
-    fn native_is_finite(self) -> bool { self.is_finite() }
-    fn native_is_nan(self) -> bool { self.is_nan() }
+    fn native_is_integer(self) -> bool {
+        self.is_finite() && self.fract() == 0.0
+    }
+    fn native_is_safe_integer(self) -> bool {
+        self.native_is_integer() && self.abs() <= ((1_u64 << Self::MANTISSA_DIGITS) - 1) as f64
+    }
+    fn native_is_finite(self) -> bool {
+        self.is_finite()
+    }
+    fn native_is_nan(self) -> bool {
+        self.is_nan()
+    }
 }
 
 impl JsNumberValue for f64 {
@@ -135,9 +165,12 @@ pub fn value_of<T: JsNumberValue>(value: T) -> T {
 }
 
 pub fn to_string_radix<T: JsIntegerValue>(value: T, radix: f64) -> Result<String, JsError> {
-    let radix = native_radix(radix).ok_or_else(|| JsError::new(
-        JsErrorKind::RangeError, "Number radix must be an integer between 2 and 36",
-    ))?;
+    let radix = native_radix(radix).ok_or_else(|| {
+        JsError::new(
+            JsErrorKind::RangeError,
+            "Number radix must be an integer between 2 and 36",
+        )
+    })?;
     Ok(value.to_js_radix_string(radix))
 }
 
@@ -173,7 +206,7 @@ pub fn is_integer<T: NativeNumberPredicate>(value: T) -> bool {
 }
 
 pub fn is_safe_integer<T: NativeNumberPredicate>(value: T) -> bool {
-    value.native_is_integer()
+    value.native_is_safe_integer()
 }
 
 pub fn to_fixed<T: JsNumberValue>(value: T, digits: Option<f64>) -> Result<String, JsError> {
@@ -228,7 +261,10 @@ pub fn to_precision_digits<T: JsNumberValue>(value: T, precision: f64) -> Result
 fn formatting_count(value: f64, minimum: usize) -> Result<usize, JsError> {
     let count = crate::native_integer::native_length(value)?;
     if count < minimum || count > (isize::MAX as usize).saturating_sub(41) {
-        return Err(JsError::new(JsErrorKind::RangeError, "Number formatting count exceeds native string capacity"));
+        return Err(JsError::new(
+            JsErrorKind::RangeError,
+            "Number formatting count exceeds native string capacity",
+        ));
     }
     Ok(count)
 }
@@ -246,17 +282,23 @@ fn integer_radix(mut magnitude: u128, negative: bool, radix: u32) -> String {
         start -= 1;
         buffer[start] = alphabet[(magnitude % u128::from(radix)) as usize];
         magnitude /= u128::from(radix);
-        if magnitude == 0 { break; }
+        if magnitude == 0 {
+            break;
+        }
     }
     if negative {
         start -= 1;
         buffer[start] = b'-';
     }
-    std::str::from_utf8(&buffer[start..]).expect("native radix digits are ASCII").to_owned()
+    std::str::from_utf8(&buffer[start..])
+        .expect("native radix digits are ASCII")
+        .to_owned()
 }
 
 fn fixed_integer(value: impl Display, digits: usize) -> String {
-    if digits == 0 { return value.to_string(); }
+    if digits == 0 {
+        return value.to_string();
+    }
     let mut result = String::with_capacity(digits + 41);
     write!(result, "{value}.").expect("writing to String is infallible");
     result.extend(std::iter::repeat_n('0', digits));

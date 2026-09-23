@@ -25,8 +25,8 @@ pub use crate::atomics::{
     store as atomics_store, wait as atomics_wait, wait_forever as atomics_wait_forever,
 };
 pub use crate::bigint::{
-    as_int_n as bigint_as_int_n, as_uint_n as bigint_as_uint_n,
-    as_int_native as bigint_as_int_native, as_uint_native as bigint_as_uint_native,
+    as_int_n as bigint_as_int_n, as_int_native as bigint_as_int_native,
+    as_uint_n as bigint_as_uint_n, as_uint_native as bigint_as_uint_native,
     from_boolean as bigint_from_boolean, from_integer as bigint_from_integer,
     from_number as bigint_from_number, from_string as bigint_from_string,
     to_string_radix as bigint_to_string_radix,

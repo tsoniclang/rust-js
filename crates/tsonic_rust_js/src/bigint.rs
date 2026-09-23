@@ -44,19 +44,25 @@ impl BigIntBitInput for BigInt {
     fn low_native_bits(&self) -> u128 {
         let integer = self.as_ref();
         let mut digits = integer.iter_u64_digits();
-        let raw = u128::from(digits.next().unwrap_or(0))
-            | (u128::from(digits.next().unwrap_or(0)) << 64);
-        if integer.sign() == num_bigint::Sign::Minus { raw.wrapping_neg() } else { raw }
+        let raw =
+            u128::from(digits.next().unwrap_or(0)) | (u128::from(digits.next().unwrap_or(0)) << 64);
+        if integer.sign() == num_bigint::Sign::Minus {
+            raw.wrapping_neg()
+        } else {
+            raw
+        }
     }
 
     fn truncate_bits(&self, width: u64, signed: bool) -> JsResult<BigInt> {
-        if width == 0 { return Ok(from_integer(0_u8)); }
-        let bytes = self.to_signed_bytes_le();
-        let negative = bytes.last().is_some_and(|byte| byte & 0x80 != 0);
-        if (signed || !negative) && width >= bytes.len() as u64 * 8 {
+        if width == 0 {
+            return Ok(from_integer(0_u8));
+        }
+        let integer = self.as_ref();
+        let negative = integer.sign() == num_bigint::Sign::Minus;
+        if (signed && width > integer.bits()) || (!signed && !negative && width >= integer.bits()) {
             return Ok(self.clone());
         }
-        wrap_signed_bytes(width, bytes, signed)
+        wrap_signed_bytes(width, self.to_signed_bytes_le(), signed)
     }
 }
 
@@ -93,10 +99,16 @@ native_bit_inputs!(i8, u8, i16, u16, i32, u32, i64, u64, i128, u128, isize, usiz
 #[inline]
 pub fn as_int_native<T: BigIntBitInput>(bits: f64, value: &T) -> JsResult<i128> {
     let width = native_width(bits)?;
-    if width == 0 { return Ok(0); }
+    if width == 0 {
+        return Ok(0);
+    }
     let mask = native_mask(width);
     let truncated = value.low_native_bits() & mask;
-    Ok(if truncated & (1_u128 << (width - 1)) != 0 { truncated | !mask } else { truncated } as i128)
+    Ok(if truncated & (1_u128 << (width - 1)) != 0 {
+        truncated | !mask
+    } else {
+        truncated
+    } as i128)
 }
 
 #[inline]
@@ -107,13 +119,21 @@ pub fn as_uint_native<T: BigIntBitInput>(bits: f64, value: &T) -> JsResult<u128>
 #[inline]
 fn native_width(bits: f64) -> JsResult<u32> {
     let width = index_width(bits)?;
-    if width > 128 { return Err(range_error("BigInt bit width exceeds the selected native result")); }
+    if width > 128 {
+        return Err(range_error(
+            "BigInt bit width exceeds the selected native result",
+        ));
+    }
     Ok(width as u32)
 }
 
 #[inline]
 fn native_mask(width: u32) -> u128 {
-    if width == 128 { u128::MAX } else { (1_u128 << width) - 1 }
+    if width == 128 {
+        u128::MAX
+    } else {
+        (1_u128 << width) - 1
+    }
 }
 
 pub fn to_string_radix(value: &BigInt, radix: f64) -> JsResult<String> {
@@ -125,7 +145,9 @@ pub fn to_string_radix(value: &BigInt, radix: f64) -> JsResult<String> {
 
 fn index_width(bits: f64) -> JsResult<u64> {
     if bits.fract() != 0.0 || !(0.0..18_446_744_073_709_551_616.0).contains(&bits) {
-        return Err(range_error("BigInt bit width must be a non-negative native integer"));
+        return Err(range_error(
+            "BigInt bit width must be a non-negative native integer",
+        ));
     }
     Ok(bits as u64)
 }

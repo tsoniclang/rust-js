@@ -76,7 +76,10 @@ fn basic_math_helpers() {
     assert_eq!(math::log(1.0), 0.0);
     assert_eq!(math::pow(2.0, 3.0), 8.0);
     assert_eq!(math::pow(1.0, f64::INFINITY), 1_f64.powf(f64::INFINITY));
-    assert_eq!(math::pow(-1.0, f64::NEG_INFINITY), (-1_f64).powf(f64::NEG_INFINITY));
+    assert_eq!(
+        math::pow(-1.0, f64::NEG_INFINITY),
+        (-1_f64).powf(f64::NEG_INFINITY)
+    );
     assert_eq!(math::sin(0.0), 0.0);
     assert_eq!(math::sqrt(9.0), 3.0);
     assert_eq!(math::tan(0.0), 0.0);

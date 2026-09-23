@@ -17,7 +17,10 @@ fn numeric_globals_use_native_parsing_and_numeric_predicates() {
     assert_eq!(abi::to_number(&JsValue::Null), 0.0);
     for text in ["42", " 42 ", "", "inf", "1e300", "123abc", "\u{feff}42"] {
         let expected = text.parse::<f64>().unwrap_or(f64::NAN);
-        for value in [JsValue::String(text.to_owned()), JsValue::Utf16String(js(text))] {
+        for value in [
+            JsValue::String(text.to_owned()),
+            JsValue::Utf16String(js(text)),
+        ] {
             assert_eq!(abi::to_number(&value).to_bits(), expected.to_bits());
         }
     }

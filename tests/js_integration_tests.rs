@@ -20,8 +20,6 @@ mod capability_closure_tests;
 mod console_tests;
 #[path = "js/construction_tests.rs"]
 mod construction_tests;
-#[path = "js/native_integer_boundaries_tests.rs"]
-mod native_integer_boundaries_tests;
 #[path = "js/date_tests.rs"]
 mod date_tests;
 #[path = "js/equality_tests.rs"]
@@ -42,6 +40,8 @@ mod local_date_tests;
 mod map_tests;
 #[path = "js/math_tests.rs"]
 mod math_tests;
+#[path = "js/native_integer_boundaries_tests.rs"]
+mod native_integer_boundaries_tests;
 #[path = "js/native_performance_tests.rs"]
 mod native_performance_tests;
 #[path = "js/number_array_like_tests.rs"]

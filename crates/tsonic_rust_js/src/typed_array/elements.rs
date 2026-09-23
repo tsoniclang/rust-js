@@ -1,5 +1,5 @@
-use std::fmt;
 use num_traits::AsPrimitive;
+use std::fmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TypedArrayKind {
@@ -166,12 +166,13 @@ fn to_uint8_clamp(value: f64) -> u8 {
     }
 }
 
-
 impl<Target: Copy + 'static> AsPrimitive<Target> for ClampedU8
 where
     u8: AsPrimitive<Target>,
 {
-    fn as_(self) -> Target { self.0.as_() }
+    fn as_(self) -> Target {
+        self.0.as_()
+    }
 }
 
 macro_rules! clamped_element {

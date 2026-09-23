@@ -1,5 +1,5 @@
-use crate::native_integer::native_length;
 use crate::errors::{range_error, JsResult};
+use crate::native_integer::native_length;
 
 pub(crate) fn repeat_shape(count: f64, length: impl FnOnce() -> usize) -> JsResult<(usize, usize)> {
     let count = native_length(count)?;
@@ -31,7 +31,16 @@ mod tests {
 
     #[test]
     fn invalid_repeat_counts_do_not_measure_length() {
-        for count in [-1.0, -1.9, 0.9, -0.9, f64::NAN, f64::NEG_INFINITY, f64::INFINITY, f64::MAX] {
+        for count in [
+            -1.0,
+            -1.9,
+            0.9,
+            -0.9,
+            f64::NAN,
+            f64::NEG_INFINITY,
+            f64::INFINITY,
+            f64::MAX,
+        ] {
             let error = repeat_shape(count, || panic!("invalid repeat measured input length"));
             assert_eq!(error.unwrap_err().kind(), JsErrorKind::RangeError);
         }

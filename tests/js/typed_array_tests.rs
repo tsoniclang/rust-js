@@ -5,12 +5,26 @@ where
     Source: tsonic_rust_js::typed_array::TypedElement + num_traits::AsPrimitive<Target>,
     Target: tsonic_rust_js::typed_array::TypedElement,
 {
-    use tsonic_rust_js::typed_array::{TypedArray, TypedElement};
-    let input = [-40000.9, -257.9, -1.9, 0.0, 1.9, 127.9, 256.9,
-        u32::MAX as f64, f64::NAN, f64::INFINITY, f64::NEG_INFINITY];
+    use tsonic_rust_js::typed_array::TypedArray;
+    let input = [
+        -40000.9,
+        -257.9,
+        -1.9,
+        0.0,
+        1.9,
+        127.9,
+        256.9,
+        u32::MAX as f64,
+        f64::NAN,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+    ];
     let source = TypedArray::<Source>::from_vec(input.to_vec()).unwrap();
     let mut expected = vec![0; input.len() * Target::BYTES_PER_ELEMENT];
-    for (value, output) in input.into_iter().zip(expected.chunks_exact_mut(Target::BYTES_PER_ELEMENT)) {
+    for (value, output) in input
+        .into_iter()
+        .zip(expected.chunks_exact_mut(Target::BYTES_PER_ELEMENT))
+    {
         let converted: Target = Source::from_number(value).as_();
         converted.write_bytes(output);
     }
@@ -40,8 +54,15 @@ fn every_native_element_pair_retains_its_source_carrier() {
             verify_native_pair::<$source, f64>();
         }};
     }
-    targets!(i8); targets!(u8); targets!(ClampedU8); targets!(i16); targets!(u16);
-    targets!(i32); targets!(u32); targets!(f32); targets!(f64);
+    targets!(i8);
+    targets!(u8);
+    targets!(ClampedU8);
+    targets!(i16);
+    targets!(u16);
+    targets!(i32);
+    targets!(u32);
+    targets!(f32);
+    targets!(f64);
 }
 
 #[test]
@@ -50,7 +71,9 @@ fn native_pair_conversion_preserves_overlapping_and_disjoint_shared_views() {
     for (source_offset, target_offset) in [(0.0, 2.0), (0.0, 8.0), (8.0, 0.0)] {
         let buffer = ArrayBuffer::new(16.0).unwrap();
         let source = Int16Array::from_buffer(buffer.clone(), source_offset, Some(4.0)).unwrap();
-        for index in 0..4 { source.set_number(index as f64, (index + 1) as f64); }
+        for index in 0..4 {
+            source.set_number(index as f64, (index + 1) as f64);
+        }
         let target = Uint8Array::from_buffer(buffer.clone(), target_offset, Some(4.0)).unwrap();
         target.set_from_typed_array(&source, 0.0).unwrap();
         assert_eq!(target.with_bytes(<[u8]>::to_vec), [1, 2, 3, 4]);

@@ -231,9 +231,17 @@ fn native_and_exact_strings_are_not_limited_to_sixteen_megacodeunits() {
 
 #[test]
 fn string_capacity_preserves_empty_results_and_checks_real_overflows() {
-    assert_eq!(string::repeat(&js(""), f64::MAX).unwrap(), js(""));
-    assert_eq!(native_string::repeat("", f64::MAX).unwrap(), "");
-    for count in [-1.0, f64::NEG_INFINITY, f64::INFINITY, f64::MAX] {
+    assert_eq!(string::repeat(&js(""), 1e12).unwrap(), js(""));
+    assert_eq!(native_string::repeat("", 1e12).unwrap(), "");
+    for count in [
+        -1.0,
+        -0.9,
+        3.9,
+        f64::NAN,
+        f64::NEG_INFINITY,
+        f64::INFINITY,
+        f64::MAX,
+    ] {
         assert_eq!(
             string::repeat(&js("😀"), count).unwrap_err().kind(),
             JsErrorKind::RangeError
@@ -243,18 +251,15 @@ fn string_capacity_preserves_empty_results_and_checks_real_overflows() {
             JsErrorKind::RangeError
         );
     }
-    for count in [f64::NAN, -0.9, 0.0] {
+    for count in [-0.0, 0.0] {
         assert_eq!(string::repeat(&js("😀"), count).unwrap(), js(""));
         assert_eq!(native_string::repeat("😀", count).unwrap(), "");
     }
-    assert_eq!(native_string::repeat("a😀", 3.9).unwrap(), "a😀a😀a😀");
-    assert_eq!(string::repeat(&js("a😀"), 3.9).unwrap(), js("a😀a😀a😀"));
+    assert_eq!(native_string::repeat("a😀", 3.0).unwrap(), "a😀a😀a😀");
+    assert_eq!(string::repeat(&js("a😀"), 3.0).unwrap(), js("a😀a😀a😀"));
+    assert_eq!(native_string::pad_start_with("x", 1e12, "").unwrap(), "x");
     assert_eq!(
-        native_string::pad_start_with("x", f64::INFINITY, "").unwrap(),
-        "x"
-    );
-    assert_eq!(
-        string::pad_end_with(&js("x"), f64::INFINITY, &js("")).unwrap(),
+        string::pad_end_with(&js("x"), 1e12, &js("")).unwrap(),
         js("x")
     );
 }
@@ -279,20 +284,32 @@ fn pad_helpers_and_case() {
     );
     assert_eq!(string::pad_start(&js("x"), 3.0).unwrap(), js("  x"));
     assert_eq!(string::pad_end(&js("x"), 3.0).unwrap(), js("x  "));
+    for count in [-3.9, 3.9, f64::NAN, f64::INFINITY] {
+        assert_eq!(
+            string::pad_start_with(&js("x"), count, &js("0"))
+                .unwrap_err()
+                .kind(),
+            JsErrorKind::RangeError
+        );
+        assert_eq!(
+            string::pad_start_with(&js("x"), count, &js(""))
+                .unwrap_err()
+                .kind(),
+            JsErrorKind::RangeError
+        );
+        assert_eq!(
+            native_string::pad_start_with("x", count, "")
+                .unwrap_err()
+                .kind(),
+            JsErrorKind::RangeError
+        );
+    }
     assert_eq!(
-        string::pad_start_with(&js("x"), -3.9, &js("0")).unwrap(),
-        js("x")
-    );
-    assert_eq!(
-        string::pad_start_with(&js("x"), f64::NAN, &js("0")).unwrap(),
-        js("x")
-    );
-    assert_eq!(
-        string::pad_start_with(&js("x"), 3.9, &js("0")).unwrap(),
+        string::pad_start_with(&js("x"), 3.0, &js("0")).unwrap(),
         js("00x")
     );
     assert_eq!(
-        string::pad_start_with(&js("x"), f64::INFINITY, &js("")).unwrap(),
+        string::pad_start_with(&js("x"), 1e12, &js("")).unwrap(),
         js("x")
     );
     assert_eq!(
@@ -331,7 +348,10 @@ fn constructors() {
             .kind(),
         JsErrorKind::RangeError
     );
-    assert_eq!(string::from_char_code(&[0xD800 as f64]).unwrap().units(), &[0xD800]);
+    assert_eq!(
+        string::from_char_code(&[0xD800 as f64]).unwrap().units(),
+        &[0xD800]
+    );
 }
 
 #[test]

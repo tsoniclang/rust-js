@@ -3,8 +3,8 @@ use std::convert::Infallible;
 use std::rc::Rc;
 
 use super::statics::JsArrayConcatItem;
-use crate::native_integer::{normalize_slice_index, relative_index, native_index};
 use crate::equality::{hash_identity, JsHash, JsSameValueZero, JsStrictEqual};
+use crate::native_integer::{native_index, normalize_slice_index, relative_index};
 use tsonic_rust_runtime::{JsError, JsErrorKind, ObjectIdentity, ObjectIdentityCarrier};
 
 #[derive(Debug)]
@@ -505,7 +505,8 @@ impl<T> JsArray<T> {
     fn splice(&self, start: f64, delete_count: f64, items: impl IntoIterator<Item = T>) -> Self {
         let len = self.len();
         let start = normalize_slice_index(start, len);
-        let delete_count = (native_index(delete_count).max(0) as usize).min(len.saturating_sub(start));
+        let delete_count =
+            (native_index(delete_count).max(0) as usize).min(len.saturating_sub(start));
         let removed = self
             .state
             .borrow_mut()

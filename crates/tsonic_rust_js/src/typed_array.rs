@@ -1,8 +1,8 @@
 //! JavaScript typed-array carriers with exact numeric conversion, copy `slice`,
 //! and shared-backing-store `subarray` semantics.
 
-use std::cmp::Ordering;
 use num_traits::AsPrimitive;
+use std::cmp::Ordering;
 use std::rc::Rc;
 use tsonic_rust_runtime::{ObjectIdentity, ObjectIdentityCarrier};
 
@@ -67,7 +67,9 @@ impl<T: TypedElement> TypedArray<T> {
         Self::from_numbers(values.iter_values())
     }
 
-    pub fn from_typed_array<U: TypedElement + AsPrimitive<T>>(values: &TypedArray<U>) -> JsResult<Self> {
+    pub fn from_typed_array<U: TypedElement + AsPrimitive<T>>(
+        values: &TypedArray<U>,
+    ) -> JsResult<Self> {
         let result = Self::with_length(values.len())?;
         result.set_from_typed_array(values, 0.0)?;
         Ok(result)
@@ -176,8 +178,11 @@ impl<T: TypedElement> TypedArray<T> {
     }
 
     pub fn at(&self, index: f64) -> Option<f64> {
-        self.get_usize(crate::native_integer::relative_index(index, self.view.length)?)
-            .map(TypedElement::to_number)
+        self.get_usize(crate::native_integer::relative_index(
+            index,
+            self.view.length,
+        )?)
+        .map(TypedElement::to_number)
     }
 
     pub fn get_number(&self, index: f64) -> Option<f64> {
@@ -312,41 +317,62 @@ impl<T: TypedElement> TypedArray<T> {
             return Ok(());
         }
         let offset = to_index(offset)?;
-        if offset.checked_add(source.len()).is_none_or(|end| end > self.len()) {
+        if offset
+            .checked_add(source.len())
+            .is_none_or(|end| end > self.len())
+        {
             return Err(range_error("typed array set source out of bounds"));
         }
         let target_start = self.view.byte_offset + offset * T::BYTES_PER_ELEMENT;
         let target_end = target_start + source.len() * T::BYTES_PER_ELEMENT;
         let source_end = source.view.byte_offset + source.len() * U::BYTES_PER_ELEMENT;
         let shared = self.view.buffer.shares_storage(&source.view.buffer);
-        let overlaps = shared
-            && target_start < source_end && source.view.byte_offset < target_end;
+        let overlaps = shared && target_start < source_end && source.view.byte_offset < target_end;
         if overlaps {
-            let snapshot: Vec<T> = source.with_bytes(|bytes| bytes.chunks_exact(U::BYTES_PER_ELEMENT)
-                .map(|element| U::read_bytes(element).as_()).collect());
+            let snapshot: Vec<T> = source.with_bytes(|bytes| {
+                bytes
+                    .chunks_exact(U::BYTES_PER_ELEMENT)
+                    .map(|element| U::read_bytes(element).as_())
+                    .collect()
+            });
             let mut target = self.view.buffer.as_mut_bytes();
-            for (value, element) in snapshot.into_iter().zip(target[target_start..target_end].chunks_exact_mut(T::BYTES_PER_ELEMENT)) {
+            for (value, element) in snapshot
+                .into_iter()
+                .zip(target[target_start..target_end].chunks_exact_mut(T::BYTES_PER_ELEMENT))
+            {
                 value.write_bytes(element);
             }
         } else if shared {
             let mut bytes = self.view.buffer.as_mut_bytes();
             if target_end <= source.view.byte_offset {
                 let (target, input) = bytes.split_at_mut(source.view.byte_offset);
-                Self::copy_converted::<U>(&input[..source_end - source.view.byte_offset], &mut target[target_start..target_end]);
+                Self::copy_converted::<U>(
+                    &input[..source_end - source.view.byte_offset],
+                    &mut target[target_start..target_end],
+                );
             } else {
                 let (input, target) = bytes.split_at_mut(target_start);
-                Self::copy_converted::<U>(&input[source.view.byte_offset..source_end], &mut target[..target_end - target_start]);
+                Self::copy_converted::<U>(
+                    &input[source.view.byte_offset..source_end],
+                    &mut target[..target_end - target_start],
+                );
             }
         } else {
             let input = source.view.buffer.as_bytes();
             let mut target = self.view.buffer.as_mut_bytes();
-            Self::copy_converted::<U>(&input[source.view.byte_offset..source_end], &mut target[target_start..target_end]);
+            Self::copy_converted::<U>(
+                &input[source.view.byte_offset..source_end],
+                &mut target[target_start..target_end],
+            );
         }
         Ok(())
     }
 
     fn copy_converted<U: TypedElement + AsPrimitive<T>>(source: &[u8], target: &mut [u8]) {
-        for (input, output) in source.chunks_exact(U::BYTES_PER_ELEMENT).zip(target.chunks_exact_mut(T::BYTES_PER_ELEMENT)) {
+        for (input, output) in source
+            .chunks_exact(U::BYTES_PER_ELEMENT)
+            .zip(target.chunks_exact_mut(T::BYTES_PER_ELEMENT))
+        {
             let value: T = U::read_bytes(input).as_();
             value.write_bytes(output);
         }
@@ -540,7 +566,6 @@ fn normalized_range(length: usize, start: f64, end: Option<f64>) -> (usize, usiz
     let end = normalize_index(end.unwrap_or(length as f64), length);
     (start, end.max(start))
 }
-
 
 fn same_value_zero_number(left: f64, right: f64) -> bool {
     left == right || left.is_nan() && right.is_nan()

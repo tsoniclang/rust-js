@@ -12,19 +12,20 @@ fn atomic_wait_validates_backing_bounds_conversion_and_timeout() {
     );
     assert_eq!(atomics::wait(&values, 0.0, 0.0, -1.0).unwrap(), "timed-out");
     assert_eq!(
-        atomics::store(&values, f64::NAN, 4_294_967_297.0).unwrap(),
+        atomics::store(&values, 0.0, 4_294_967_297.0).unwrap(),
         4_294_967_297.0
     );
-    assert_eq!(atomics::load(&values, 0.0).unwrap(), 1.0);
+    assert!(atomics::store(&values, f64::NAN, 1.0).is_err());
+    assert_eq!(atomics::load(&values, 0.0).unwrap(), i32::MAX as f64);
     let view = DataView::from_buffer(buffer.clone()).unwrap();
-    assert_eq!(view.get_int32(4.0, true).unwrap(), 1.0);
+    assert_eq!(view.get_int32(4.0, true).unwrap(), i32::MAX as f64);
     let copy = buffer.slice_all();
     assert!(copy.shared_storage().is_some());
     assert_ne!(buffer, copy);
     values.set_number(0.0, 9.0);
     assert_eq!(
         Int32Array::from_buffer_only(copy).unwrap().get_number(1.0),
-        Some(1.0)
+        Some(i32::MAX as f64)
     );
     let started = Instant::now();
     assert_eq!(atomics::wait(&values, 0.0, 9.0, 20.0).unwrap(), "timed-out");
@@ -37,7 +38,13 @@ fn atomic_wait_validates_backing_bounds_conversion_and_timeout() {
     assert_eq!(atomics::notify_all(&ordinary, 0.0).unwrap(), 0.0);
     assert_eq!(atomics::store(&ordinary, 0.0, -3.0).unwrap(), -3.0);
     assert_eq!(atomics::load(&ordinary, 0.0).unwrap(), -3.0);
-    for invalid in [f64::NAN, -0.5, 0.5, f64::INFINITY, (usize::MAX as u128 + 1) as f64] {
+    for invalid in [
+        f64::NAN,
+        -0.5,
+        0.5,
+        f64::INFINITY,
+        (usize::MAX as u128 + 1) as f64,
+    ] {
         assert!(ArrayBuffer::new_shared(invalid).is_err());
         assert!(ArrayBuffer::new(invalid).is_err());
     }

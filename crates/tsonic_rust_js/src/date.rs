@@ -64,7 +64,7 @@ impl JsDate {
 
     pub fn from_millis(millis: f64) -> Self {
         Self {
-            millis: Rc::new(Cell::new(time_clip(millis))),
+            millis: Rc::new(Cell::new(native_timestamp(millis))),
             identity: ObjectIdentity::new(),
         }
     }
@@ -208,7 +208,7 @@ impl JsDate {
     }
 
     pub fn set_time(&self, millis: f64) -> f64 {
-        let clipped = time_clip(millis);
+        let clipped = native_timestamp(millis);
         self.millis.set(clipped);
         clipped
     }
@@ -400,7 +400,8 @@ fn make_utc_millis(
     let year = year.trunc();
     let month = month.trunc();
     if !(i32::MIN as f64..=i32::MAX as f64).contains(&year)
-        || !(i32::MIN as f64..=i32::MAX as f64).contains(&month) {
+        || !(i32::MIN as f64..=i32::MAX as f64).contains(&month)
+    {
         return f64::NAN;
     }
     let Some(total_months) = (year as i64)
@@ -415,7 +416,7 @@ fn make_utc_millis(
     }
     let civil_month = total_months.rem_euclid(12) as u32 + 1;
     let day_number = days_from_civil(civil_year as i32, civil_month, 1) as f64;
-    time_clip(
+    native_timestamp(
         (day_number + day.trunc() - 1.0) * MS_PER_DAY as f64
             + hours.trunc() * 3_600_000.0
             + minutes.trunc() * 60_000.0
@@ -424,7 +425,7 @@ fn make_utc_millis(
     )
 }
 
-fn time_clip(value: f64) -> f64 {
+fn native_timestamp(value: f64) -> f64 {
     if !(i64::MIN as f64..-(i64::MIN as f64)).contains(&value) {
         f64::NAN
     } else {

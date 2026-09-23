@@ -4,8 +4,8 @@ use tsonic_rust_runtime::{JsError, JsErrorKind};
 use unicode_normalization::UnicodeNormalization;
 
 use crate::array::JsArray;
-use crate::native_integer::{absolute_index, native_length, relative_index, native_index};
 use crate::errors::{type_error, JsResult};
+use crate::native_integer::{absolute_index, native_index, native_length, relative_index};
 use crate::number::JsNumberValue;
 use crate::JsValue;
 
@@ -177,7 +177,11 @@ pub fn substring(value: &str, start: f64, end: f64) -> Result<String, JsError> {
 
 fn substr_with_length(value: &str, start: f64, length: Option<f64>) -> Result<String, JsError> {
     let from = crate::native_integer::normalize_slice_index(start, value.len());
-    let to = length.map(|length| from.saturating_add(native_index(length).max(0) as usize).min(value.len()))
+    let to = length
+        .map(|length| {
+            from.saturating_add(native_index(length).max(0) as usize)
+                .min(value.len())
+        })
         .unwrap_or(value.len());
     native_slice(value, from, to).map(str::to_owned)
 }
@@ -431,7 +435,10 @@ fn split_with_limit(
     separator: &str,
     limit: Option<f64>,
 ) -> Result<JsArray<String>, JsError> {
-    let limit = limit.map(crate::native_integer::native_length).transpose()?.unwrap_or(usize::MAX);
+    let limit = limit
+        .map(crate::native_integer::native_length)
+        .transpose()?
+        .unwrap_or(usize::MAX);
     if limit == 0 {
         return Ok(JsArray::new());
     }

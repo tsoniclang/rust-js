@@ -23,7 +23,8 @@ impl NumericRef<'_> {
                 (left as u128).cmp(&right)
             }),
             (Self::Unsigned(left), Self::Signed(right)) => Self::Signed(right)
-                .compare(Self::Unsigned(left)).map(Ordering::reverse),
+                .compare(Self::Unsigned(left))
+                .map(Ordering::reverse),
             (Self::Signed(left), Self::Float(right)) => compare_signed_float(left, right),
             (Self::Unsigned(left), Self::Float(right)) => compare_unsigned_float(left, right),
             (Self::Float(left), right) => right.compare(Self::Float(left)).map(Ordering::reverse),
@@ -45,9 +46,15 @@ impl NumericRef<'_> {
 }
 
 fn compare_unsigned_float(left: u128, right: f64) -> Option<Ordering> {
-    if right.is_nan() { return None; }
-    if right < 0.0 { return Some(Ordering::Greater); }
-    if right >= 340282366920938463463374607431768211456.0 { return Some(Ordering::Less); }
+    if right.is_nan() {
+        return None;
+    }
+    if right < 0.0 {
+        return Some(Ordering::Greater);
+    }
+    if right >= 340282366920938463463374607431768211456.0 {
+        return Some(Ordering::Less);
+    }
     Some(match left.cmp(&(right as u128)) {
         Ordering::Equal if right.fract() != 0.0 => Ordering::Less,
         ordering => ordering,
@@ -55,18 +62,30 @@ fn compare_unsigned_float(left: u128, right: f64) -> Option<Ordering> {
 }
 
 fn compare_signed_float(left: i128, right: f64) -> Option<Ordering> {
-    if left >= 0 { return compare_unsigned_float(left as u128, right); }
+    if left >= 0 {
+        return compare_unsigned_float(left as u128, right);
+    }
     compare_unsigned_float(left.unsigned_abs(), -right).map(Ordering::reverse)
 }
 
 fn compare_bigint_float(left: &BigInt, right: f64) -> Option<Ordering> {
-    if right.is_nan() { return None; }
-    if right == f64::INFINITY { return Some(Ordering::Less); }
-    if right == f64::NEG_INFINITY { return Some(Ordering::Greater); }
+    if right.is_nan() {
+        return None;
+    }
+    if right == f64::INFINITY {
+        return Some(Ordering::Less);
+    }
+    if right == f64::NEG_INFINITY {
+        return Some(Ordering::Greater);
+    }
     let integer = left.as_ref();
     let negative = integer.sign() == num_bigint::Sign::Minus;
-    if negative && right >= 0.0 { return Some(Ordering::Less); }
-    if !negative && right < 0.0 { return Some(Ordering::Greater); }
+    if negative && right >= 0.0 {
+        return Some(Ordering::Less);
+    }
+    if !negative && right < 0.0 {
+        return Some(Ordering::Greater);
+    }
     let magnitude = integer.magnitude();
     let absolute = right.abs();
     let bits = absolute.to_bits();
@@ -86,11 +105,17 @@ fn compare_bigint_float(left: &BigInt, right: f64) -> Option<Ordering> {
                 0
             };
             let current = digit.cmp(&expected);
-            if current != Ordering::Equal { ordering = current; }
+            if current != Ordering::Equal {
+                ordering = current;
+            }
         }
         if ordering == Ordering::Equal && absolute.fract() != 0.0 {
             ordering = Ordering::Less;
         }
     }
-    Some(if negative { ordering.reverse() } else { ordering })
+    Some(if negative {
+        ordering.reverse()
+    } else {
+        ordering
+    })
 }

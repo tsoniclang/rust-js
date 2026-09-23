@@ -191,17 +191,11 @@ impl DataView {
     }
 
     pub fn set_int8(&self, offset: f64, value: f64) -> JsResult<()> {
-        self.write(
-            offset,
-            &(value as i8).to_ne_bytes(),
-        )
+        self.write(offset, &(value as i8).to_ne_bytes())
     }
 
     pub fn set_uint8(&self, offset: f64, value: f64) -> JsResult<()> {
-        self.write(
-            offset,
-            &(value as u8).to_ne_bytes(),
-        )
+        self.write(offset, &(value as u8).to_ne_bytes())
     }
 
     pub fn set_int16(&self, offset: f64, value: f64, little_endian: bool) -> JsResult<()> {

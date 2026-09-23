@@ -31,7 +31,10 @@ pub trait SourceNumeric {
     }
 
     fn less_than_or_equal(&self, other: &impl SourceNumeric) -> bool {
-        matches!(self.source_numeric().compare(other.source_numeric()), Some(Ordering::Less | Ordering::Equal))
+        matches!(
+            self.source_numeric().compare(other.source_numeric()),
+            Some(Ordering::Less | Ordering::Equal)
+        )
     }
 
     fn greater_than(&self, other: &impl SourceNumeric) -> bool {
@@ -39,20 +42,27 @@ pub trait SourceNumeric {
     }
 
     fn greater_than_or_equal(&self, other: &impl SourceNumeric) -> bool {
-        matches!(self.source_numeric().compare(other.source_numeric()), Some(Ordering::Greater | Ordering::Equal))
+        matches!(
+            self.source_numeric().compare(other.source_numeric()),
+            Some(Ordering::Greater | Ordering::Equal)
+        )
     }
 
     fn strict_equal(&self, other: &impl SourceNumeric) -> bool {
         self.bigint_domain() == other.bigint_domain() && self.loose_equal(other)
     }
 
-    fn strict_not_equal(&self, other: &impl SourceNumeric) -> bool { !self.strict_equal(other) }
+    fn strict_not_equal(&self, other: &impl SourceNumeric) -> bool {
+        !self.strict_equal(other)
+    }
 
     fn loose_equal(&self, other: &impl SourceNumeric) -> bool {
         self.source_numeric().compare(other.source_numeric()) == Some(Ordering::Equal)
     }
 
-    fn loose_not_equal(&self, other: &impl SourceNumeric) -> bool { !self.loose_equal(other) }
+    fn loose_not_equal(&self, other: &impl SourceNumeric) -> bool {
+        !self.loose_equal(other)
+    }
 }
 
 impl SourceNumeric for JsNumeric {
@@ -62,12 +72,18 @@ impl SourceNumeric for JsNumeric {
             Self::BigInt(value) => NumericRef::BigInt(value),
         }
     }
-    fn bigint_domain(&self) -> bool { matches!(self, Self::BigInt(_)) }
+    fn bigint_domain(&self) -> bool {
+        matches!(self, Self::BigInt(_))
+    }
 }
 
 impl SourceNumeric for BigInt {
-    fn source_numeric(&self) -> NumericRef<'_> { NumericRef::BigInt(self) }
-    fn bigint_domain(&self) -> bool { true }
+    fn source_numeric(&self) -> NumericRef<'_> {
+        NumericRef::BigInt(self)
+    }
+    fn bigint_domain(&self) -> bool {
+        true
+    }
 }
 
 macro_rules! numeric_sources {

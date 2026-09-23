@@ -61,7 +61,7 @@ fn local_date_matches_node_in_isolated_timezones() {
                 values.map(|value| value.to_string()).join(",")
             );
         }
-        for invalid in [f64::NAN, f64::INFINITY, -f64::INFINITY, 8.64e15 + 1.0] {
+        for invalid in [f64::NAN, f64::INFINITY, -f64::INFINITY, -(i64::MIN as f64)] {
             assert!(parts(&JsDate::from_millis(invalid))
                 .iter()
                 .all(|value| value.is_nan()));

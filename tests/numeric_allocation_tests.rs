@@ -14,7 +14,9 @@ thread_local! {
 unsafe impl GlobalAlloc for CountingAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         TRACKED_ALLOCATIONS.with(|count| {
-            if let Some(value) = count.get() { count.set(Some(value + 1)); }
+            if let Some(value) = count.get() {
+                count.set(Some(value + 1));
+            }
         });
         unsafe { System.alloc(layout) }
     }
@@ -41,12 +43,26 @@ fn native_numeric_conversion_and_borrowed_comparison_do_not_allocate() {
                 valid &= SourceNumeric::strict_equal(&value, &value);
             )+};
         }
-        native!(i8::MIN, u8::MAX, i16::MIN, u16::MAX, i32::MIN, u32::MAX,
-            i64::MIN, u64::MAX, i128::MIN, u128::MAX, 1.5_f32, 1.5_f64);
+        native!(
+            i8::MIN,
+            u8::MAX,
+            i16::MIN,
+            u16::MAX,
+            i32::MIN,
+            u32::MAX,
+            i64::MIN,
+            u64::MAX,
+            i128::MIN,
+            u128::MAX,
+            1.5_f32,
+            1.5_f64
+        );
         valid &= SourceNumeric::greater_than(&explicit_bigint, &black_box(9007199254740992_f64));
         valid &= SourceNumeric::strict_equal(&explicit_bigint, &black_box(9007199254740993_u64));
         valid &= SourceNumeric::greater_than(&enormous, &black_box(u128::MAX));
         valid &= SourceNumeric::loose_equal(&enormous, &black_box(2_f64.powi(128)));
+        valid &= tsonic_rust_js::bigint::as_int_n(256.0, &enormous).unwrap() == enormous;
+        valid &= tsonic_rust_js::bigint::as_uint_n(129.0, &enormous).unwrap() == enormous;
     }
     let allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
     assert!(valid);

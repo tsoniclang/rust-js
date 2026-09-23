@@ -115,8 +115,14 @@ fn bigint_radix_formatting_retains_all_integer_bits() {
 fn native_bigint_operands_truncate_without_losing_high_bits() {
     macro_rules! pair {
         ($unsigned:expr, $signed:expr, $bits:expr) => {
-            assert_eq!(abi::bigint_as_int_n($bits, &$unsigned).unwrap().to_string(), "-1");
-            assert_eq!(abi::bigint_as_uint_n($bits, &$signed).unwrap(), abi::bigint_from_integer($unsigned));
+            assert_eq!(
+                abi::bigint_as_int_n($bits, &$unsigned).unwrap().to_string(),
+                "-1"
+            );
+            assert_eq!(
+                abi::bigint_as_uint_n($bits, &$signed).unwrap(),
+                abi::bigint_from_integer($unsigned)
+            );
         };
     }
     pair!(u8::MAX, -1_i8, 8.0);
@@ -125,11 +131,28 @@ fn native_bigint_operands_truncate_without_losing_high_bits() {
     pair!(u64::MAX, -1_i64, 64.0);
     pair!(u128::MAX, -1_i128, 128.0);
     pair!(usize::MAX, -1_isize, usize::BITS as f64);
-    assert_eq!(abi::bigint_as_uint_n(129.0, &-1_i64).unwrap().to_string(), "680564733841876926926749214863536422911");
-    assert_eq!(abi::bigint_as_int_n(256.0, &-1_i64).unwrap().to_string(), "-1");
-    assert_eq!(abi::bigint_as_uint_n(9_007_199_254_740_992.0, &9_u64).unwrap().to_string(), "9");
-    assert_eq!(abi::bigint_as_int_n(f64::NAN, &9_u64).unwrap_err().kind(), JsErrorKind::RangeError);
-    assert_eq!(abi::bigint_as_int_n(-1.0, &9_u64).unwrap_err().kind(), JsErrorKind::RangeError);
+    assert_eq!(
+        abi::bigint_as_uint_n(129.0, &-1_i64).unwrap().to_string(),
+        "680564733841876926926749214863536422911"
+    );
+    assert_eq!(
+        abi::bigint_as_int_n(256.0, &-1_i64).unwrap().to_string(),
+        "-1"
+    );
+    assert_eq!(
+        abi::bigint_as_uint_n(9_007_199_254_740_992.0, &9_u64)
+            .unwrap()
+            .to_string(),
+        "9"
+    );
+    assert_eq!(
+        abi::bigint_as_int_n(f64::NAN, &9_u64).unwrap_err().kind(),
+        JsErrorKind::RangeError
+    );
+    assert_eq!(
+        abi::bigint_as_int_n(-1.0, &9_u64).unwrap_err().kind(),
+        JsErrorKind::RangeError
+    );
 }
 
 #[test]
@@ -179,7 +202,17 @@ fn bigint_string_construction_uses_integer_grammar() {
         );
     }
     for source in [
-        "", "\u{feff}  +42\n", "0x", "-0x1", "+0b1", "1.0", "1e3", "1n", "++1", "NaN", "\u{85}1",
+        "",
+        "\u{feff}  +42\n",
+        "0x",
+        "-0x1",
+        "+0b1",
+        "1.0",
+        "1e3",
+        "1n",
+        "++1",
+        "NaN",
+        "\u{85}1",
     ] {
         assert_eq!(
             abi::bigint_from_string(source).unwrap_err().kind(),
@@ -200,7 +233,13 @@ fn array_length_construction_initializes_native_values() {
     assert_eq!(item.len(), 1);
     assert_eq!(item.at(0.0), Some(3.0));
     assert_eq!(u32::MAX.array_length().unwrap(), u32::MAX as usize);
-    for length in [-1.0, 1.5, f64::NAN, f64::INFINITY, (usize::MAX as u128 + 1) as f64] {
+    for length in [
+        -1.0,
+        1.5,
+        f64::NAN,
+        f64::INFINITY,
+        (usize::MAX as u128 + 1) as f64,
+    ] {
         assert_eq!(
             abi::array_construct_length::<String>(length)
                 .unwrap_err()

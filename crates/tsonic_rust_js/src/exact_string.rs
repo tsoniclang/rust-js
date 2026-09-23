@@ -1,8 +1,8 @@
 use unicode_normalization::UnicodeNormalization;
 
 use crate::array::JsArray;
-use crate::native_integer::{absolute_index, native_length, relative_index, native_index};
 use crate::errors::{range_error, type_error, JsResult};
+use crate::native_integer::{absolute_index, native_index, native_length, relative_index};
 use crate::regexp::string_replacement_arguments;
 use crate::{JsString, JsValue};
 
@@ -69,7 +69,11 @@ pub fn substring_from(value: &JsString, start: f64) -> JsString {
 
 fn substr_with_length(value: &JsString, start: f64, length: Option<f64>) -> JsString {
     let from = crate::native_integer::normalize_slice_index(start, value.len());
-    let to = length.map(|length| from.saturating_add(native_index(length).max(0) as usize).min(value.len()))
+    let to = length
+        .map(|length| {
+            from.saturating_add(native_index(length).max(0) as usize)
+                .min(value.len())
+        })
         .unwrap_or(value.len());
     value.slice(from..to)
 }
@@ -331,11 +335,7 @@ fn substitution(
     JsString::from_units(output)
 }
 
-fn split_with_limit(
-    value: &JsString,
-    separator: &JsString,
-    limit: usize,
-) -> JsArray<JsString> {
+fn split_with_limit(value: &JsString, separator: &JsString, limit: usize) -> JsArray<JsString> {
     if limit == 0 {
         return JsArray::new();
     }
@@ -366,7 +366,11 @@ pub fn split_all(value: &JsString, separator: &JsString) -> JsArray<JsString> {
 }
 
 pub fn split(value: &JsString, separator: &JsString, limit: f64) -> JsResult<JsArray<JsString>> {
-    Ok(split_with_limit(value, separator, crate::native_integer::native_length(limit)?))
+    Ok(split_with_limit(
+        value,
+        separator,
+        crate::native_integer::native_length(limit)?,
+    ))
 }
 
 pub fn repeat(value: &JsString, count: f64) -> JsResult<JsString> {
@@ -536,7 +540,9 @@ pub fn from_char_code(code_units: &[f64]) -> JsResult<JsString> {
     let mut units = Vec::with_capacity(code_units.len());
     for &value in code_units {
         if value.fract() != 0.0 || !(0.0..=u16::MAX as f64).contains(&value) {
-            return Err(range_error("character code must be a native UTF-16 code unit"));
+            return Err(range_error(
+                "character code must be a native UTF-16 code unit",
+            ));
         }
         units.push(value as u16);
     }
