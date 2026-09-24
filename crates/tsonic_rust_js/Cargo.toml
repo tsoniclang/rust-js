@@ -16,6 +16,18 @@ tz-rs = "=0.7.3"
 tzdb = { version = "=0.7.3", default-features = false, features = ["local"] }
 
 [[test]]
+name = "numeric_allocation_tests"
+path = "../../tests/numeric_allocation_tests.rs"
+
+[[test]]
+name = "native_result_carriers"
+path = "../../tests/native_result_carriers.rs"
+
+[[test]]
+name = "native_index_inputs"
+path = "../../tests/native_index_inputs.rs"
+
+[[test]]
 name = "no_forbidden_shortcuts"
 path = "../../tests/architecture/no_forbidden_shortcuts.rs"
 

@@ -18,7 +18,10 @@ fn json_string_input_retains_its_guaranteed_result() {
             Some(expected.to_owned())
         );
     }
-    assert_eq!(json::stringify(&JsValue::Undefined).unwrap(), None);
+    assert_eq!(
+        json::stringify(&JsValue::Null).unwrap().as_deref(),
+        Some("null")
+    );
 }
 
 #[test]
@@ -93,15 +96,17 @@ fn json_callbacks_observe_current_values_without_retaining_container_borrows() {
 }
 
 #[test]
-fn json_omits_undefined_object_fields_and_nulls_array_slots() {
-    assert!(JsValue::Undefined.is_nullish());
+fn json_preserves_absent_members_as_null_and_collection_membership() {
     assert!(JsValue::Null.is_nullish());
+    assert!(JsValue::undefined().is_nullish());
     assert!(!JsValue::Bool(false).is_nullish());
-    let object =
-        JsObject::from_pairs([("keep", JsValue::Number(1.0)), ("skip", JsValue::Undefined)]);
-    assert_eq!(stringify_text(&JsValue::object(object)), r#"{"keep":1}"#);
+    let object = JsObject::from_pairs([("keep", JsValue::Number(1.0)), ("skip", JsValue::Null)]);
     assert_eq!(
-        stringify_text(&JsValue::from(vec![JsValue::Undefined])),
+        stringify_text(&JsValue::object(object)),
+        r#"{"keep":1,"skip":null}"#
+    );
+    assert_eq!(
+        stringify_text(&JsValue::from(vec![JsValue::Null])),
         "[null]"
     );
 }
@@ -201,23 +206,22 @@ fn json_stringify_with_indent_nested_arrays_and_leaves() {
         "7"
     );
     assert_eq!(
-        json::stringify_with_indent(&JsValue::Undefined, "  ").unwrap(),
-        None
+        json::stringify_with_indent(&JsValue::Null, "  ").unwrap(),
+        Some(String::from("null"))
     );
 }
 
 #[test]
-fn json_stringify_with_indent_keeps_undefined_member_rules() {
-    let object =
-        JsObject::from_pairs([("keep", JsValue::Number(2.0)), ("skip", JsValue::Undefined)]);
+fn json_stringify_with_indent_preserves_native_absence() {
+    let object = JsObject::from_pairs([("keep", JsValue::Number(2.0)), ("skip", JsValue::Null)]);
     assert_eq!(
         json::stringify_with_indent(&JsValue::object(object), "  ")
             .unwrap()
             .unwrap(),
-        "{\n  \"keep\": 2\n}"
+        "{\n  \"keep\": 2,\n  \"skip\": null\n}"
     );
     assert_eq!(
-        json::stringify_with_indent(&JsValue::from(vec![JsValue::Undefined]), "  ")
+        json::stringify_with_indent(&JsValue::from(vec![JsValue::Null]), "  ")
             .unwrap()
             .unwrap(),
         "[\n  null\n]"

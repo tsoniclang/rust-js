@@ -7,12 +7,20 @@ fn exact(value: &str) -> JsString {
 #[test]
 fn native_number_boxing_preserves_full_ranges_and_float_bits() {
     for (boxed, expected) in [
-        (JsValue::from(i8::MIN), -128.0),
-        (JsValue::from(u8::MAX), 255.0),
-        (JsValue::from(i16::MIN), -32768.0),
-        (JsValue::from(u16::MAX), 65535.0),
-        (JsValue::from(i32::MIN), -2147483648.0),
-        (JsValue::from(u32::MAX), 4294967295.0),
+        (JsValue::from(i8::MIN), i64::from(i8::MIN)),
+        (JsValue::from(i16::MIN), i64::from(i16::MIN)),
+        (JsValue::from(i32::MIN), i64::from(i32::MIN)),
+    ] {
+        assert!(matches!(boxed, JsValue::Integer(actual) if actual == expected));
+    }
+    for (boxed, expected) in [
+        (JsValue::from(u8::MAX), u64::from(u8::MAX)),
+        (JsValue::from(u16::MAX), u64::from(u16::MAX)),
+        (JsValue::from(u32::MAX), u64::from(u32::MAX)),
+    ] {
+        assert!(matches!(boxed, JsValue::UnsignedInteger(actual) if actual == expected));
+    }
+    for (boxed, expected) in [
         (JsValue::from(f32::MAX), f64::from(f32::MAX)),
         (
             JsValue::from(f32::from_bits(1)),

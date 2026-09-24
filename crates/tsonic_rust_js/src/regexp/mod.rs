@@ -5,7 +5,7 @@ use std::rc::Rc;
 use std::sync::{Arc, OnceLock};
 
 use regress::{Flags, Match, Regex};
-use tsonic_rust_runtime::{ObjectIdentity, ObjectIdentityCarrier, Undefined};
+use tsonic_rust_runtime::{ObjectIdentity, ObjectIdentityCarrier};
 
 use crate::array::JsArray;
 use crate::equality::{hash_identity, JsHash, JsSameValueZero, JsStrictEqual};
@@ -15,7 +15,7 @@ use crate::{JsObject, JsString, JsValue};
 mod native;
 pub use native::*;
 
-pub type JsRegExpIndexPair = (f64, f64);
+pub type JsRegExpIndexPair = (usize, usize);
 
 #[derive(Debug, Clone)]
 pub struct JsRegExpNamedGroups {
@@ -172,7 +172,7 @@ impl Deref for JsRegExpIndices {
 #[derive(Debug, Clone, PartialEq)]
 pub struct JsRegExpMatchArray {
     values: JsArray<Option<JsString>>,
-    index: Option<f64>,
+    index: Option<usize>,
     input: Option<JsString>,
     groups: Option<JsRegExpNamedGroups>,
     indices: Option<JsRegExpIndices>,
@@ -198,7 +198,7 @@ impl JsRegExpMatchArray {
         self.text()
     }
 
-    pub fn index(&self) -> Option<f64> {
+    pub fn index(&self) -> Option<usize> {
         self.index
     }
 
@@ -250,7 +250,7 @@ impl Deref for JsRegExpMatchArray {
 #[derive(Debug, Clone, PartialEq)]
 pub struct JsRegExpExecArray {
     values: JsArray<Option<JsString>>,
-    index: f64,
+    index: usize,
     input: JsString,
     groups: Option<JsRegExpNamedGroups>,
     indices: Option<JsRegExpIndices>,
@@ -276,7 +276,7 @@ impl JsRegExpExecArray {
         self.text()
     }
 
-    pub fn index(&self) -> f64 {
+    pub fn index(&self) -> usize {
         self.index
     }
 
@@ -606,25 +606,19 @@ impl JsRegExp {
         Self::new(pattern.clone(), flags.clone())
     }
 
-    pub fn from_string_with_undefined_flags(
-        pattern: &JsString,
-        _flags: Undefined,
-    ) -> JsResult<Self> {
+    pub fn from_string_with_undefined_flags(pattern: &JsString, _flags: ()) -> JsResult<Self> {
         Self::from_string(pattern)
     }
 
-    pub fn from_undefined(_pattern: Undefined) -> JsResult<Self> {
+    pub fn from_undefined(_pattern: ()) -> JsResult<Self> {
         Self::empty()
     }
 
-    pub fn from_undefined_with_flags(_pattern: Undefined, flags: &JsString) -> JsResult<Self> {
+    pub fn from_undefined_with_flags(_pattern: (), flags: &JsString) -> JsResult<Self> {
         Self::new(JsString::new(), flags.clone())
     }
 
-    pub fn from_undefined_with_undefined_flags(
-        _pattern: Undefined,
-        _flags: Undefined,
-    ) -> JsResult<Self> {
+    pub fn from_undefined_with_undefined_flags(_pattern: (), _flags: ()) -> JsResult<Self> {
         Self::empty()
     }
 
@@ -636,10 +630,7 @@ impl JsRegExp {
         Self::new(pattern.pattern(), flags.clone())
     }
 
-    pub fn call_from_regexp_with_undefined_flags(
-        pattern: &Self,
-        _flags: Undefined,
-    ) -> JsResult<Self> {
+    pub fn call_from_regexp_with_undefined_flags(pattern: &Self, _flags: ()) -> JsResult<Self> {
         Self::call_from_regexp(pattern)
     }
 
@@ -653,7 +644,7 @@ impl JsRegExp {
 
     pub fn construct_from_regexp_with_undefined_flags(
         pattern: &Self,
-        _flags: Undefined,
+        _flags: (),
     ) -> JsResult<Self> {
         Self::construct_from_regexp(pattern)
     }
@@ -707,7 +698,7 @@ impl JsRegExp {
     fn execute_match(&self, input: &JsString) -> JsResult<Option<Match>> {
         let stateful = self.global() || self.sticky();
         let start = if stateful {
-            to_length(self.last_index())
+            self.last_index() as usize
         } else {
             0
         };
@@ -847,7 +838,7 @@ impl JsRegExp {
         input: &JsString,
         limit: Option<f64>,
     ) -> JsResult<JsArray<Option<JsString>>> {
-        let maximum = to_uint32(limit.unwrap_or(u32::MAX as f64));
+        let maximum = crate::native_integer::split_limit(limit);
         let mut output = Vec::new();
         if maximum == 0 {
             return Ok(JsArray::new());
@@ -871,22 +862,22 @@ impl JsRegExp {
                 continue;
             }
             output.push(Some(input.slice(segment_start..cursor)));
-            if output.len() as u32 >= maximum {
+            if output.len() >= maximum {
                 break;
             }
             for capture_index in 1..result.len() {
                 output.push(result.group(capture_index));
-                if output.len() as u32 >= maximum {
+                if output.len() >= maximum {
                     break;
                 }
             }
-            if output.len() as u32 >= maximum {
+            if output.len() >= maximum {
                 break;
             }
             segment_start = result.end;
             cursor = result.end;
         }
-        if (output.len() as u32) < maximum {
+        if output.len() < maximum {
             output.push(Some(input.slice(segment_start..input.len())));
         }
         Ok(array_from_optional(output))
@@ -904,12 +895,14 @@ impl JsRegExp {
         self.split(input, Some(limit))
     }
 
-    pub fn search(&self, input: &JsString) -> JsResult<f64> {
+    pub fn search(&self, input: &JsString) -> JsResult<isize> {
         let previous = self.last_index();
         self.set_last_index(0.0);
         let result = self.exec(input);
         self.set_last_index(previous);
-        Ok(result?.map(|matched| matched.index()).unwrap_or(-1.0))
+        Ok(result?
+            .map(|matched| matched.index() as isize)
+            .unwrap_or(-1))
     }
 
     pub fn to_string_value(&self) -> JsString {
@@ -966,7 +959,7 @@ impl JsRegExp {
 
     fn advance_empty(&self, input: &JsString) {
         self.set_last_index(
-            input.advance_index(to_length(self.last_index()), self.full_unicode()) as f64,
+            input.advance_index(self.last_index() as usize, self.full_unicode()) as f64,
         );
     }
 
@@ -993,7 +986,7 @@ impl JsRegExp {
         let mut index_values = Vec::with_capacity(matched.captures.len() + 1);
         for range in matched.groups() {
             values.push(range.clone().map(|span| input.slice(span.clone())));
-            index_values.push(range.map(|span| (span.start as f64, span.end as f64)));
+            index_values.push(range.map(|span| (span.start, span.end)));
         }
         let mut groups = BTreeMap::new();
         let mut named_indices = BTreeMap::new();
@@ -1003,10 +996,10 @@ impl JsRegExp {
                 key.clone(),
                 range.clone().map(|span| input.slice(span.clone())),
             );
-            named_indices.insert(key, range.map(|span| (span.start as f64, span.end as f64)));
+            named_indices.insert(key, range.map(|span| (span.start, span.end)));
         }
         JsRegExpExecArray {
-            index: matched.start() as f64,
+            index: matched.start(),
             input: input.clone(),
             groups: if groups.is_empty() {
                 None
@@ -1119,7 +1112,7 @@ pub fn regexp_match_string(
     JsRegExp::new(pattern.clone(), JsString::new())?.match_result(input)
 }
 
-pub fn regexp_search_string(input: &JsString, pattern: &JsString) -> JsResult<f64> {
+pub fn regexp_search_string(input: &JsString, pattern: &JsString) -> JsResult<isize> {
     JsRegExp::new(pattern.clone(), JsString::new())?.search(input)
 }
 
@@ -1199,7 +1192,7 @@ where
     expression.try_replace_all_for_string_with(input, replacer)
 }
 
-pub fn string_search_regexp(input: &JsString, expression: &JsRegExp) -> JsResult<f64> {
+pub fn string_search_regexp(input: &JsString, expression: &JsRegExp) -> JsResult<isize> {
     expression.search(input)
 }
 
@@ -1226,7 +1219,7 @@ pub fn regexp_replacement_argument_string(arguments: &JsArray<JsValue>, index: u
 }
 
 pub fn regexp_replacement_argument_value(arguments: &JsArray<JsValue>, index: usize) -> JsValue {
-    arguments.get(index).unwrap_or(JsValue::Undefined)
+    arguments.get(index).unwrap_or(JsValue::Null)
 }
 
 pub fn regexp_replacement_argument_rest(
@@ -1311,7 +1304,7 @@ pub(crate) fn string_replacement_arguments(
 ) -> JsArray<JsValue> {
     JsArray::from_dense(vec![
         JsValue::Utf16String(matched.clone()),
-        JsValue::Number(offset as f64),
+        JsValue::from(offset),
         JsValue::Utf16String(input.clone()),
     ])
 }
@@ -1323,10 +1316,10 @@ fn regexp_replacement_arguments(matched: &JsRegExpExecArray, input: &JsString) -
     for capture_index in 1..matched.len() {
         values.push(match matched.group(capture_index) {
             Some(capture) => JsValue::Utf16String(capture),
-            None => JsValue::Undefined,
+            None => JsValue::Null,
         });
     }
-    values.push(JsValue::Number(matched.index()));
+    values.push(JsValue::from(matched.index()));
     values.push(JsValue::Utf16String(input.clone()));
     if let Some(groups) = matched.groups() {
         let entries = groups
@@ -1336,9 +1329,9 @@ fn regexp_replacement_arguments(matched: &JsRegExpExecArray, input: &JsString) -
             .map(|(name, value)| {
                 (
                     name.clone(),
-                    value.as_ref().map_or(JsValue::Undefined, |value| {
-                        JsValue::Utf16String(value.clone())
-                    }),
+                    value
+                        .as_ref()
+                        .map_or(JsValue::Null, |value| JsValue::Utf16String(value.clone())),
                 )
             })
             .collect::<Vec<_>>();
@@ -1459,16 +1452,6 @@ fn escape_source(pattern: &JsString) -> JsString {
     JsString::from_units(output)
 }
 
-fn to_length(value: f64) -> usize {
-    if value.is_nan() || value <= 0.0 {
-        0
-    } else if !value.is_finite() || value >= usize::MAX as f64 {
-        usize::MAX
-    } else {
-        value.floor() as usize
-    }
-}
-
 fn execution_budget(input_length: usize) -> u64 {
     const MINIMUM_STEPS: u64 = 1_000_000;
     const MAXIMUM_STEPS: u64 = 50_000_000;
@@ -1477,13 +1460,6 @@ fn execution_budget(input_length: usize) -> u64 {
         .unwrap_or(u64::MAX)
         .saturating_mul(STEPS_PER_CODE_UNIT)
         .clamp(MINIMUM_STEPS, MAXIMUM_STEPS)
-}
-
-fn to_uint32(value: f64) -> u32 {
-    if !value.is_finite() || value == 0.0 {
-        return 0;
-    }
-    value.trunc().rem_euclid(4_294_967_296.0) as u32
 }
 
 fn is_ascii_alphanumeric(unit: u16) -> bool {

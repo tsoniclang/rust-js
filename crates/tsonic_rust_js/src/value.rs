@@ -13,7 +13,9 @@ use crate::equality::{
 use crate::errors::JsResult;
 use crate::object::JsObject;
 use crate::{JsString, JsSymbol};
-use tsonic_rust_runtime::{JsError, JsErrorKind, Null, ToSourceString, Undefined};
+use tsonic_rust_runtime::{JsError, JsErrorKind, ToSourceString};
+
+mod numbers;
 
 pub trait JsClosedValueCarrier: fmt::Debug {
     fn identity_key(&self) -> usize;
@@ -112,10 +114,11 @@ impl JsonProjection {
 
 #[derive(Clone, Debug)]
 pub enum JsValue {
-    Undefined,
     Null,
     Bool(bool),
     Number(f64),
+    Integer(i64),
+    UnsignedInteger(u64),
     String(String),
     Utf16String(JsString),
     Symbol(JsSymbol),
@@ -127,7 +130,38 @@ pub enum JsValue {
 
 impl Default for JsValue {
     fn default() -> Self {
-        Self::Undefined
+        Self::Null
+    }
+}
+
+impl tsonic_rust_runtime::OptionalStorage<JsValue> for JsValue {
+    #[inline]
+    fn present(value: Self) -> Self {
+        value
+    }
+    #[inline]
+    fn absent() -> Self {
+        Self::Null
+    }
+    #[inline]
+    fn is_absent(&self) -> bool {
+        matches!(self, Self::Null)
+    }
+    #[inline]
+    fn into_present(self) -> Self {
+        assert!(
+            !matches!(self, Self::Null),
+            "native optional value is absent"
+        );
+        self
+    }
+    #[inline]
+    fn clone_present(&self) -> Self {
+        assert!(
+            !matches!(self, Self::Null),
+            "native optional value is absent"
+        );
+        self.clone()
     }
 }
 
@@ -155,7 +189,7 @@ impl JsValue {
     }
 
     pub const fn undefined() -> Self {
-        Self::Undefined
+        Self::Null
     }
 
     pub const fn null() -> Self {
@@ -217,7 +251,7 @@ impl JsValue {
     }
 
     pub fn is_nullish(&self) -> bool {
-        matches!(self, Self::Undefined | Self::Null)
+        matches!(self, Self::Null)
     }
 
     pub fn inspect(&self) -> String {
@@ -279,10 +313,11 @@ struct InspectState {
 impl InspectState {
     fn render(&mut self, value: &JsValue, depth: usize) -> String {
         match value {
-            JsValue::Undefined => "undefined".to_string(),
             JsValue::Null => "null".to_string(),
             JsValue::Bool(value) => value.to_string(),
             JsValue::Number(value) => format_js_number(*value),
+            JsValue::Integer(value) => value.to_string(),
+            JsValue::UnsignedInteger(value) => value.to_string(),
             JsValue::String(value) => format!("{:?}", value),
             JsValue::Utf16String(value) => value.inspect_quoted(),
             JsValue::Symbol(value) => format!("{value:?}"),
@@ -363,7 +398,7 @@ impl Eq for JsValue {}
 impl JsSameValue for JsValue {
     fn same_value(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::Undefined, Self::Undefined) | (Self::Null, Self::Null) => true,
+            (Self::Null, Self::Null) => true,
             (Self::Bool(left), Self::Bool(right)) => left == right,
             (Self::Number(left), Self::Number(right)) => same_value_f64(*left, *right),
             (Self::String(left), Self::String(right)) => left == right,
@@ -375,7 +410,7 @@ impl JsSameValue for JsValue {
                 left.identity_key() == right.identity_key()
             }
             (Self::JsonProjection(left), Self::JsonProjection(right)) => left.ptr_eq(right),
-            _ => false,
+            _ => numbers::integer_equal(self, other, true),
         }
     }
 }
@@ -383,7 +418,7 @@ impl JsSameValue for JsValue {
 impl JsSameValueZero for JsValue {
     fn same_value_zero(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::Undefined, Self::Undefined) | (Self::Null, Self::Null) => true,
+            (Self::Null, Self::Null) => true,
             (Self::Bool(left), Self::Bool(right)) => left == right,
             (Self::Number(left), Self::Number(right)) => same_value_zero_f64(*left, *right),
             (Self::String(left), Self::String(right)) => left == right,
@@ -395,7 +430,7 @@ impl JsSameValueZero for JsValue {
                 left.identity_key() == right.identity_key()
             }
             (Self::JsonProjection(left), Self::JsonProjection(right)) => left.ptr_eq(right),
-            _ => false,
+            _ => numbers::integer_equal(self, other, false),
         }
     }
 }
@@ -403,10 +438,11 @@ impl JsSameValueZero for JsValue {
 impl JsHash for JsValue {
     fn js_hash(&self) -> u64 {
         match self {
-            Self::Undefined => 0x11,
             Self::Null => 0x12,
             Self::Bool(value) => value.js_hash(),
-            Self::Number(value) => value.js_hash(),
+            Self::Number(value) => numbers::float_hash(*value),
+            Self::Integer(value) => value.js_hash(),
+            Self::UnsignedInteger(value) => value.js_hash(),
             Self::String(value) => value.js_hash(),
             Self::Utf16String(value) => value.js_hash(),
             Self::Symbol(value) => value.js_hash(),
@@ -421,7 +457,7 @@ impl JsHash for JsValue {
 impl JsStrictEqual for JsValue {
     fn strict_equal(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::Undefined, Self::Undefined) | (Self::Null, Self::Null) => true,
+            (Self::Null, Self::Null) => true,
             (Self::Bool(left), Self::Bool(right)) => left == right,
             (Self::Number(left), Self::Number(right)) => strict_equal_f64(*left, *right),
             (Self::String(left), Self::String(right)) => left == right,
@@ -433,7 +469,7 @@ impl JsStrictEqual for JsValue {
                 left.identity_key() == right.identity_key()
             }
             (Self::JsonProjection(left), Self::JsonProjection(right)) => left.ptr_eq(right),
-            _ => false,
+            _ => numbers::integer_equal(self, other, false),
         }
     }
 }
@@ -450,20 +486,34 @@ impl From<bool> for JsValue {
     }
 }
 
-macro_rules! impl_exact_number_from {
-    ($($source:ty),+ $(,)?) => {
+macro_rules! impl_native_number_from {
+    ($variant:ident, $carrier:ty; $($source:ty),+ $(,)?) => {
         $(impl From<$source> for JsValue {
             fn from(value: $source) -> Self {
-                Self::Number(f64::from(value))
+                Self::$variant(<$carrier>::from(value))
             }
         })+
     };
 }
 
-impl_exact_number_from!(i8, u8, i16, u16, i32, u32, f32, f64);
+impl_native_number_from!(Integer, i64; i8, i16, i32, i64);
+impl_native_number_from!(UnsignedInteger, u64; u8, u16, u32, u64);
+impl_native_number_from!(Number, f64; f32, f64);
 
-impl From<Null> for JsValue {
-    fn from(_: Null) -> Self {
+impl From<isize> for JsValue {
+    fn from(value: isize) -> Self {
+        Self::Integer(value as i64)
+    }
+}
+
+impl From<usize> for JsValue {
+    fn from(value: usize) -> Self {
+        Self::UnsignedInteger(value as u64)
+    }
+}
+
+impl From<()> for JsValue {
+    fn from(_: ()) -> Self {
         Self::Null
     }
 }
@@ -483,12 +533,6 @@ impl From<JsString> for JsValue {
 impl From<JsSymbol> for JsValue {
     fn from(value: JsSymbol) -> Self {
         Self::Symbol(value)
-    }
-}
-
-impl From<Undefined> for JsValue {
-    fn from(_: Undefined) -> Self {
-        Self::Undefined
     }
 }
 

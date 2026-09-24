@@ -6,6 +6,19 @@ fn text(value: impl AsRef<str>) -> String {
 }
 
 #[test]
+fn bigint_parsing_rejects_malformed_whole_tokens() {
+    for source in ["1\0", "1\0\0", "1\0\x32", "+1\0", "1 2", "+-1", "1e3"] {
+        assert_eq!(
+            tsonic_rust_js::bigint::from_string(source)
+                .unwrap_err()
+                .kind(),
+            tsonic_rust_runtime::JsErrorKind::SyntaxError,
+            "{source:?}"
+        );
+    }
+}
+
+#[test]
 fn parse_int_promotes_only_after_exact_native_accumulator_overflow() {
     use num_bigint::BigUint;
     use num_traits::ToPrimitive;
@@ -182,4 +195,44 @@ fn number_formatting_matches_ecmascript_edge_shapes() {
         "10"
     );
     assert_eq!(number::value_of(42_i32), 42);
+}
+
+#[test]
+fn integer_text_never_passes_through_floating_point() {
+    use num_bigint::{BigInt, BigUint};
+    for value in [
+        i128::MIN,
+        -9_007_199_254_740_993,
+        0,
+        9_007_199_254_740_993,
+        i128::MAX,
+    ] {
+        assert_eq!(number::to_string(value), value.to_string());
+        assert_eq!(number::to_fixed_default(value), value.to_string());
+        assert_eq!(
+            number::to_fixed_digits(value, 2.0).unwrap(),
+            format!("{value}.00")
+        );
+        assert_eq!(
+            number::parse_float(&number::to_exponential_default(value)),
+            value as f64
+        );
+        for radix in 2_u32..=36 {
+            assert_eq!(
+                number::to_string_radix(value, radix as f64).unwrap(),
+                BigInt::from(value).to_str_radix(radix)
+            );
+        }
+    }
+    for value in [0_u128, 9_007_199_254_740_993, u128::MAX] {
+        assert_eq!(number::to_string(value), value.to_string());
+        for radix in 2_u32..=36 {
+            assert_eq!(
+                number::to_string_radix(value, radix as f64).unwrap(),
+                BigUint::from(value).to_str_radix(radix)
+            );
+        }
+    }
+    assert_eq!(number::value_of(i128::MAX), i128::MAX);
+    assert_eq!(number::value_of(u128::MAX), u128::MAX);
 }

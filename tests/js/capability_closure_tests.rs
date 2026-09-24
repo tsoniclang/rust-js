@@ -7,7 +7,34 @@ use tsonic_rust_js::{
     json, ArrayBuffer, IntlCollator, IntlDateTimeFormat, IntlNumberFormat, JsArray, JsObject,
     JsPromise, JsSymbol, JsValue, JsWeakMap, JsWeakSet, PromiseSettledResult,
 };
-use tsonic_rust_runtime::{Callable, Null, TsonicError, Undefined};
+use tsonic_rust_runtime::{Callable, TsonicError};
+
+#[test]
+fn generic_optional_values_reuse_the_closed_native_absence() {
+    use tsonic_rust_runtime::{optional_storage_coalesce, OptionalStorage};
+    let absent = <JsValue as OptionalStorage<JsValue>>::absent();
+    assert!(<JsValue as OptionalStorage<JsValue>>::is_absent(&absent));
+    let result = optional_storage_coalesce::<JsValue, JsValue, _>(
+        absent,
+        |_| panic!("absence entered present branch"),
+        || 7,
+    );
+    assert_eq!(result, 7);
+    for value in [
+        JsValue::Integer(0),
+        JsValue::Bool(false),
+        JsValue::String(String::new()),
+    ] {
+        let stored = <JsValue as OptionalStorage<JsValue>>::present(value);
+        assert!(!<JsValue as OptionalStorage<JsValue>>::is_absent(&stored));
+        let cloned = <JsValue as OptionalStorage<JsValue>>::clone_present(&stored);
+        assert_eq!(stored.inspect(), cloned.inspect());
+        assert_eq!(
+            stored.inspect(),
+            <JsValue as OptionalStorage<JsValue>>::into_present(cloned).inspect()
+        );
+    }
+}
 
 #[test]
 fn intl_number_precision_grouping_and_exact_integers() {
@@ -19,8 +46,8 @@ fn intl_number_precision_grouping_and_exact_integers() {
     let resolved = significant.resolved_options();
     assert_eq!(resolved.minimum_fraction_digits(), None);
     assert_eq!(resolved.maximum_fraction_digits(), None);
-    assert_eq!(resolved.minimum_significant_digits(), Some(1.0));
-    assert_eq!(resolved.maximum_significant_digits(), Some(3.0));
+    assert_eq!(resolved.minimum_significant_digits(), Some(1));
+    assert_eq!(resolved.maximum_significant_digits(), Some(3));
     assert_eq!(resolved.use_grouping().as_string(), "auto");
     assert_eq!(significant.format(1234.5), "1,230");
     assert_eq!(significant.format(0.0012345), "0.00123");
@@ -30,7 +57,7 @@ fn intl_number_precision_grouping_and_exact_integers() {
     ]);
     assert_eq!(
         mixed.resolved_options().maximum_significant_digits(),
-        Some(3.0)
+        Some(3)
     );
     assert_eq!(mixed.resolved_options().maximum_fraction_digits(), None);
     assert_eq!(mixed.format(1234.5), "1,230");
@@ -39,7 +66,7 @@ fn intl_number_precision_grouping_and_exact_integers() {
     assert_eq!(defaults.locale(), "en-US");
     assert_eq!(defaults.numbering_system(), "latn");
     assert_eq!(defaults.style(), "decimal");
-    assert_eq!(defaults.minimum_integer_digits(), 1.0);
+    assert_eq!(defaults.minimum_integer_digits(), 1);
     assert_eq!(defaults.currency(), None);
     assert_eq!(defaults.currency_display(), None);
     assert_eq!(defaults.currency_sign(), None);
@@ -49,7 +76,7 @@ fn intl_number_precision_grouping_and_exact_integers() {
     assert_eq!(defaults.notation(), "standard");
     assert_eq!(defaults.sign_display(), "auto");
     assert_eq!(defaults.rounding_priority(), "auto");
-    assert_eq!(defaults.rounding_increment(), 1.0);
+    assert_eq!(defaults.rounding_increment(), 1);
     assert_eq!(defaults.rounding_mode(), "halfExpand");
     assert_eq!(defaults.trailing_zero_display(), "auto");
     let currency = make(vec![
@@ -63,11 +90,11 @@ fn intl_number_precision_grouping_and_exact_integers() {
     assert_eq!(currency.currency_sign().as_deref(), Some("standard"));
     assert_eq!(
         default.resolved_options().minimum_fraction_digits(),
-        Some(0.0)
+        Some(0)
     );
     assert_eq!(
         default.resolved_options().maximum_fraction_digits(),
-        Some(3.0)
+        Some(3)
     );
     assert_eq!(
         default.resolved_options().maximum_significant_digits(),
@@ -207,8 +234,7 @@ fn symbols_preserve_fresh_and_registry_identity() {
 
 #[test]
 fn nullish_runtime_values_project_exactly_to_js_values() {
-    assert!(matches!(JsValue::from(Null), JsValue::Null));
-    assert!(matches!(JsValue::from(Undefined), JsValue::Undefined));
+    assert!(matches!(JsValue::from(()), JsValue::Null));
 }
 
 #[test]
@@ -228,8 +254,8 @@ fn weak_collections_use_exact_object_identity() {
     assert!(map.delete(&alias));
     assert!(set.delete(&alias));
 
-    let empty_map = JsWeakMap::<ArrayBuffer, i32>::from_null(Null);
-    let empty_set = JsWeakSet::<ArrayBuffer>::from_null(Null);
+    let empty_map = JsWeakMap::<ArrayBuffer, i32>::from_null(());
+    let empty_set = JsWeakSet::<ArrayBuffer>::from_null(());
     assert!(!empty_map.has(&second));
     assert!(!empty_set.has(&second));
 }
@@ -297,7 +323,7 @@ fn intl_is_deterministic_and_rejects_unapproved_locale_data() {
     let instant = tsonic_rust_js::abi::JsDate::from_millis(1_686_787_200_000.0);
     assert!(!selected_date.format_date(&instant).is_empty());
     assert!(!selected_date.format_to_parts_date(&instant).is_empty());
-    assert!(IntlDateTimeFormat::with_locales_options(&locales, &JsValue::Undefined,).is_ok());
+    assert!(IntlDateTimeFormat::with_locales_options(&locales, &JsValue::Null,).is_ok());
     assert!(IntlDateTimeFormat::with_locale("fr-FR").is_err());
 
     let number_options = JsValue::object(JsObject::from_pairs([
@@ -313,15 +339,15 @@ fn intl_is_deterministic_and_rejects_unapproved_locale_data() {
     let number_options = number.resolved_options();
     assert_eq!(number_options.numbering_system(), "latn");
     assert!(IntlNumberFormat::with_locales(&locales).is_ok());
-    assert!(IntlNumberFormat::with_locales_options(&locales, &JsValue::Undefined).is_ok());
+    assert!(IntlNumberFormat::with_locales_options(&locales, &JsValue::Null).is_ok());
 
     let collator_options =
         JsValue::object(JsObject::from_pairs([("numeric", JsValue::Bool(true))]));
     let collator = IntlCollator::with_locale_options("en-US", &collator_options).unwrap();
-    assert!(collator.compare("item2", "item10") < 0.0);
+    assert!(collator.compare("item2", "item10") < 0);
     assert_eq!(collator.resolved_options().collation(), "default");
     assert!(IntlCollator::with_locales(&locales).is_ok());
-    assert!(IntlCollator::with_locales_options(&locales, &JsValue::Undefined).is_ok());
+    assert!(IntlCollator::with_locales_options(&locales, &JsValue::Null).is_ok());
 }
 
 #[test]
@@ -342,15 +368,19 @@ fn json_replacer_and_property_list_traverse_only_closed_values() {
         ("keep", JsValue::Number(1.0)),
         ("drop", JsValue::Number(2.0)),
     ]));
-    let replaced = json::stringify_with_replacer(&source, |key, value| {
-        if key == "drop" {
-            JsValue::Undefined
-        } else {
-            value
-        }
-    })
-    .unwrap();
-    assert_eq!(replaced.as_deref(), Some("{\"keep\":1}"));
+    let replaced =
+        json::stringify_with_replacer(
+            &source,
+            |key, value| {
+                if key == "drop" {
+                    JsValue::Null
+                } else {
+                    value
+                }
+            },
+        )
+        .unwrap();
+    assert_eq!(replaced.as_deref(), Some("{\"keep\":1,\"drop\":null}"));
 
     let properties = JsValue::array(JsArray::from_dense(vec![string_value("drop")]));
     let selected =

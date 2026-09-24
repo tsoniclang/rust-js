@@ -3,9 +3,12 @@ use tsonic_rust_runtime::location::LocationSegment;
 use tsonic_rust_runtime::Location;
 
 impl<T: Clone + 'static> JsArray<T> {
-    pub fn element_location(&self, index: f64) -> Location<T> {
+    pub fn element_location(
+        &self,
+        index: impl crate::numeric::IndexInput + crate::string::JsToString + 'static,
+    ) -> Location<T> {
         let segment = canonical_array_index(index).map_or_else(
-            || LocationSegment::Member(crate::number::to_string(index)),
+            || LocationSegment::Member(index.to_js_string()),
             LocationSegment::Index,
         );
         let read = self.clone();

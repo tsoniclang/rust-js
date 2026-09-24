@@ -21,7 +21,9 @@ fn fallible_array_callback_entrypoints_cover_every_declared_arity() {
         .try_filter(|value| Ok::<_, TsonicError>(value > 0))
         .is_ok());
     assert!(values
-        .try_filter_with_index(|value, index| Ok::<_, TsonicError>(value as f64 > index))
+        .try_filter_with_index(|value, index| Ok::<_, TsonicError>(
+            value > i32::try_from(index).unwrap()
+        ))
         .is_ok());
     assert!(values
         .try_filter_with_array(|value, _, array| {
@@ -87,7 +89,9 @@ fn fallible_array_callback_entrypoints_cover_every_declared_arity() {
         .try_find(|value| Ok::<_, TsonicError>(value == 2))
         .is_ok());
     assert!(values
-        .try_find_with_index(|value, index| Ok::<_, TsonicError>(value as f64 > index))
+        .try_find_with_index(|value, index| Ok::<_, TsonicError>(
+            value > i32::try_from(index).unwrap()
+        ))
         .is_ok());
     assert!(values
         .try_find_with_array(|value, _, array| {
@@ -102,7 +106,9 @@ fn fallible_array_callback_entrypoints_cover_every_declared_arity() {
         .try_find_index(|value| Ok::<_, TsonicError>(value == 2))
         .is_ok());
     assert!(values
-        .try_find_index_with_index(|value, index| { Ok::<_, TsonicError>(value as f64 > index) })
+        .try_find_index_with_index(|value, index| {
+            Ok::<_, TsonicError>(value > i32::try_from(index).unwrap())
+        })
         .is_ok());
     assert!(values
         .try_find_index_with_array(|value, _, array| {
@@ -117,7 +123,9 @@ fn fallible_array_callback_entrypoints_cover_every_declared_arity() {
         .try_find_last(|value| Ok::<_, TsonicError>(value == 2))
         .is_ok());
     assert!(values
-        .try_find_last_with_index(|value, index| { Ok::<_, TsonicError>(value as f64 > index) })
+        .try_find_last_with_index(|value, index| {
+            Ok::<_, TsonicError>(value > i32::try_from(index).unwrap())
+        })
         .is_ok());
     assert!(values
         .try_find_last_with_array(|value, _, array| {
@@ -133,7 +141,7 @@ fn fallible_array_callback_entrypoints_cover_every_declared_arity() {
         .is_ok());
     assert!(values
         .try_find_last_index_with_index(|value, index| {
-            Ok::<_, TsonicError>(value as f64 > index)
+            Ok::<_, TsonicError>(value > i32::try_from(index).unwrap())
         })
         .is_ok());
     assert!(values
@@ -147,7 +155,9 @@ fn fallible_array_callback_entrypoints_cover_every_declared_arity() {
         .try_some(|value| Ok::<_, TsonicError>(value == 2))
         .is_ok());
     assert!(values
-        .try_some_with_index(|value, index| Ok::<_, TsonicError>(value as f64 > index))
+        .try_some_with_index(|value, index| Ok::<_, TsonicError>(
+            value > i32::try_from(index).unwrap()
+        ))
         .is_ok());
     assert!(values
         .try_some_with_array(|value, _, array| {
@@ -159,7 +169,9 @@ fn fallible_array_callback_entrypoints_cover_every_declared_arity() {
         .try_every(|value| Ok::<_, TsonicError>(value > 0))
         .is_ok());
     assert!(values
-        .try_every_with_index(|value, index| Ok::<_, TsonicError>(value as f64 > index))
+        .try_every_with_index(|value, index| Ok::<_, TsonicError>(
+            value > i32::try_from(index).unwrap()
+        ))
         .is_ok());
     assert!(values
         .try_every_with_array(|value, _, array| {

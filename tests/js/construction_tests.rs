@@ -64,7 +64,7 @@ fn bigint_width_selection_preserves_exact_signed_and_unsigned_bits() {
         -1.0,
         f64::INFINITY,
         f64::NEG_INFINITY,
-        9_007_199_254_740_992.0,
+        18_446_744_073_709_551_616.0,
     ] {
         assert_eq!(
             abi::bigint_as_int_n(width, &value).unwrap_err().kind(),
@@ -76,11 +76,11 @@ fn bigint_width_selection_preserves_exact_signed_and_unsigned_bits() {
         );
     }
     assert_eq!(
-        abi::bigint_as_int_n(9_007_199_254_740_991.0, &value).unwrap(),
+        abi::bigint_as_int_n(9_007_199_254_740_992.0, &value).unwrap(),
         value
     );
     assert_eq!(
-        abi::bigint_as_uint_n(9_007_199_254_740_991.0, &value).unwrap(),
+        abi::bigint_as_uint_n(9_007_199_254_740_992.0, &value).unwrap(),
         value
     );
 }
@@ -176,7 +176,13 @@ fn array_length_construction_initializes_native_values() {
     assert_eq!(item.len(), 1);
     assert_eq!(item.at(0.0), Some(3.0));
     assert_eq!(u32::MAX.array_length().unwrap(), u32::MAX as usize);
-    for length in [-1.0, 1.5, f64::NAN, f64::INFINITY, 4_294_967_296.0] {
+    for length in [
+        -1.0,
+        1.5,
+        f64::NAN,
+        f64::INFINITY,
+        (usize::MAX as u128 + 1) as f64,
+    ] {
         assert_eq!(
             abi::array_construct_length::<String>(length)
                 .unwrap_err()
@@ -232,5 +238,49 @@ fn empty_objects_keep_identity_when_boxed_as_closed_values() {
         tsonic_rust_js::json::stringify(&first.project_json().unwrap()).unwrap(),
         Some("{}".to_owned())
     );
-    assert_ne!(boxed, JsValue::Undefined);
+    assert_ne!(boxed, JsValue::Null);
+}
+
+#[test]
+fn native_bigint_operands_truncate_without_losing_high_bits() {
+    macro_rules! pair {
+        ($unsigned:expr, $signed:expr, $bits:expr) => {
+            assert_eq!(
+                abi::bigint_as_int_n($bits, &$unsigned).unwrap().to_string(),
+                "-1"
+            );
+            assert_eq!(
+                abi::bigint_as_uint_n($bits, &$signed).unwrap(),
+                abi::bigint_from_integer($unsigned)
+            );
+        };
+    }
+    pair!(u8::MAX, -1_i8, 8.0);
+    pair!(u16::MAX, -1_i16, 16.0);
+    pair!(u32::MAX, -1_i32, 32.0);
+    pair!(u64::MAX, -1_i64, 64.0);
+    pair!(u128::MAX, -1_i128, 128.0);
+    pair!(usize::MAX, -1_isize, usize::BITS as f64);
+    assert_eq!(
+        abi::bigint_as_uint_n(129.0, &-1_i64).unwrap().to_string(),
+        "680564733841876926926749214863536422911"
+    );
+    assert_eq!(
+        abi::bigint_as_int_n(256.0, &-1_i64).unwrap().to_string(),
+        "-1"
+    );
+    assert_eq!(
+        abi::bigint_as_uint_n(9_007_199_254_740_992.0, &9_u64)
+            .unwrap()
+            .to_string(),
+        "9"
+    );
+    assert_eq!(
+        abi::bigint_as_int_n(f64::NAN, &9_u64).unwrap(),
+        abi::bigint_from_integer(0_u8)
+    );
+    assert_eq!(
+        abi::bigint_as_int_n(-1.0, &9_u64).unwrap_err().kind(),
+        JsErrorKind::RangeError
+    );
 }

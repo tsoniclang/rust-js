@@ -4,6 +4,8 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
+use crate::number::NativeNumberPredicate;
+use num_traits::ToPrimitive;
 use tsonic_rust_runtime::{Callable, JsError, TsonicError, TsonicResult};
 
 static NEXT_TIMER_ID: AtomicU64 = AtomicU64::new(1);
@@ -21,21 +23,21 @@ thread_local! {
     static TIMERS: RefCell<BTreeMap<u64, TimerEntry>> = const { RefCell::new(BTreeMap::new()) };
 }
 
-pub fn set_timeout_callable<E>(callback: Callable<(), Result<(), E>>, delay_ms: f64) -> f64
+pub fn set_timeout_callable<E>(callback: Callable<(), Result<(), E>>, delay_ms: f64) -> u64
 where
     E: std::fmt::Display + 'static,
 {
     schedule_callback(callback, normalized_delay(delay_ms), false)
 }
 
-pub fn set_interval_callable<E>(callback: Callable<(), Result<(), E>>, delay_ms: f64) -> f64
+pub fn set_interval_callable<E>(callback: Callable<(), Result<(), E>>, delay_ms: f64) -> u64
 where
     E: std::fmt::Display + 'static,
 {
     schedule_callback(callback, normalized_delay(delay_ms).max(1), true)
 }
 
-pub fn clear_timeout(value: f64) {
+pub fn clear_timeout<Value: Copy + NativeNumberPredicate + ToPrimitive>(value: Value) {
     if let Some(timer_id) = timer_id(value) {
         TIMERS.with_borrow_mut(|timers| {
             timers.remove(&timer_id);
@@ -43,7 +45,7 @@ pub fn clear_timeout(value: f64) {
     }
 }
 
-pub fn clear_interval(timer_id: f64) {
+pub fn clear_interval<Value: Copy + NativeNumberPredicate + ToPrimitive>(timer_id: Value) {
     clear_timeout(timer_id);
 }
 
@@ -74,7 +76,7 @@ pub fn next_timer_delay() -> Option<Duration> {
     })
 }
 
-fn schedule_callback<E>(callback: Callable<(), Result<(), E>>, delay_ms: u64, interval: bool) -> f64
+fn schedule_callback<E>(callback: Callable<(), Result<(), E>>, delay_ms: u64, interval: bool) -> u64
 where
     E: std::fmt::Display + 'static,
 {
@@ -96,7 +98,7 @@ where
             },
         );
     });
-    id as f64
+    id
 }
 
 pub fn poll_timers() -> TsonicResult<bool> {
@@ -135,7 +137,31 @@ fn normalized_delay(value: f64) -> u64 {
     }
 }
 
-fn timer_id(value: f64) -> Option<u64> {
-    (value.is_finite() && value >= 1.0 && value.fract() == 0.0 && value <= u64::MAX as f64)
-        .then_some(value as u64)
+fn timer_id<Value: Copy + NativeNumberPredicate + ToPrimitive>(value: Value) -> Option<u64> {
+    if !value.native_is_integer() {
+        return None;
+    }
+    value.to_u64().filter(|value| *value != 0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::timer_id;
+
+    #[test]
+    fn timer_identifiers_retain_native_precision() {
+        assert_eq!(
+            timer_id(9_007_199_254_740_993_u64),
+            Some(9_007_199_254_740_993)
+        );
+        assert_eq!(timer_id(u64::MAX), Some(u64::MAX));
+        assert_eq!(timer_id(7_i32), Some(7));
+        assert_eq!(timer_id(7.0), Some(7));
+        assert_eq!(timer_id(7.5), None);
+        assert_eq!(timer_id(-1_i64), None);
+        assert_eq!(timer_id(0_u64), None);
+        assert_eq!(timer_id(f64::NAN), None);
+        assert_eq!(timer_id(f64::INFINITY), None);
+        assert_eq!(timer_id(u64::MAX as f64), None);
+    }
 }

@@ -11,7 +11,7 @@ fn boolean_primitive_methods_preserve_javascript_text_and_value() {
 
 #[test]
 fn coercive_number_globals_follow_closed_value_rules() {
-    assert!(abi::is_nan(&JsValue::Undefined));
+    assert!(!abi::is_nan(&JsValue::Null));
     assert!(!abi::is_nan(&JsValue::Utf16String(js(" 42 "))));
     assert!(abi::is_finite(&JsValue::Bool(true)));
     assert_eq!(abi::to_number(&JsValue::Null), 0.0);
@@ -77,10 +77,10 @@ fn dataview_reads_and_writes_endian_values() {
     let buffer = abi::ArrayBuffer::new(16.0).unwrap();
     let view = DataView::from_buffer(buffer.clone()).unwrap();
     view.set_uint8(0.0, 255.0).unwrap();
-    assert_eq!(view.get_uint8(0.0).unwrap(), 255.0);
+    assert_eq!(view.get_uint8(0.0).unwrap(), 255);
     view.set_int32(1.0, 0x01020304 as f64, false).unwrap();
-    assert_eq!(view.get_int32(1.0, false).unwrap(), 0x01020304 as f64);
-    assert_eq!(view.get_int32(1.0, true).unwrap(), 0x04030201 as f64);
+    assert_eq!(view.get_int32(1.0, false).unwrap(), 0x01020304);
+    assert_eq!(view.get_int32(1.0, true).unwrap(), 0x04030201);
     view.set_float64(8.0, 1.5, true).unwrap();
     assert_eq!(view.get_float64(8.0, true).unwrap(), 1.5);
     assert!(view.get_uint8(100.0).is_err());
@@ -88,20 +88,20 @@ fn dataview_reads_and_writes_endian_values() {
     assert_eq!(buffer.as_bytes()[0], 255);
 
     view.set_int8(0.0, -2.0).unwrap();
-    assert_eq!(view.get_int8(0.0).unwrap(), -2.0);
+    assert_eq!(view.get_int8(0.0).unwrap(), -2);
     view.set_int16(0.0, -258.0, true).unwrap();
-    assert_eq!(view.get_int16(0.0, true).unwrap(), -258.0);
+    assert_eq!(view.get_int16(0.0, true).unwrap(), -258);
     view.set_uint16(2.0, 0x1234 as f64, false).unwrap();
-    assert_eq!(view.get_uint16(2.0, false).unwrap(), 0x1234 as f64);
+    assert_eq!(view.get_uint16(2.0, false).unwrap(), 0x1234);
     view.set_uint32(4.0, 0x01020304 as f64, true).unwrap();
-    assert_eq!(view.get_uint32(4.0, true).unwrap(), 0x01020304 as f64);
+    assert_eq!(view.get_uint32(4.0, true).unwrap(), 0x01020304);
     view.set_float32(8.0, 1.25, false).unwrap();
     assert_eq!(view.get_float32(8.0, false).unwrap(), 1.25);
 
     let offset = DataView::from_buffer_offset(buffer.clone(), 4.0).unwrap();
-    assert_eq!(offset.byte_offset(), 4.0);
+    assert_eq!(offset.byte_offset(), 4);
     let bounded = DataView::from_buffer_length(buffer, 4.0, 4.0).unwrap();
-    assert_eq!(bounded.byte_length(), 4.0);
+    assert_eq!(bounded.byte_length(), 4);
 }
 
 #[test]
@@ -148,7 +148,7 @@ fn dataview_clone_preserves_identity_while_new_views_only_share_storage() {
     assert_eq!(first, alias);
     assert_ne!(first, second);
     first.set_uint8(0.0, 7.0).unwrap();
-    assert_eq!(second.get_uint8(0.0).unwrap(), 7.0);
+    assert_eq!(second.get_uint8(0.0).unwrap(), 7);
 }
 
 #[test]

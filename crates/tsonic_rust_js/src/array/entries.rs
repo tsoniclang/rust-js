@@ -3,7 +3,7 @@ use std::iter::FusedIterator;
 use std::rc::Rc;
 
 use super::JsArray;
-use tsonic_rust_runtime::{IteratorResult, ObjectIdentity, ObjectIdentityCarrier, Undefined};
+use tsonic_rust_runtime::{IteratorResult, ObjectIdentity, ObjectIdentityCarrier};
 
 struct EntriesState<T> {
     array: Option<JsArray<T>>,
@@ -28,10 +28,10 @@ impl<T> JsArrayEntries<T> {
 }
 
 impl<T: Clone> JsArrayEntries<T> {
-    pub fn next_result(&self) -> IteratorResult<(f64, T), Undefined> {
+    pub fn next_result(&self) -> IteratorResult<(usize, T), ()> {
         match self.clone().next() {
             Some(value) => IteratorResult::yielded(value),
-            None => IteratorResult::completed(Undefined),
+            None => IteratorResult::completed(()),
         }
     }
 }
@@ -52,7 +52,7 @@ impl<T> ObjectIdentityCarrier for JsArrayEntries<T> {
 }
 
 impl<T: Clone> Iterator for JsArrayEntries<T> {
-    type Item = (f64, T);
+    type Item = (usize, T);
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut state = self.state.borrow_mut();
@@ -64,7 +64,7 @@ impl<T: Clone> Iterator for JsArrayEntries<T> {
         let value = array.get(state.index)?;
         let index = state.index;
         state.index += 1;
-        Some((index as f64, value))
+        Some((index, value))
     }
 }
 

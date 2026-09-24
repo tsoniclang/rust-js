@@ -37,7 +37,7 @@ pub(super) fn find(
 pub(super) fn execute(expression: &JsRegExp, input: &str) -> JsResult<Option<Match>> {
     let stateful = expression.global() || expression.sticky();
     let start = if stateful {
-        super::super::to_length(expression.last_index())
+        expression.last_index() as usize
     } else {
         0
     };
@@ -71,17 +71,12 @@ pub(super) fn build(expression: &JsRegExp, input: &str, matched: Match) -> RegEx
         let values = super::super::array_from_optional(
             matched
                 .groups()
-                .map(|range| range.map(|span| (span.start as f64, span.end as f64)))
+                .map(|range| range.map(|span| (span.start, span.end)))
                 .collect(),
         );
         let named: BTreeMap<_, _> = matched
             .named_groups()
-            .map(|(name, range)| {
-                (
-                    name.to_owned(),
-                    range.map(|span| (span.start as f64, span.end as f64)),
-                )
-            })
+            .map(|(name, range)| (name.to_owned(), range.map(|span| (span.start, span.end))))
             .collect();
         RegExpIndices {
             values,
@@ -92,7 +87,7 @@ pub(super) fn build(expression: &JsRegExp, input: &str, matched: Match) -> RegEx
     });
     RegExpExecArray {
         values,
-        index: matched.start() as f64,
+        index: matched.start(),
         input: input.to_owned(),
         groups: (!groups.is_empty()).then(|| RegExpNamedGroups {
             values: Rc::new(RefCell::new(groups)),
@@ -195,19 +190,19 @@ pub(super) fn replacement_arguments(input: &str, matched: &Match) -> JsArray<JsV
     let mut arguments: Vec<_> = matched
         .groups()
         .map(|range| {
-            range.map_or(JsValue::Undefined, |span| {
+            range.map_or(JsValue::Null, |span| {
                 JsValue::String((&input[span]).to_owned())
             })
         })
         .collect();
-    arguments.push(JsValue::Number(matched.start() as f64));
+    arguments.push(JsValue::from(matched.start()));
     arguments.push(JsValue::String((input).to_owned()));
     if matched.named_groups().next().is_some() {
         let mut groups = crate::JsObject::new();
         for (name, range) in matched.named_groups() {
             groups.set(
                 name,
-                range.map_or(JsValue::Undefined, |span| {
+                range.map_or(JsValue::Null, |span| {
                     JsValue::String((&input[span]).to_owned())
                 }),
             );

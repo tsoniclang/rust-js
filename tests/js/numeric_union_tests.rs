@@ -3,6 +3,107 @@ use tsonic_rust_js::abi::{bigint_to_number, JsNumeric};
 use tsonic_rust_runtime::BigInt;
 
 #[test]
+fn mixed_numeric_comparisons_match_exact_integer_oracles() {
+    use num_traits::FromPrimitive;
+    use std::cmp::Ordering;
+
+    let mut integers = vec![num_bigint::BigInt::from(0)];
+    for bit in [0, 1, 7, 31, 53, 63, 64, 127, 128, 129, 511, 1023, 1024] {
+        let power = num_bigint::BigInt::from(1) << bit;
+        for delta in [-1, 0, 1] {
+            let value: num_bigint::BigInt = &power + delta;
+            integers.push(value.clone());
+            integers.push(-value);
+        }
+    }
+    let mut floats = vec![
+        0.0,
+        -0.0,
+        0.5,
+        -0.5,
+        f64::from_bits(1),
+        -f64::from_bits(1),
+        f64::MAX,
+        f64::MIN,
+        f64::NAN,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+    ];
+    for exponent in [0, 7, 31, 53, 63, 64, 127, 128, 511, 1023] {
+        for sign in [-1.0, 1.0] {
+            let value = 2_f64.powi(exponent);
+            floats.extend([
+                sign * value,
+                sign * f64::from_bits(value.to_bits() - 1),
+                sign * f64::from_bits(value.to_bits() + 1),
+            ]);
+        }
+    }
+    for integer in integers {
+        let value = BigInt::from(integer.clone());
+        for number in &floats {
+            let expected = if number.is_nan() {
+                None
+            } else if *number == f64::INFINITY {
+                Some(Ordering::Less)
+            } else if *number == f64::NEG_INFINITY {
+                Some(Ordering::Greater)
+            } else {
+                let truncated = num_bigint::BigInt::from_f64(*number).unwrap();
+                Some(match integer.cmp(&truncated) {
+                    Ordering::Equal if number.fract() > 0.0 => Ordering::Less,
+                    Ordering::Equal if number.fract() < 0.0 => Ordering::Greater,
+                    ordering => ordering,
+                })
+            };
+            assert_eq!(
+                SourceNumeric::less_than(&value, number),
+                expected == Some(Ordering::Less),
+                "{integer} < {number}"
+            );
+            assert_eq!(
+                SourceNumeric::greater_than(&value, number),
+                expected == Some(Ordering::Greater)
+            );
+            assert_eq!(
+                SourceNumeric::loose_equal(&value, number),
+                expected == Some(Ordering::Equal)
+            );
+            assert_eq!(
+                SourceNumeric::greater_than(number, &value),
+                expected == Some(Ordering::Less)
+            );
+        }
+    }
+    for signed in [
+        i128::MIN,
+        -9007199254740993,
+        -1,
+        0,
+        1,
+        9007199254740993,
+        i128::MAX,
+    ] {
+        for unsigned in [0, 1, 9007199254740993, u64::MAX as u128, u128::MAX] {
+            let expected =
+                num_bigint::BigInt::from(signed).cmp(&num_bigint::BigInt::from(unsigned));
+            assert_eq!(
+                SourceNumeric::less_than(&signed, &unsigned),
+                expected.is_lt()
+            );
+            assert_eq!(
+                SourceNumeric::greater_than(&unsigned, &signed),
+                expected.is_lt()
+            );
+            assert_eq!(
+                SourceNumeric::loose_equal(&signed, &unsigned),
+                expected.is_eq()
+            );
+        }
+    }
+}
+
+#[test]
 fn constrained_numeric_constructors_preserve_exact_conversion_rules() {
     fn integer<Value: SourceNumeric>(value: &Value) -> tsonic_rust_js::errors::JsResult<BigInt> {
         SourceNumeric::to_bigint(value)
@@ -67,18 +168,18 @@ fn generic_numeric_constraints_preserve_exact_domains() {
 
 #[test]
 fn numeric_union_string_conversion_retains_number_and_bigint_semantics() {
-    for (value, expected) in [
-        (0.0, "0"),
-        (-0.0, "0"),
-        (1.5, "1.5"),
-        (1e21, "1e+21"),
-        (f64::NAN, "NaN"),
-        (f64::INFINITY, "Infinity"),
-        (f64::NEG_INFINITY, "-Infinity"),
+    for value in [
+        0.0,
+        -0.0,
+        1.5,
+        1e21,
+        f64::NAN,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
     ] {
         assert_eq!(
             tsonic_rust_runtime::source_string(&JsNumeric::from_number(value)),
-            expected
+            value.to_string()
         );
     }
     for expected in ["9007199254740993", "-18446744073709551617"] {

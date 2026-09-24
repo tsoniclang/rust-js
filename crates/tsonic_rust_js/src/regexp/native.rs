@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use std::ops::Deref;
 use std::rc::Rc;
 
-use tsonic_rust_runtime::{JsError, Undefined};
+use tsonic_rust_runtime::JsError;
 
 use super::{JsRegExp, JsRegExpIndexPair};
 
@@ -171,7 +171,7 @@ impl Deref for RegExpIndices {
 #[derive(Debug, Clone, PartialEq)]
 pub struct RegExpMatchArray {
     values: JsArray<Option<String>>,
-    index: Option<f64>,
+    index: Option<usize>,
     input: Option<String>,
     groups: Option<RegExpNamedGroups>,
     indices: Option<RegExpIndices>,
@@ -196,7 +196,7 @@ impl RegExpMatchArray {
         self.text()
     }
 
-    pub fn index(&self) -> Option<f64> {
+    pub fn index(&self) -> Option<usize> {
         self.index
     }
 
@@ -248,7 +248,7 @@ impl Deref for RegExpMatchArray {
 #[derive(Debug, Clone, PartialEq)]
 pub struct RegExpExecArray {
     values: JsArray<Option<String>>,
-    index: f64,
+    index: usize,
     input: String,
     groups: Option<RegExpNamedGroups>,
     indices: Option<RegExpIndices>,
@@ -273,7 +273,7 @@ impl RegExpExecArray {
         self.text()
     }
 
-    pub fn index(&self) -> f64 {
+    pub fn index(&self) -> usize {
         self.index
     }
 
@@ -403,7 +403,7 @@ pub fn regexp_from_string_with_flags_native(pattern: &str, flags: &str) -> JsRes
 
 pub fn regexp_from_string_with_undefined_flags_native(
     pattern: &str,
-    flags: Undefined,
+    flags: (),
 ) -> JsResult<JsRegExp> {
     JsRegExp::from_string_with_undefined_flags(&JsString::from_utf8(pattern), flags)
 }
@@ -416,27 +416,21 @@ pub fn regexp_from_exact_with_flags(pattern: &JsString, flags: &str) -> JsResult
     JsRegExp::from_string_with_flags(pattern, &JsString::from_utf8(flags))
 }
 
-pub fn regexp_from_exact_with_undefined_flags(
-    pattern: &JsString,
-    flags: Undefined,
-) -> JsResult<JsRegExp> {
+pub fn regexp_from_exact_with_undefined_flags(pattern: &JsString, flags: ()) -> JsResult<JsRegExp> {
     JsRegExp::from_string_with_undefined_flags(pattern, flags)
 }
 
-pub fn regexp_from_undefined_native(pattern: Undefined) -> JsResult<JsRegExp> {
+pub fn regexp_from_undefined_native(pattern: ()) -> JsResult<JsRegExp> {
     JsRegExp::from_undefined(pattern)
 }
 
-pub fn regexp_from_undefined_with_flags_native(
-    pattern: Undefined,
-    flags: &str,
-) -> JsResult<JsRegExp> {
+pub fn regexp_from_undefined_with_flags_native(pattern: (), flags: &str) -> JsResult<JsRegExp> {
     JsRegExp::from_undefined_with_flags(pattern, &JsString::from_utf8(flags))
 }
 
 pub fn regexp_from_undefined_with_undefined_flags_native(
-    pattern: Undefined,
-    flags: Undefined,
+    pattern: (),
+    flags: (),
 ) -> JsResult<JsRegExp> {
     JsRegExp::from_undefined_with_undefined_flags(pattern, flags)
 }
@@ -454,7 +448,7 @@ pub fn regexp_call_from_regexp_with_flags_native(
 
 pub fn regexp_call_from_regexp_with_undefined_flags_native(
     pattern: &JsRegExp,
-    flags: Undefined,
+    flags: (),
 ) -> JsResult<JsRegExp> {
     JsRegExp::call_from_regexp_with_undefined_flags(pattern, flags)
 }
@@ -472,7 +466,7 @@ pub fn regexp_construct_from_regexp_with_flags_native(
 
 pub fn regexp_construct_from_regexp_with_undefined_flags_native(
     pattern: &JsRegExp,
-    flags: Undefined,
+    flags: (),
 ) -> JsResult<JsRegExp> {
     JsRegExp::construct_from_regexp_with_undefined_flags(pattern, flags)
 }
@@ -617,7 +611,7 @@ pub fn regexp_split_native(
     input: &str,
     limit: Option<f64>,
 ) -> JsResult<JsArray<Option<String>>> {
-    let maximum = super::to_uint32(limit.unwrap_or(u32::MAX as f64)) as usize;
+    let maximum = crate::native_integer::split_limit(limit);
     let mut output = Vec::new();
     if maximum == 0 {
         return Ok(JsArray::new());
@@ -676,9 +670,9 @@ pub fn regexp_split_with_limit_native(
     regexp_split_native(expression, input, Some(limit))
 }
 
-pub fn regexp_search_native(expression: &JsRegExp, input: &str) -> JsResult<f64> {
+pub fn regexp_search_native(expression: &JsRegExp, input: &str) -> JsResult<isize> {
     Ok(operations::find(expression, input, 0, expression.sticky())?
-        .map_or(-1.0, |found| found.start() as f64))
+        .map_or(-1, |found| found.start() as isize))
 }
 
 pub fn regexp_match_string_native(
@@ -688,7 +682,7 @@ pub fn regexp_match_string_native(
     regexp_match_native(&regexp_from_string_native(pattern)?, input)
 }
 
-pub fn regexp_search_string_native(input: &str, pattern: &str) -> JsResult<f64> {
+pub fn regexp_search_string_native(input: &str, pattern: &str) -> JsResult<isize> {
     regexp_search_native(&regexp_from_string_native(pattern)?, input)
 }
 
@@ -746,7 +740,7 @@ where
     regexp_try_replace_all_for_string_native_with(expression, input, replacer)
 }
 
-pub fn string_search_regexp_native(input: &str, expression: &JsRegExp) -> JsResult<f64> {
+pub fn string_search_regexp_native(input: &str, expression: &JsRegExp) -> JsResult<isize> {
     regexp_search_native(expression, input)
 }
 

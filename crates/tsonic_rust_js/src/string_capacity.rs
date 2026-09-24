@@ -1,23 +1,23 @@
-use crate::coercion::to_integer_or_infinity;
 use crate::errors::{range_error, JsResult};
-use crate::number::MAX_SAFE_INTEGER;
+use crate::numeric::IndexInput;
 
-pub(crate) fn repeat_shape(count: f64, length: impl FnOnce() -> usize) -> JsResult<(usize, usize)> {
-    let count = to_integer_or_infinity(count);
-    if count < 0.0 || count == f64::INFINITY {
-        return Err(range_error("repeat count must be non-negative and finite"));
+pub(crate) fn repeat_shape(
+    count: impl IndexInput,
+    length: impl FnOnce() -> usize,
+) -> JsResult<(usize, usize)> {
+    if !count.valid_repeat_count() {
+        return Err(range_error("invalid repeat count"));
     }
-    if count == 0.0 {
+    if count.positive_index(usize::MAX) == 0 {
         return Ok((0, 0));
     }
     let length = length();
     if length == 0 {
         return Ok((0, 0));
     }
-    if count * length as f64 > MAX_SAFE_INTEGER || count >= usize::MAX as f64 {
-        return Err(range_error("invalid string length"));
-    }
-    let count = count as usize;
+    let count = count
+        .length_index()
+        .ok_or_else(|| range_error("invalid string length"))?;
     let length = length
         .checked_mul(count)
         .ok_or_else(|| range_error("invalid string length"))?;
@@ -31,7 +31,7 @@ mod tests {
 
     #[test]
     fn zero_repeat_counts_do_not_measure_length() {
-        for count in [0.0, -0.0, f64::NAN, 0.9, -0.9] {
+        for count in [0.0, -0.0, f64::NAN, -0.9, 0.9] {
             let shape = repeat_shape(count, || panic!("zero repeat measured input length"));
             assert_eq!(shape.unwrap(), (0, 0));
         }

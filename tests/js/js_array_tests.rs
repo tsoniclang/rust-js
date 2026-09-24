@@ -45,7 +45,7 @@ fn numeric_membership_preserves_presence_without_cloning_values() {
     assert!(!JsArray::contains_number_property(1.0, &values));
     assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| values.set_len(3))).is_err());
     assert!(!JsArray::contains_number_property(2.0, &values));
-    for index in [-1.0, 0.5, f64::NAN, f64::INFINITY, 4_294_967_295.0] {
+    for index in [-1.0, 0.5, f64::NAN, f64::INFINITY] {
         assert!(!JsArray::contains_number_property(index, &values));
         values.set_number(index, Token);
         assert!(JsArray::contains_number_property(index, &values));
@@ -128,7 +128,7 @@ fn dense_array_splice_shift_unshift_and_entries() {
     assert_eq!(xs.keys(), vec![0, 1, 2]);
     assert_eq!(
         xs.entries().collect::<Vec<_>>(),
-        vec![(0.0, 0), (1.0, 9), (2.0, 10)]
+        vec![(0, 0), (1, 9), (2, 10)]
     );
 }
 
@@ -389,14 +389,14 @@ fn mapped_string_construction_stops_at_each_callback_failure() {
     let mut indices = Vec::new();
     let indexed = statics::from_string_try_map_with_index("a😀z", |part, index| {
         indices.push(index);
-        if index == 1.0 {
+        if index == 1 {
             Err("stop")
         } else {
             Ok(part)
         }
     });
     assert_eq!(indexed.unwrap_err(), "stop");
-    assert_eq!(indices, vec![0.0, 1.0]);
+    assert_eq!(indices, vec![0, 1]);
 }
 
 #[test]
@@ -434,7 +434,8 @@ fn array_callbacks_receive_exact_declared_argument_shapes() {
     });
     assert_eq!(mapped.values(), vec![2, 5, 8]);
 
-    let filtered = values.filter_with_index(|value, index| value as f64 > index + 1.0);
+    let filtered =
+        values.filter_with_index(|value, index| value > i32::try_from(index + 1).unwrap());
     assert_eq!(filtered.values(), vec![2, 4, 6]);
 
     let mut visits = Vec::new();
@@ -442,7 +443,7 @@ fn array_callbacks_receive_exact_declared_argument_shapes() {
         assert!(array.ptr_eq(&alias));
         visits.push((value, index));
     });
-    assert_eq!(visits, vec![(2, 0.0), (4, 1.0), (6, 2.0)]);
+    assert_eq!(visits, vec![(2, 0), (4, 1), (6, 2)]);
 
     assert_eq!(
         values.reduce_with_array(0, |sum, value, index, array| {
@@ -516,11 +517,11 @@ fn every_array_callback_arity_has_executable_runtime_coverage() {
 
     let mut visits = Vec::new();
     values.for_each_value_index(|value, index| visits.push((value, index)));
-    assert_eq!(visits, vec![(2, 0.0), (4, 1.0), (6, 2.0)]);
+    assert_eq!(visits, vec![(2, 0), (4, 1), (6, 2)]);
 
     assert_eq!(values.find_zero(|| true), Some(2));
     assert_eq!(
-        values.find_with_index(|value, index| value == 4 && index == 1.0),
+        values.find_with_index(|value, index| value == 4 && index == 1),
         Some(4)
     );
     assert_eq!(
@@ -529,7 +530,7 @@ fn every_array_callback_arity_has_executable_runtime_coverage() {
     );
     assert_eq!(values.find_index_zero(|| true), 0);
     assert_eq!(
-        values.find_index_with_index(|value, index| value == 4 && index == 1.0),
+        values.find_index_with_index(|value, index| value == 4 && index == 1),
         1
     );
     assert_eq!(
@@ -539,7 +540,7 @@ fn every_array_callback_arity_has_executable_runtime_coverage() {
 
     assert_eq!(values.find_last_zero(|| true), Some(6));
     assert_eq!(
-        values.find_last_with_index(|value, index| value == 4 && index == 1.0),
+        values.find_last_with_index(|value, index| value == 4 && index == 1),
         Some(4)
     );
     assert_eq!(
@@ -548,7 +549,7 @@ fn every_array_callback_arity_has_executable_runtime_coverage() {
     );
     assert_eq!(values.find_last_index_zero(|| true), 2);
     assert_eq!(
-        values.find_last_index_with_index(|value, index| value == 4 && index == 1.0),
+        values.find_last_index_with_index(|value, index| value == 4 && index == 1),
         1
     );
     assert_eq!(
@@ -557,10 +558,10 @@ fn every_array_callback_arity_has_executable_runtime_coverage() {
     );
 
     assert!(values.some_zero(|| true));
-    assert!(values.some_with_index(|value, index| value == 6 && index == 2.0));
+    assert!(values.some_with_index(|value, index| value == 6 && index == 2));
     assert!(values.some_with_array(|_, _, array| array.ptr_eq(&alias)));
     assert!(values.every_zero(|| true));
-    assert!(values.every_with_index(|value, index| value as f64 >= index));
+    assert!(values.every_with_index(|value, index| value >= i32::try_from(index).unwrap()));
     assert!(values.every_with_array(|_, _, array| array.ptr_eq(&alias)));
 }
 

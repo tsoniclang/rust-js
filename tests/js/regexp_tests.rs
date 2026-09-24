@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use tsonic_rust_js::regexp::{regexp_escape_exact_native, regexp_exec_native, JsRegExp};
 use tsonic_rust_js::{JsArray, JsString, JsValue};
-use tsonic_rust_runtime::{JsError, JsErrorKind, TsonicError, Undefined};
+use tsonic_rust_runtime::{JsError, JsErrorKind, TsonicError};
 
 fn js(value: &str) -> JsString {
     JsString::from_utf8(value)
@@ -52,7 +52,7 @@ fn regexp_construction_identity_flags_and_source_are_exact() {
 fn regexp_constructor_entry_points_preserve_pattern_flags_and_identity() {
     let pattern = js("a+");
     let global = js("g");
-    let undefined = Undefined;
+    let undefined = ();
 
     let from_string = JsRegExp::from_string_with_flags(&pattern, &global).unwrap();
     assert_eq!(from_string.pattern(), pattern);
@@ -196,8 +196,8 @@ fn regexp_utf16_mode_and_indices_follow_ecmascript_code_units() {
         .unwrap()
         .unwrap();
     assert_eq!(legacy.text().units(), &[0xD83D]);
-    assert_eq!(legacy.index(), 0.0);
-    assert_eq!(legacy.indices().unwrap().at(0), Some((0.0, 1.0)));
+    assert_eq!(legacy.index(), 0);
+    assert_eq!(legacy.indices().unwrap().at(0), Some((0, 1)));
 
     let unicode = JsRegExp::new(js("."), js("du"))
         .unwrap()
@@ -205,7 +205,7 @@ fn regexp_utf16_mode_and_indices_follow_ecmascript_code_units() {
         .unwrap()
         .unwrap();
     assert_eq!(unicode.text(), astral);
-    assert_eq!(unicode.indices().unwrap().at(0), Some((0.0, 2.0)));
+    assert_eq!(unicode.indices().unwrap().at(0), Some((0, 2)));
 
     let sticky = JsRegExp::new(js("b"), js("y")).unwrap();
     sticky.set_last_index(2.0);
@@ -215,20 +215,20 @@ fn regexp_utf16_mode_and_indices_follow_ecmascript_code_units() {
     let quantified_astral = JsRegExp::new(js("💚+"), js("")).unwrap();
     let quantified_match = quantified_astral.exec(&js("a💚💚b")).unwrap().unwrap();
     assert_eq!(quantified_match.text(), js("💚"));
-    assert_eq!(quantified_match.index(), 1.0);
+    assert_eq!(quantified_match.index(), 1);
 
     let nullable = JsRegExp::new(js("a*"), js("g")).unwrap();
     nullable.set_last_index(1.0);
     let nullable_mid_pair = nullable.exec(&astral).unwrap().unwrap();
     assert_eq!(nullable_mid_pair.text(), js(""));
-    assert_eq!(nullable_mid_pair.index(), 1.0);
+    assert_eq!(nullable_mid_pair.index(), 1);
     assert_eq!(nullable.last_index(), 1.0);
 
     let nullable_before_scalar = JsRegExp::new(js("a*"), js("g")).unwrap();
     nullable_before_scalar.set_last_index(2.0);
     let nullable_scalar = nullable_before_scalar.exec(&js("😀a")).unwrap().unwrap();
     assert_eq!(nullable_scalar.text(), js("a"));
-    assert_eq!(nullable_scalar.index(), 2.0);
+    assert_eq!(nullable_scalar.index(), 2);
     assert_eq!(nullable_before_scalar.last_index(), 3.0);
 }
 
@@ -249,11 +249,11 @@ fn regexp_named_groups_optional_captures_and_indices_are_preserved() {
     assert!(groups.has(&js("digits")));
 
     let indices = result.indices().unwrap();
-    assert_eq!(indices.at(0), Some((0.0, 3.0)));
-    assert_eq!(indices.at(1), Some((0.0, 3.0)));
+    assert_eq!(indices.at(0), Some((0, 3)));
+    assert_eq!(indices.at(1), Some((0, 3)));
     assert_eq!(indices.at(2), None);
     let named = indices.groups().unwrap();
-    assert_eq!(named.get(&js("letter")), Some((0.0, 3.0)));
+    assert_eq!(named.get(&js("letter")), Some((0, 3)));
     assert_eq!(named.get(&js("digits")), None);
     assert!(named.has(&js("digits")));
 }
@@ -310,8 +310,8 @@ fn regexp_replacement_tokens_and_callback_arguments_are_exact() {
     assert_eq!(calls.len(), 2);
     assert!(matches!(&calls[0][0], JsValue::Utf16String(value) if value == &js("1")));
     assert!(matches!(&calls[0][1], JsValue::Utf16String(value) if value == &js("1")));
-    assert!(matches!(calls[0][2], JsValue::Undefined));
-    assert!(matches!(calls[0][3], JsValue::Number(value) if value == 1.0));
+    assert!(matches!(calls[0][2], JsValue::Null));
+    assert!(matches!(calls[0][3], JsValue::UnsignedInteger(1)));
     assert!(matches!(&calls[0][4], JsValue::Utf16String(value) if value == &js("a1b2x")));
     assert!(matches!(calls[0][5], JsValue::Object(_)));
     assert!(matches!(&calls[1][2], JsValue::Utf16String(value) if value == &js("x")));
@@ -348,12 +348,12 @@ fn regexp_split_includes_captures_limits_and_empty_boundaries() {
 fn regexp_search_preserves_observable_last_index() {
     let expression = JsRegExp::new(js("b"), js("gy")).unwrap();
     expression.set_last_index(7.0);
-    assert_eq!(expression.search(&js("ab")).unwrap(), -1.0);
+    assert_eq!(expression.search(&js("ab")).unwrap(), -1);
     assert_eq!(expression.last_index(), 7.0);
 
     let expression = JsRegExp::new(js("b"), js("g")).unwrap();
     expression.set_last_index(7.0);
-    assert_eq!(expression.search(&js("ab")).unwrap(), 1.0);
+    assert_eq!(expression.search(&js("ab")).unwrap(), 1);
     assert_eq!(expression.last_index(), 7.0);
 }
 

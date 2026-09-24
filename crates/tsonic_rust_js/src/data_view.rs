@@ -1,7 +1,8 @@
 use crate::array_buffer::{to_index, ArrayBuffer};
 use crate::equality::{hash_identity, JsHash, JsSameValueZero, JsStrictEqual};
 use crate::errors::{range_error, JsResult};
-use crate::typed_array::integer_number;
+use crate::native_integer::Integer32;
+use crate::numeric::IndexInput;
 use std::rc::Rc;
 use tsonic_rust_runtime::{ObjectIdentity, ObjectIdentityCarrier};
 
@@ -49,21 +50,25 @@ impl DataView {
         Self::new(buffer, 0.0, None)
     }
 
-    pub fn from_buffer_offset(buffer: ArrayBuffer, byte_offset: f64) -> JsResult<Self> {
+    pub fn from_buffer_offset(buffer: ArrayBuffer, byte_offset: impl IndexInput) -> JsResult<Self> {
         Self::new(buffer, byte_offset, None)
     }
 
     pub fn from_buffer_length(
         buffer: ArrayBuffer,
-        byte_offset: f64,
-        byte_length: f64,
+        byte_offset: impl IndexInput,
+        byte_length: impl IndexInput,
     ) -> JsResult<Self> {
-        Self::new(buffer, byte_offset, Some(byte_length))
+        Self::new(buffer, to_index(byte_offset)?, Some(to_index(byte_length)?))
     }
 
-    pub fn new(buffer: ArrayBuffer, byte_offset: f64, byte_length: Option<f64>) -> JsResult<Self> {
+    pub fn new<Index: IndexInput>(
+        buffer: ArrayBuffer,
+        byte_offset: Index,
+        byte_length: Option<Index>,
+    ) -> JsResult<Self> {
         let byte_offset = to_index(byte_offset)?;
-        let buffer_length = buffer.byte_length_usize();
+        let buffer_length = buffer.byte_length();
         if byte_offset > buffer_length {
             return Err(range_error("DataView byte offset out of bounds"));
         }
@@ -91,68 +96,68 @@ impl DataView {
         self.state.buffer.clone()
     }
 
-    pub fn byte_offset(&self) -> f64 {
-        self.state.byte_offset as f64
+    pub fn byte_offset(&self) -> usize {
+        self.state.byte_offset
     }
 
-    pub fn byte_length(&self) -> f64 {
-        self.state.byte_length as f64
+    pub fn byte_length(&self) -> usize {
+        self.state.byte_length
     }
 
-    pub fn get_int8(&self, offset: f64) -> JsResult<f64> {
-        Ok(i8::from_ne_bytes(self.read::<1>(offset)?) as f64)
+    pub fn get_int8(&self, offset: impl IndexInput) -> JsResult<i8> {
+        Ok(i8::from_ne_bytes(self.read::<1>(offset)?))
     }
 
-    pub fn get_uint8(&self, offset: f64) -> JsResult<f64> {
-        Ok(self.read::<1>(offset)?[0] as f64)
+    pub fn get_uint8(&self, offset: impl IndexInput) -> JsResult<u8> {
+        Ok(self.read::<1>(offset)?[0])
     }
 
-    pub fn get_int16(&self, offset: f64, little_endian: bool) -> JsResult<f64> {
+    pub fn get_int16(&self, offset: impl IndexInput, little_endian: bool) -> JsResult<i16> {
         Ok(read_number(
             self.read::<2>(offset)?,
             little_endian,
             i16::from_le_bytes,
             i16::from_be_bytes,
-        ) as f64)
+        ))
     }
 
-    pub fn get_uint16(&self, offset: f64, little_endian: bool) -> JsResult<f64> {
+    pub fn get_uint16(&self, offset: impl IndexInput, little_endian: bool) -> JsResult<u16> {
         Ok(read_number(
             self.read::<2>(offset)?,
             little_endian,
             u16::from_le_bytes,
             u16::from_be_bytes,
-        ) as f64)
+        ))
     }
 
-    pub fn get_int32(&self, offset: f64, little_endian: bool) -> JsResult<f64> {
+    pub fn get_int32(&self, offset: impl IndexInput, little_endian: bool) -> JsResult<i32> {
         Ok(read_number(
             self.read::<4>(offset)?,
             little_endian,
             i32::from_le_bytes,
             i32::from_be_bytes,
-        ) as f64)
+        ))
     }
 
-    pub fn get_uint32(&self, offset: f64, little_endian: bool) -> JsResult<f64> {
+    pub fn get_uint32(&self, offset: impl IndexInput, little_endian: bool) -> JsResult<u32> {
         Ok(read_number(
             self.read::<4>(offset)?,
             little_endian,
             u32::from_le_bytes,
             u32::from_be_bytes,
-        ) as f64)
+        ))
     }
 
-    pub fn get_float32(&self, offset: f64, little_endian: bool) -> JsResult<f64> {
+    pub fn get_float32(&self, offset: impl IndexInput, little_endian: bool) -> JsResult<f32> {
         Ok(read_number(
             self.read::<4>(offset)?,
             little_endian,
             f32::from_le_bytes,
             f32::from_be_bytes,
-        ) as f64)
+        ))
     }
 
-    pub fn get_float64(&self, offset: f64, little_endian: bool) -> JsResult<f64> {
+    pub fn get_float64(&self, offset: impl IndexInput, little_endian: bool) -> JsResult<f64> {
         Ok(read_number(
             self.read::<8>(offset)?,
             little_endian,
@@ -163,7 +168,7 @@ impl DataView {
 
     pub fn get_big_uint64(
         &self,
-        offset: f64,
+        offset: impl IndexInput,
         little_endian: bool,
     ) -> JsResult<tsonic_rust_runtime::BigInt> {
         Ok(crate::bigint::from_integer(read_number(
@@ -176,7 +181,7 @@ impl DataView {
 
     pub fn set_big_uint64(
         &self,
-        offset: f64,
+        offset: impl IndexInput,
         value: &tsonic_rust_runtime::BigInt,
         little_endian: bool,
     ) -> JsResult<()> {
@@ -191,61 +196,80 @@ impl DataView {
         self.write(offset, &bytes)
     }
 
-    pub fn set_int8(&self, offset: f64, value: f64) -> JsResult<()> {
-        self.write(
-            offset,
-            &(integer_number(value, 8, true) as i8).to_ne_bytes(),
-        )
+    pub fn set_int8<T: Integer32>(&self, offset: impl IndexInput, value: T) -> JsResult<()> {
+        self.write(offset, &(value.integer32() as i8).to_ne_bytes())
     }
 
-    pub fn set_uint8(&self, offset: f64, value: f64) -> JsResult<()> {
-        self.write(
-            offset,
-            &(integer_number(value, 8, false) as u8).to_ne_bytes(),
-        )
+    pub fn set_uint8<T: Integer32>(&self, offset: impl IndexInput, value: T) -> JsResult<()> {
+        self.write(offset, &(value.integer32() as u8).to_ne_bytes())
     }
 
-    pub fn set_int16(&self, offset: f64, value: f64, little_endian: bool) -> JsResult<()> {
+    pub fn set_int16<T: Integer32>(
+        &self,
+        offset: impl IndexInput,
+        value: T,
+        little_endian: bool,
+    ) -> JsResult<()> {
         self.write_endian(
             offset,
-            integer_number(value, 16, true) as i16,
+            value.integer32() as i16,
             little_endian,
             i16::to_le_bytes,
             i16::to_be_bytes,
         )
     }
 
-    pub fn set_uint16(&self, offset: f64, value: f64, little_endian: bool) -> JsResult<()> {
+    pub fn set_uint16<T: Integer32>(
+        &self,
+        offset: impl IndexInput,
+        value: T,
+        little_endian: bool,
+    ) -> JsResult<()> {
         self.write_endian(
             offset,
-            integer_number(value, 16, false) as u16,
+            value.integer32() as u16,
             little_endian,
             u16::to_le_bytes,
             u16::to_be_bytes,
         )
     }
 
-    pub fn set_int32(&self, offset: f64, value: f64, little_endian: bool) -> JsResult<()> {
+    pub fn set_int32<T: Integer32>(
+        &self,
+        offset: impl IndexInput,
+        value: T,
+        little_endian: bool,
+    ) -> JsResult<()> {
         self.write_endian(
             offset,
-            integer_number(value, 32, true) as i32,
+            value.integer32() as i32,
             little_endian,
             i32::to_le_bytes,
             i32::to_be_bytes,
         )
     }
 
-    pub fn set_uint32(&self, offset: f64, value: f64, little_endian: bool) -> JsResult<()> {
+    pub fn set_uint32<T: Integer32>(
+        &self,
+        offset: impl IndexInput,
+        value: T,
+        little_endian: bool,
+    ) -> JsResult<()> {
         self.write_endian(
             offset,
-            integer_number(value, 32, false) as u32,
+            value.integer32(),
             little_endian,
             u32::to_le_bytes,
             u32::to_be_bytes,
         )
     }
 
-    pub fn set_float32(&self, offset: f64, value: f64, little_endian: bool) -> JsResult<()> {
+    pub fn set_float32(
+        &self,
+        offset: impl IndexInput,
+        value: f64,
+        little_endian: bool,
+    ) -> JsResult<()> {
         self.write_endian(
             offset,
             value as f32,
@@ -255,7 +279,12 @@ impl DataView {
         )
     }
 
-    pub fn set_float64(&self, offset: f64, value: f64, little_endian: bool) -> JsResult<()> {
+    pub fn set_float64(
+        &self,
+        offset: impl IndexInput,
+        value: f64,
+        little_endian: bool,
+    ) -> JsResult<()> {
         self.write_endian(
             offset,
             value,
@@ -265,7 +294,7 @@ impl DataView {
         )
     }
 
-    fn read<const LENGTH: usize>(&self, offset: f64) -> JsResult<[u8; LENGTH]> {
+    fn read<const LENGTH: usize>(&self, offset: impl IndexInput) -> JsResult<[u8; LENGTH]> {
         let offset = to_index(offset)?;
         let end = offset
             .checked_add(LENGTH)
@@ -284,7 +313,7 @@ impl DataView {
         Ok(result)
     }
 
-    fn write(&self, offset: f64, bytes: &[u8]) -> JsResult<()> {
+    fn write(&self, offset: impl IndexInput, bytes: &[u8]) -> JsResult<()> {
         let offset = to_index(offset)?;
         let end = offset
             .checked_add(bytes.len())
@@ -304,7 +333,7 @@ impl DataView {
 
     fn write_endian<T, const LENGTH: usize>(
         &self,
-        offset: f64,
+        offset: impl IndexInput,
         value: T,
         little_endian: bool,
         little: impl FnOnce(T) -> [u8; LENGTH],

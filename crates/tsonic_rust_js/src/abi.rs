@@ -25,7 +25,8 @@ pub use crate::atomics::{
     store as atomics_store, wait as atomics_wait, wait_forever as atomics_wait_forever,
 };
 pub use crate::bigint::{
-    as_int_n as bigint_as_int_n, as_uint_n as bigint_as_uint_n,
+    as_int_n as bigint_as_int_n, as_int_native as bigint_as_int_native,
+    as_uint_n as bigint_as_uint_n, as_uint_native as bigint_as_uint_native,
     from_boolean as bigint_from_boolean, from_integer as bigint_from_integer,
     from_number as bigint_from_number, from_string as bigint_from_string,
     to_string_radix as bigint_to_string_radix,
@@ -88,8 +89,9 @@ pub use crate::math::{
 pub use crate::number::{
     bigint_to_number, is_finite as number_is_finite, is_integer as number_is_integer,
     is_nan as number_is_nan, is_safe_integer as number_is_safe_integer,
-    parse_float as number_parse_float, parse_int_default as number_parse_int,
-    parse_int_radix as number_parse_int_radix, to_exponential_default as number_to_exponential,
+    numeric_string as number_from_string, parse_float as number_parse_float,
+    parse_int_default as number_parse_int, parse_int_radix as number_parse_int_radix,
+    to_exponential_default as number_to_exponential,
     to_exponential_digits as number_to_exponential_digits, to_fixed_default as number_to_fixed,
     to_fixed_digits as number_to_fixed_digits, to_precision_default as number_to_precision,
     to_precision_digits as number_to_precision_digits, to_string as number_to_string,
@@ -143,8 +145,8 @@ pub use crate::set::JsSet;
 pub use crate::string::{
     at as js_string_at, char_at as js_string_char_at, char_code_at as js_string_char_code_at,
     code_point_at as js_string_code_point_at, from_char_code as js_string_from_char_code,
-    from_code_point as js_string_from_code_point, is_well_formed as js_string_is_well_formed,
-    last_index_of as js_string_last_index_of,
+    from_code_point as js_string_from_code_point, from_value as string_from_value,
+    is_well_formed as js_string_is_well_formed, last_index_of as js_string_last_index_of,
     last_index_of_from_end as js_string_last_index_of_from_end, normalize as js_string_normalize,
     normalize_with_form as js_string_normalize_with_form, pad_end as js_string_pad_end,
     pad_end_with as js_string_pad_end_with, pad_start as js_string_pad_start,

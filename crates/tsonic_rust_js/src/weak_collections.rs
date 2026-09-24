@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use tsonic_rust_runtime::{Null, ObjectIdentity, ObjectIdentityCarrier, WeakObjectIdentity};
+use tsonic_rust_runtime::{ObjectIdentity, ObjectIdentityCarrier, WeakObjectIdentity};
 
 use crate::array::JsArray;
 use crate::equality::{hash_identity, JsHash, JsSameValueZero, JsStrictEqual};
@@ -86,7 +86,7 @@ impl<K: ObjectIdentityCarrier, V> JsWeakMap<K, V> {
         result
     }
 
-    pub fn from_null(_: Null) -> Self {
+    pub fn from_null(_: ()) -> Self {
         Self::new()
     }
 
@@ -234,7 +234,7 @@ impl<K: ObjectIdentityCarrier> JsWeakSet<K> {
         result
     }
 
-    pub fn from_null(_: Null) -> Self {
+    pub fn from_null(_: ()) -> Self {
         Self::new()
     }
 

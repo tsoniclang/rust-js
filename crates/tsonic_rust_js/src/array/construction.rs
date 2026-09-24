@@ -11,10 +11,7 @@ pub fn construct_length<T: Default>(length: impl ArrayLength) -> JsResult<JsArra
 
 impl ArrayLength for f64 {
     fn array_length(self) -> JsResult<usize> {
-        if !self.is_finite() || self.fract() != 0.0 || self < 0.0 || self > f64::from(u32::MAX) {
-            return Err(range_error("Invalid array length"));
-        }
-        usize::try_from(self as u32).map_err(|_| range_error("Invalid array length"))
+        crate::native_integer::native_length(self)
     }
 }
 
@@ -28,8 +25,7 @@ macro_rules! integer_array_lengths {
     ($($integer:ty),+ $(,)?) => {
         $(impl ArrayLength for $integer {
             fn array_length(self) -> JsResult<usize> {
-                let length = u32::try_from(self).map_err(|_| range_error("Invalid array length"))?;
-                usize::try_from(length).map_err(|_| range_error("Invalid array length"))
+                usize::try_from(self).map_err(|_| range_error("Invalid array length"))
             }
         })+
     };

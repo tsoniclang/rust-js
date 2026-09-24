@@ -166,25 +166,25 @@ impl JsHash for BigInt {
     }
 }
 
-impl JsSameValueZero for Undefined {
+impl JsSameValueZero for () {
     fn same_value_zero(&self, _other: &Self) -> bool {
         true
     }
 }
 
-impl JsSameValue for Undefined {
+impl JsSameValue for () {
     fn same_value(&self, _other: &Self) -> bool {
         true
     }
 }
 
-impl JsStrictEqual for Undefined {
+impl JsStrictEqual for () {
     fn strict_equal(&self, _other: &Self) -> bool {
         true
     }
 }
 
-impl JsHash for Undefined {
+impl JsHash for () {
     fn js_hash(&self) -> u64 {
         FNV_OFFSET_BASIS
     }
@@ -290,4 +290,4 @@ impl_js_primitive_equality!(
     bool, i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize, char, String, &str,
     JsString
 );
-use tsonic_rust_runtime::{BigInt, Undefined};
+use tsonic_rust_runtime::BigInt;
