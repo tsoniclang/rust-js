@@ -1,5 +1,50 @@
 use tsonic_rust_js::{Int16Array, JsArray, Uint8Array};
 
+#[test]
+fn typed_array_search_keeps_exact_query_values_and_native_elements() {
+    use tsonic_rust_js::{Float32Array, Float64Array, Uint8ClampedArray};
+    let doubles = Float64Array::from_vec(vec![
+        9_007_199_254_740_992_f64,
+        u64::MAX as f64,
+        i64::MIN as f64,
+        u128::MAX as f64,
+    ])
+    .unwrap();
+    assert!(!doubles.includes_from_start(9_007_199_254_740_993_u64));
+    assert_eq!(doubles.index_of_from_start(9_007_199_254_740_993_u64), -1);
+    assert!(doubles.includes_from_start(9_007_199_254_740_992_u64));
+    assert!(!doubles.includes_from_start(u64::MAX));
+    assert!(!doubles.includes_from_start(u128::MAX));
+    assert!(!doubles.includes_from_start(i128::MAX));
+    assert!(doubles.includes_from_start(i64::MIN));
+    assert!(!doubles.includes(9_007_199_254_740_992_u64, usize::MAX));
+    assert_eq!(doubles.index_of(i64::MIN, -2_i32), 2);
+    let singles = Float32Array::from_vec(vec![
+        16_777_216_f32,
+        f32::INFINITY,
+        f32::NEG_INFINITY,
+        f32::NAN,
+        -0.0,
+    ])
+    .unwrap();
+    assert!(!singles.includes_from_start(16_777_217_u64));
+    assert!(!singles.includes_from_start(f64::MAX));
+    assert!(singles.includes_from_start(f64::NAN));
+    assert_eq!(singles.index_of_from_start(f64::NAN), -1);
+    assert_eq!(singles.index_of_from_start(0_i32), 4);
+    assert!(singles.includes_from_start(f64::INFINITY));
+    assert!(singles.includes_from_start(f64::NEG_INFINITY));
+    let bytes = Uint8Array::from_bytes(vec![0, 1, 255]);
+    let clamped = Uint8ClampedArray::from_vec(vec![0.0, 1.0, 255.0]).unwrap();
+    for query in [-1.0, 0.5, 256.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert!(!bytes.includes_from_start(query));
+        assert_eq!(bytes.index_of_from_start(query), -1);
+        assert!(!clamped.includes_from_start(query));
+    }
+    assert!(clamped.includes_from_start(255_u64));
+    assert_eq!(bytes.index_of_from_start(255_u128), 2);
+}
+
 fn verify_native_pair<Source, Target>()
 where
     Source: tsonic_rust_js::typed_array::TypedElement

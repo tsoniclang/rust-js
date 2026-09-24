@@ -3,6 +3,44 @@ use std::time::{Duration, Instant};
 use tsonic_rust_js::{atomics, ArrayBuffer, DataView, Int32Array};
 
 #[test]
+fn atomic_inputs_and_store_results_retain_exact_native_integers() {
+    let buffer = ArrayBuffer::new_shared(8_usize).unwrap();
+    let values = Int32Array::from_buffer_only(buffer).unwrap();
+    for value in [9_007_199_254_740_993_u64, u64::MAX, u64::from(u32::MAX)] {
+        let stored: u64 = atomics::store(&values, 1_usize, value).unwrap();
+        assert_eq!(stored, value);
+        assert_eq!(atomics::load(&values, 1_u8).unwrap(), value as i32);
+        assert_eq!(
+            atomics::wait(&values, 1_i64, value, 0.0).unwrap(),
+            "timed-out"
+        );
+        assert_eq!(
+            atomics::wait(&values, 1_u32, value.wrapping_add(1), 0.0).unwrap(),
+            "not-equal"
+        );
+    }
+    for value in [9_007_199_254_740_993_i64, i64::MIN, i64::MAX, -1] {
+        let stored: i64 = atomics::store(&values, 0_u64, value).unwrap();
+        assert_eq!(stored, value);
+        assert_eq!(atomics::load(&values, 0_isize).unwrap(), value as i32);
+    }
+    assert_eq!(atomics::store(&values, 0_u8, u128::MAX).unwrap(), u128::MAX);
+    assert_eq!(atomics::load(&values, 0_u8).unwrap(), -1);
+    assert_eq!(atomics::store(&values, 0_u8, 1.9_f32).unwrap(), 1.0_f32);
+    assert_eq!(atomics::store(&values, 0_u8, f64::NAN).unwrap(), 0.0);
+    assert_eq!(
+        atomics::store(&values, 0_u8, f64::INFINITY).unwrap(),
+        f64::INFINITY
+    );
+    assert_eq!(atomics::load(&values, 0_u8).unwrap(), 0);
+    assert!(atomics::load(&values, u64::MAX).is_err());
+    assert!(atomics::store(&values, -1_i32, 1_i32).is_err());
+    assert!(atomics::wait(&values, u128::MAX, 0_i32, 0.0).is_err());
+    assert_eq!(atomics::notify(&values, 0_u8, u64::MAX).unwrap(), 0);
+    assert_eq!(atomics::notify(&values, 0_u8, -1_i64).unwrap(), 0);
+}
+
+#[test]
 fn atomic_wait_validates_backing_bounds_conversion_and_timeout() {
     let buffer = ArrayBuffer::new_shared(12.0).unwrap();
     let values = Int32Array::from_buffer_offset(buffer.clone(), 4.0).unwrap();

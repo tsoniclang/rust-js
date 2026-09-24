@@ -30,7 +30,7 @@ impl fmt::Display for TypedArrayKind {
     }
 }
 
-pub trait TypedElement: Copy + Default + fmt::Display + 'static {
+pub trait TypedElement: Copy + Default + PartialEq + fmt::Display + 'static {
     type Value: Copy;
     const KIND: TypedArrayKind;
     const BYTES_PER_ELEMENT: usize;
@@ -41,6 +41,9 @@ pub trait TypedElement: Copy + Default + fmt::Display + 'static {
     fn compare(self, other: Self) -> std::cmp::Ordering;
     fn write_bytes(self, output: &mut [u8]);
     fn read_bytes(bytes: &[u8]) -> Self;
+    fn is_nan(self) -> bool {
+        false
+    }
 }
 
 macro_rules! integer_element {
@@ -91,6 +94,10 @@ impl TypedElement for f32 {
     const KIND: TypedArrayKind = TypedArrayKind::Float32;
     const BYTES_PER_ELEMENT: usize = 4;
 
+    fn is_nan(self) -> bool {
+        self.is_nan()
+    }
+
     fn from_number(value: f64) -> Self {
         value as f32
     }
@@ -127,6 +134,10 @@ impl TypedElement for f64 {
     type Value = Self;
     const KIND: TypedArrayKind = TypedArrayKind::Float64;
     const BYTES_PER_ELEMENT: usize = 8;
+
+    fn is_nan(self) -> bool {
+        self.is_nan()
+    }
 
     fn from_number(value: f64) -> Self {
         value

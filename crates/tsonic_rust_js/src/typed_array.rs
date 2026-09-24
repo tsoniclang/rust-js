@@ -13,7 +13,9 @@ use crate::errors::{range_error, JsResult};
 use crate::numeric::IndexInput;
 
 mod elements;
+mod search;
 pub use elements::{ClampedU8, TypedArrayKind, TypedElement};
+pub use search::SearchElement;
 
 #[derive(Debug)]
 struct TypedArrayView {
@@ -253,30 +255,34 @@ impl<T: TypedElement> TypedArray<T> {
         )
     }
 
-    pub fn includes(&self, search: f64, from_index: impl IndexInput) -> bool {
+    pub fn includes(&self, search: impl SearchElement<T>, from_index: impl IndexInput) -> bool {
+        let Some(search) = search.search_element() else {
+            return false;
+        };
         let start = normalize_index(from_index, self.view.length);
-        (start..self.view.length).any(|index| {
-            self.get_usize(index)
-                .is_some_and(|value| same_value_zero_number(value.to_number(), search))
-        })
+        if search.is_nan() {
+            (start..self.view.length).any(|index| self.get_usize(index).is_some_and(T::is_nan))
+        } else {
+            (start..self.view.length).any(|index| self.get_usize(index) == Some(search))
+        }
     }
 
-    pub fn includes_from_start(&self, search: f64) -> bool {
-        self.includes(search, 0.0)
+    pub fn includes_from_start(&self, search: impl SearchElement<T>) -> bool {
+        self.includes(search, 0_usize)
     }
 
-    pub fn index_of(&self, search: f64, from_index: impl IndexInput) -> isize {
+    pub fn index_of(&self, search: impl SearchElement<T>, from_index: impl IndexInput) -> isize {
+        let Some(search) = search.search_element() else {
+            return -1;
+        };
         let start = normalize_index(from_index, self.view.length);
         (start..self.view.length)
-            .find(|index| {
-                self.get_usize(*index)
-                    .is_some_and(|value| value.to_number() == search)
-            })
+            .find(|index| self.get_usize(*index) == Some(search))
             .map_or(-1, |index| index as isize)
     }
 
-    pub fn index_of_from_start(&self, search: f64) -> isize {
-        self.index_of(search, 0.0)
+    pub fn index_of_from_start(&self, search: impl SearchElement<T>) -> isize {
+        self.index_of(search, 0_usize)
     }
 
     pub fn join(&self, separator: &str) -> String {
@@ -619,8 +625,4 @@ fn normalized_range<Index: IndexInput>(
     let start = normalize_index(start, length);
     let end = end.map_or(length, |value| normalize_index(value, length));
     (start, end.max(start))
-}
-
-fn same_value_zero_number(left: f64, right: f64) -> bool {
-    left == right || left.is_nan() && right.is_nan()
 }

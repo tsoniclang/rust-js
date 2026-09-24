@@ -102,12 +102,7 @@ impl SharedBufferStorage {
         Ok(outcome)
     }
 
-    pub(crate) fn notify(&self, offset: usize, count: f64) -> usize {
-        let count = if count.is_nan() || count <= 0.0 {
-            0
-        } else {
-            count.trunc() as usize
-        };
+    pub(crate) fn notify(&self, offset: usize, count: usize) -> usize {
         let mut state = self.lock();
         let mut notified = 0;
         for waiter in &mut state.waiters {

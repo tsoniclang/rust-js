@@ -31,6 +31,22 @@ unsafe impl GlobalAlloc for CountingAllocator {
 static ALLOCATOR: CountingAllocator = CountingAllocator;
 
 #[test]
+fn typed_array_search_does_not_allocate_for_native_or_unrepresentable_queries() {
+    use tsonic_rust_js::{Float64Array, Uint8Array};
+    let bytes = Uint8Array::from_bytes(vec![0, 1, 255]);
+    let doubles = Float64Array::from_vec(vec![9_007_199_254_740_992_f64, u64::MAX as f64]).unwrap();
+    TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
+    for _ in 0..1000 {
+        black_box(bytes.includes_from_start(black_box(255_u8)));
+        black_box(bytes.index_of_from_start(black_box(u64::MAX)));
+        black_box(doubles.includes_from_start(black_box(9_007_199_254_740_993_u64)));
+        black_box(doubles.index_of_from_start(black_box(u64::MAX)));
+    }
+    let allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
+    assert_eq!(allocations, 0);
+}
+
+#[test]
 fn numeric_array_copy_borrows_without_allocating_or_boxing_elements() {
     use tsonic_rust_js::{array::JsArray, Uint8Array};
     let values = JsArray::from_dense(vec![9_007_199_254_740_993_u64, u64::MAX]);
