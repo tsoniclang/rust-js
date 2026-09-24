@@ -18,7 +18,7 @@ fn json_string_input_retains_its_guaranteed_result() {
             Some(expected.to_owned())
         );
     }
-    assert_eq!(json::stringify(&JsValue::Null).unwrap(), None);
+    assert_eq!(json::stringify(&JsValue::Null).unwrap().as_deref(), Some("null"));
 }
 
 #[test]

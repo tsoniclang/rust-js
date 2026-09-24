@@ -380,7 +380,7 @@ fn json_replacer_and_property_list_traverse_only_closed_values() {
             },
         )
         .unwrap();
-    assert_eq!(replaced.as_deref(), Some("{\"keep\":1}"));
+    assert_eq!(replaced.as_deref(), Some("{\"keep\":1,\"drop\":null}"));
 
     let properties = JsValue::array(JsArray::from_dense(vec![string_value("drop")]));
     let selected =
