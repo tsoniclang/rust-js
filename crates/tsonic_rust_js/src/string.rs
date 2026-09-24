@@ -86,8 +86,6 @@ macro_rules! impl_source_string_value {
 
 impl_source_string_value!(
     (),
-    tsonic_rust_runtime::Null,
-    tsonic_rust_runtime::Undefined,
     tsonic_rust_runtime::BigInt,
     tsonic_rust_runtime::TsonicError
 );

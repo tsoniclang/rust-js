@@ -59,7 +59,7 @@ impl JsObject {
     }
 
     pub fn get(&self, key: &str) -> JsValue {
-        self.get_ref(key).cloned().unwrap_or(JsValue::Undefined)
+        self.get_ref(key).cloned().unwrap_or(JsValue::Null)
     }
 
     pub fn get_ref(&self, key: &str) -> Option<&JsValue> {
@@ -69,9 +69,7 @@ impl JsObject {
     }
 
     pub fn get_exact(&self, key: &JsString) -> JsValue {
-        self.get_exact_ref(key)
-            .cloned()
-            .unwrap_or(JsValue::Undefined)
+        self.get_exact_ref(key).cloned().unwrap_or(JsValue::Null)
     }
 
     pub fn get_exact_ref(&self, key: &JsString) -> Option<&JsValue> {

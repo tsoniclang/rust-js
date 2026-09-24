@@ -385,7 +385,7 @@ where
     fn serialize_value(&mut self, value: &JsValue, depth: usize) -> Result<bool, E> {
         self.count_node(depth)?;
         match value {
-            JsValue::Undefined | JsValue::Symbol(_) => Ok(false),
+            JsValue::Symbol(_) => Ok(false),
             JsValue::Null => {
                 self.push_str("null")?;
                 Ok(true)
@@ -423,7 +423,7 @@ where
                         serializer.count_member()?;
                         serializer.member_prefix(depth, &mut first)?;
                         let pending = values.with_element(index, |value| -> Result<_, E> {
-                            let value = value.unwrap_or(&JsValue::Undefined);
+                            let value = value.unwrap_or(&JsValue::Null);
                             if serializer.can_borrow_leaf(value) {
                                 if !serializer.serialize_value(value, depth + 1)? {
                                     serializer.push_str("null")?;
@@ -467,7 +467,7 @@ where
                             let object = object.try_borrow().map_err(|_| {
                                 type_error("JSON.stringify cannot read a mutably borrowed object")
                             })?;
-                            let value = object.get_key_ref(&key).unwrap_or(&JsValue::Undefined);
+                            let value = object.get_key_ref(&key).unwrap_or(&JsValue::Null);
                             if serializer.can_borrow_leaf(value) {
                                 serializer.serialize_object_member(&key, value, depth, &mut first)?;
                                 None
@@ -634,9 +634,6 @@ where
         first: &mut bool,
     ) -> Result<(), E> {
         let value = self.replaced_value(key, value)?;
-        if matches!(value.as_ref(), JsValue::Undefined) {
-            return Ok(());
-        }
         self.count_member()?;
         self.member_prefix(depth, first)?;
         match key {

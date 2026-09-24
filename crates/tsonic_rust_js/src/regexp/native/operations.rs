@@ -190,7 +190,7 @@ pub(super) fn replacement_arguments(input: &str, matched: &Match) -> JsArray<JsV
     let mut arguments: Vec<_> = matched
         .groups()
         .map(|range| {
-            range.map_or(JsValue::Undefined, |span| {
+            range.map_or(JsValue::Null, |span| {
                 JsValue::String((&input[span]).to_owned())
             })
         })
@@ -202,7 +202,7 @@ pub(super) fn replacement_arguments(input: &str, matched: &Match) -> JsArray<JsV
         for (name, range) in matched.named_groups() {
             groups.set(
                 name,
-                range.map_or(JsValue::Undefined, |span| {
+                range.map_or(JsValue::Null, |span| {
                     JsValue::String((&input[span]).to_owned())
                 }),
             );

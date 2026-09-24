@@ -3,7 +3,7 @@ use std::iter::FusedIterator;
 use std::rc::Rc;
 
 use super::JsArray;
-use tsonic_rust_runtime::{IteratorResult, ObjectIdentity, ObjectIdentityCarrier, Undefined};
+use tsonic_rust_runtime::{IteratorResult, ObjectIdentity, ObjectIdentityCarrier};
 
 struct EntriesState<T> {
     array: Option<JsArray<T>>,
@@ -28,10 +28,10 @@ impl<T> JsArrayEntries<T> {
 }
 
 impl<T: Clone> JsArrayEntries<T> {
-    pub fn next_result(&self) -> IteratorResult<(usize, T), Undefined> {
+    pub fn next_result(&self) -> IteratorResult<(usize, T), ()> {
         match self.clone().next() {
             Some(value) => IteratorResult::yielded(value),
-            None => IteratorResult::completed(Undefined),
+            None => IteratorResult::completed(()),
         }
     }
 }

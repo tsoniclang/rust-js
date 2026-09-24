@@ -10,7 +10,6 @@ pub fn is_finite(value: &JsValue) -> bool {
 
 pub fn to_number(value: &JsValue) -> f64 {
     match value {
-        JsValue::Undefined => f64::NAN,
         JsValue::Null => 0.0,
         JsValue::Bool(value) => {
             if *value {

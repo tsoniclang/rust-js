@@ -238,7 +238,7 @@ fn empty_objects_keep_identity_when_boxed_as_closed_values() {
         tsonic_rust_js::json::stringify(&first.project_json().unwrap()).unwrap(),
         Some("{}".to_owned())
     );
-    assert_ne!(boxed, JsValue::Undefined);
+    assert_ne!(boxed, JsValue::Null);
 }
 
 #[test]

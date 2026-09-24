@@ -4,7 +4,6 @@ use tsonic_rust_js::abi::{
     array_from_dense_array, array_from_string_map_with_index, array_from_string_try_map,
     array_from_vec_map_with_index, array_from_vec_try_map, JsArray,
 };
-use tsonic_rust_runtime::Undefined;
 
 #[test]
 fn copies_preserve_element_identity_and_create_independent_array_storage() {
@@ -52,7 +51,7 @@ fn optional_copies_retain_explicit_undefined_without_mutating_the_source() {
     assert_eq!(copy.get(0), Some(Some(4)));
     assert_eq!(copy.get(1), Some(None));
     assert_eq!(copy.get(2), Some(None));
-    let undefined = JsArray::<Undefined>::with_length(2);
+    let undefined = JsArray::<()>::with_length(2);
     let present = array_from_dense_array(&undefined);
     assert!(present.has_index(0) && present.has_index(1));
     assert!(present.get(0).is_some());

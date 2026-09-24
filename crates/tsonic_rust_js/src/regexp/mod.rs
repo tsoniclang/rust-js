@@ -5,7 +5,7 @@ use std::rc::Rc;
 use std::sync::{Arc, OnceLock};
 
 use regress::{Flags, Match, Regex};
-use tsonic_rust_runtime::{ObjectIdentity, ObjectIdentityCarrier, Undefined};
+use tsonic_rust_runtime::{ObjectIdentity, ObjectIdentityCarrier};
 
 use crate::array::JsArray;
 use crate::equality::{hash_identity, JsHash, JsSameValueZero, JsStrictEqual};
@@ -606,25 +606,19 @@ impl JsRegExp {
         Self::new(pattern.clone(), flags.clone())
     }
 
-    pub fn from_string_with_undefined_flags(
-        pattern: &JsString,
-        _flags: Undefined,
-    ) -> JsResult<Self> {
+    pub fn from_string_with_undefined_flags(pattern: &JsString, _flags: ()) -> JsResult<Self> {
         Self::from_string(pattern)
     }
 
-    pub fn from_undefined(_pattern: Undefined) -> JsResult<Self> {
+    pub fn from_undefined(_pattern: ()) -> JsResult<Self> {
         Self::empty()
     }
 
-    pub fn from_undefined_with_flags(_pattern: Undefined, flags: &JsString) -> JsResult<Self> {
+    pub fn from_undefined_with_flags(_pattern: (), flags: &JsString) -> JsResult<Self> {
         Self::new(JsString::new(), flags.clone())
     }
 
-    pub fn from_undefined_with_undefined_flags(
-        _pattern: Undefined,
-        _flags: Undefined,
-    ) -> JsResult<Self> {
+    pub fn from_undefined_with_undefined_flags(_pattern: (), _flags: ()) -> JsResult<Self> {
         Self::empty()
     }
 
@@ -636,10 +630,7 @@ impl JsRegExp {
         Self::new(pattern.pattern(), flags.clone())
     }
 
-    pub fn call_from_regexp_with_undefined_flags(
-        pattern: &Self,
-        _flags: Undefined,
-    ) -> JsResult<Self> {
+    pub fn call_from_regexp_with_undefined_flags(pattern: &Self, _flags: ()) -> JsResult<Self> {
         Self::call_from_regexp(pattern)
     }
 
@@ -653,7 +644,7 @@ impl JsRegExp {
 
     pub fn construct_from_regexp_with_undefined_flags(
         pattern: &Self,
-        _flags: Undefined,
+        _flags: (),
     ) -> JsResult<Self> {
         Self::construct_from_regexp(pattern)
     }
@@ -1228,7 +1219,7 @@ pub fn regexp_replacement_argument_string(arguments: &JsArray<JsValue>, index: u
 }
 
 pub fn regexp_replacement_argument_value(arguments: &JsArray<JsValue>, index: usize) -> JsValue {
-    arguments.get(index).unwrap_or(JsValue::Undefined)
+    arguments.get(index).unwrap_or(JsValue::Null)
 }
 
 pub fn regexp_replacement_argument_rest(
@@ -1325,7 +1316,7 @@ fn regexp_replacement_arguments(matched: &JsRegExpExecArray, input: &JsString) -
     for capture_index in 1..matched.len() {
         values.push(match matched.group(capture_index) {
             Some(capture) => JsValue::Utf16String(capture),
-            None => JsValue::Undefined,
+            None => JsValue::Null,
         });
     }
     values.push(JsValue::from(matched.index()));
@@ -1338,9 +1329,9 @@ fn regexp_replacement_arguments(matched: &JsRegExpExecArray, input: &JsString) -
             .map(|(name, value)| {
                 (
                     name.clone(),
-                    value.as_ref().map_or(JsValue::Undefined, |value| {
-                        JsValue::Utf16String(value.clone())
-                    }),
+                    value
+                        .as_ref()
+                        .map_or(JsValue::Null, |value| JsValue::Utf16String(value.clone())),
                 )
             })
             .collect::<Vec<_>>();

@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use tsonic_rust_js::regexp::{regexp_escape_exact_native, regexp_exec_native, JsRegExp};
 use tsonic_rust_js::{JsArray, JsString, JsValue};
-use tsonic_rust_runtime::{JsError, JsErrorKind, TsonicError, Undefined};
+use tsonic_rust_runtime::{JsError, JsErrorKind, TsonicError};
 
 fn js(value: &str) -> JsString {
     JsString::from_utf8(value)
@@ -52,7 +52,7 @@ fn regexp_construction_identity_flags_and_source_are_exact() {
 fn regexp_constructor_entry_points_preserve_pattern_flags_and_identity() {
     let pattern = js("a+");
     let global = js("g");
-    let undefined = Undefined;
+    let undefined = ();
 
     let from_string = JsRegExp::from_string_with_flags(&pattern, &global).unwrap();
     assert_eq!(from_string.pattern(), pattern);
@@ -310,7 +310,7 @@ fn regexp_replacement_tokens_and_callback_arguments_are_exact() {
     assert_eq!(calls.len(), 2);
     assert!(matches!(&calls[0][0], JsValue::Utf16String(value) if value == &js("1")));
     assert!(matches!(&calls[0][1], JsValue::Utf16String(value) if value == &js("1")));
-    assert!(matches!(calls[0][2], JsValue::Undefined));
+    assert!(matches!(calls[0][2], JsValue::Null));
     assert!(matches!(calls[0][3], JsValue::UnsignedInteger(1)));
     assert!(matches!(&calls[0][4], JsValue::Utf16String(value) if value == &js("a1b2x")));
     assert!(matches!(calls[0][5], JsValue::Object(_)));

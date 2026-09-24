@@ -344,7 +344,7 @@ impl AbortSignal {
         Self {
             state: Rc::new(RefCell::new(AbortState {
                 aborted: false,
-                reason: JsValue::Undefined,
+                reason: JsValue::Null,
             })),
         }
     }

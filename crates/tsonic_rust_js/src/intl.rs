@@ -1,6 +1,6 @@
 //! Deterministic, closed internationalization carriers.
 
-use tsonic_rust_runtime::{ObjectIdentity, ObjectIdentityCarrier, Undefined};
+use tsonic_rust_runtime::{ObjectIdentity, ObjectIdentityCarrier};
 
 use crate::array::JsArray;
 use crate::date::JsDate;
@@ -22,14 +22,14 @@ pub fn integer_to_locale_string<Value: IntlNumberInput>(value: Value) -> String 
 
 pub fn integer_to_locale_string_with_undefined<Value: IntlNumberInput>(
     value: Value,
-    _locale: Undefined,
+    _locale: (),
 ) -> String {
     integer_to_locale_string(value)
 }
 
 pub fn integer_to_locale_string_with_undefined_options<Value: IntlNumberInput>(
     value: Value,
-    _locale: Undefined,
+    _locale: (),
     options: &JsValue,
 ) -> JsResult<String> {
     Ok(IntlNumberFormat::build(DEFAULT_LOCALE, options)?.format(value))
@@ -284,11 +284,11 @@ struct DateTimeFields {
 
 impl IntlDateTimeFormat {
     pub fn new() -> Self {
-        Self::build(DEFAULT_LOCALE, &JsValue::Undefined).expect("default Intl.DateTimeFormat")
+        Self::build(DEFAULT_LOCALE, &JsValue::Null).expect("default Intl.DateTimeFormat")
     }
 
     pub fn with_locale(locale: &str) -> JsResult<Self> {
-        Self::build(locale, &JsValue::Undefined)
+        Self::build(locale, &JsValue::Null)
     }
 
     pub fn with_locales(locales: &JsArray<String>) -> JsResult<Self> {
@@ -510,11 +510,11 @@ pub struct IntlNumberFormat {
 
 impl IntlNumberFormat {
     pub fn new() -> Self {
-        Self::build(DEFAULT_LOCALE, &JsValue::Undefined).expect("default Intl.NumberFormat")
+        Self::build(DEFAULT_LOCALE, &JsValue::Null).expect("default Intl.NumberFormat")
     }
 
     pub fn with_locale(locale: &str) -> JsResult<Self> {
-        Self::build(locale, &JsValue::Undefined)
+        Self::build(locale, &JsValue::Null)
     }
 
     pub fn with_locales(locales: &JsArray<String>) -> JsResult<Self> {
@@ -670,7 +670,7 @@ impl IntlNumberFormat {
             ));
         }
         let use_grouping = match option_value(options, "useGrouping")? {
-            JsValue::Undefined => Some("auto".to_owned()),
+            JsValue::Null => Some("auto".to_owned()),
             JsValue::Bool(false) => None,
             JsValue::Bool(true) => Some("always".to_owned()),
             JsValue::String(value) => match value.as_str() {
@@ -738,11 +738,11 @@ pub struct IntlCollator {
 
 impl IntlCollator {
     pub fn new() -> Self {
-        Self::build(DEFAULT_LOCALE, &JsValue::Undefined).expect("default Intl.Collator")
+        Self::build(DEFAULT_LOCALE, &JsValue::Null).expect("default Intl.Collator")
     }
 
     pub fn with_locale(locale: &str) -> JsResult<Self> {
-        Self::build(locale, &JsValue::Undefined)
+        Self::build(locale, &JsValue::Null)
     }
 
     pub fn with_locales(locales: &JsArray<String>) -> JsResult<Self> {
@@ -860,7 +860,7 @@ fn first_locale(locales: &JsArray<String>) -> JsResult<String> {
 
 fn options_object(options: &JsValue) -> JsResult<Option<std::cell::Ref<'_, crate::JsObject>>> {
     match options {
-        JsValue::Undefined | JsValue::Null => Ok(None),
+        JsValue::Null => Ok(None),
         JsValue::Object(object) => object
             .try_borrow()
             .map(Some)
@@ -870,12 +870,12 @@ fn options_object(options: &JsValue) -> JsResult<Option<std::cell::Ref<'_, crate
 }
 
 fn option_value(options: &JsValue, name: &str) -> JsResult<JsValue> {
-    Ok(options_object(options)?.map_or(JsValue::Undefined, |object| object.get(name)))
+    Ok(options_object(options)?.map_or(JsValue::Null, |object| object.get(name)))
 }
 
 fn string_option(options: &JsValue, name: &str) -> JsResult<Option<String>> {
     match option_value(options, name)? {
-        JsValue::Undefined => Ok(None),
+        JsValue::Null => Ok(None),
         JsValue::String(value) => Ok(Some(value)),
         _ => Err(type_error(format!("Intl option '{name}' must be a string"))),
     }
@@ -896,7 +896,7 @@ fn enum_option(options: &JsValue, name: &str, accepted: &[&str]) -> JsResult<Opt
 
 fn boolean_option(options: &JsValue, name: &str) -> JsResult<Option<bool>> {
     match option_value(options, name)? {
-        JsValue::Undefined => Ok(None),
+        JsValue::Null => Ok(None),
         JsValue::Bool(value) => Ok(Some(value)),
         _ => Err(type_error(format!("Intl option '{name}' must be boolean"))),
     }
@@ -909,7 +909,7 @@ fn integer_option(
     maximum: u16,
 ) -> JsResult<Option<u16>> {
     match option_value(options, name)? {
-        JsValue::Undefined => Ok(None),
+        JsValue::Null => Ok(None),
         JsValue::Number(value)
             if value.is_finite() && value >= f64::from(minimum) && value <= f64::from(maximum) =>
         {

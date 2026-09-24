@@ -11,7 +11,7 @@ fn boolean_primitive_methods_preserve_javascript_text_and_value() {
 
 #[test]
 fn coercive_number_globals_follow_closed_value_rules() {
-    assert!(abi::is_nan(&JsValue::Undefined));
+    assert!(!abi::is_nan(&JsValue::Null));
     assert!(!abi::is_nan(&JsValue::Utf16String(js(" 42 "))));
     assert!(abi::is_finite(&JsValue::Bool(true)));
     assert_eq!(abi::to_number(&JsValue::Null), 0.0);

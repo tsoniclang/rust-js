@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use std::ops::Deref;
 use std::rc::Rc;
 
-use tsonic_rust_runtime::{JsError, Undefined};
+use tsonic_rust_runtime::JsError;
 
 use super::{JsRegExp, JsRegExpIndexPair};
 
@@ -403,7 +403,7 @@ pub fn regexp_from_string_with_flags_native(pattern: &str, flags: &str) -> JsRes
 
 pub fn regexp_from_string_with_undefined_flags_native(
     pattern: &str,
-    flags: Undefined,
+    flags: (),
 ) -> JsResult<JsRegExp> {
     JsRegExp::from_string_with_undefined_flags(&JsString::from_utf8(pattern), flags)
 }
@@ -416,27 +416,21 @@ pub fn regexp_from_exact_with_flags(pattern: &JsString, flags: &str) -> JsResult
     JsRegExp::from_string_with_flags(pattern, &JsString::from_utf8(flags))
 }
 
-pub fn regexp_from_exact_with_undefined_flags(
-    pattern: &JsString,
-    flags: Undefined,
-) -> JsResult<JsRegExp> {
+pub fn regexp_from_exact_with_undefined_flags(pattern: &JsString, flags: ()) -> JsResult<JsRegExp> {
     JsRegExp::from_string_with_undefined_flags(pattern, flags)
 }
 
-pub fn regexp_from_undefined_native(pattern: Undefined) -> JsResult<JsRegExp> {
+pub fn regexp_from_undefined_native(pattern: ()) -> JsResult<JsRegExp> {
     JsRegExp::from_undefined(pattern)
 }
 
-pub fn regexp_from_undefined_with_flags_native(
-    pattern: Undefined,
-    flags: &str,
-) -> JsResult<JsRegExp> {
+pub fn regexp_from_undefined_with_flags_native(pattern: (), flags: &str) -> JsResult<JsRegExp> {
     JsRegExp::from_undefined_with_flags(pattern, &JsString::from_utf8(flags))
 }
 
 pub fn regexp_from_undefined_with_undefined_flags_native(
-    pattern: Undefined,
-    flags: Undefined,
+    pattern: (),
+    flags: (),
 ) -> JsResult<JsRegExp> {
     JsRegExp::from_undefined_with_undefined_flags(pattern, flags)
 }
@@ -454,7 +448,7 @@ pub fn regexp_call_from_regexp_with_flags_native(
 
 pub fn regexp_call_from_regexp_with_undefined_flags_native(
     pattern: &JsRegExp,
-    flags: Undefined,
+    flags: (),
 ) -> JsResult<JsRegExp> {
     JsRegExp::call_from_regexp_with_undefined_flags(pattern, flags)
 }
@@ -472,7 +466,7 @@ pub fn regexp_construct_from_regexp_with_flags_native(
 
 pub fn regexp_construct_from_regexp_with_undefined_flags_native(
     pattern: &JsRegExp,
-    flags: Undefined,
+    flags: (),
 ) -> JsResult<JsRegExp> {
     JsRegExp::construct_from_regexp_with_undefined_flags(pattern, flags)
 }

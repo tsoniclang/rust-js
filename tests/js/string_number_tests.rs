@@ -1,5 +1,4 @@
 use tsonic_rust_js::{JsArray, JsStringNumber};
-use tsonic_rust_runtime::{Null, Undefined};
 
 #[test]
 fn string_number_arrays_keep_native_strings_and_live_aliases() {
@@ -11,14 +10,7 @@ fn string_number_arrays_keep_native_strings_and_live_aliases() {
     );
     values.set(0, JsStringNumber::Number(4.0));
     assert_eq!(alias.get(0).unwrap().as_number(), 4.0);
-    alias.push(JsStringNumber::Undefined);
-    alias.push(JsStringNumber::Null);
-    assert_eq!(values.get(1).unwrap(), Undefined);
-    assert_eq!(values.get(2).unwrap(), Null);
-    assert_ne!(values.get(1).unwrap(), values.get(2).unwrap());
-    assert!(values.get(3).is_none());
-    assert_eq!(values.get(1).unwrap().type_of(), "undefined");
-    assert_eq!(values.get(2).unwrap().type_of(), "object");
+    assert!(values.get(1).is_none());
     assert_eq!(values.get(0).unwrap().type_of(), "number");
     assert_eq!(JsStringNumber::String("x".to_owned()).type_of(), "string");
     assert_ne!(
@@ -33,21 +25,24 @@ fn string_number_arrays_keep_native_strings_and_live_aliases() {
 }
 
 #[test]
-fn nullish_refinements_preserve_the_exact_selected_variant() {
-    assert_eq!(JsStringNumber::Null.as_null(), Null);
-    assert_eq!(JsStringNumber::Undefined.as_undefined(), Undefined);
-    for value in [
-        JsStringNumber::Number(0.0),
-        JsStringNumber::String(String::new()),
-        JsStringNumber::Undefined,
-    ] {
-        assert!(std::panic::catch_unwind(|| value.as_null()).is_err());
-    }
-    for value in [
-        JsStringNumber::Number(0.0),
-        JsStringNumber::String(String::new()),
-        JsStringNumber::Null,
-    ] {
-        assert!(std::panic::catch_unwind(|| value.as_undefined()).is_err());
-    }
+fn native_options_preserve_absence_without_losing_values_or_membership() {
+    let values = JsArray::from_dense(vec![
+        None,
+        Some(JsStringNumber::Number(0.0)),
+        Some(JsStringNumber::from_string(String::new())),
+    ]);
+    let alias = values.clone();
+    assert_eq!(values.get(0), Some(None));
+    assert!(values.has_index(0));
+    assert!(!values.has_index(3));
+    assert_eq!(values.get(3), None);
+    assert_eq!(values.get(1).unwrap().unwrap().as_number(), 0.0);
+    assert_eq!(values.get(2).unwrap().unwrap().as_string(), "");
+    alias.set(1, None);
+    assert_eq!(values.get(1), Some(None));
+    assert!(std::panic::catch_unwind(|| JsStringNumber::Number(0.0).as_string()).is_err());
+    assert!(
+        std::panic::catch_unwind(|| JsStringNumber::from_string(String::new()).as_number())
+            .is_err()
+    );
 }
