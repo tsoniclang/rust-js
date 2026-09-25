@@ -10,7 +10,7 @@ use tsonic_rust_runtime::{Callable, JsError, TsonicError, TsonicResult};
 
 static NEXT_TIMER_ID: AtomicU64 = AtomicU64::new(1);
 
-type TimerCallback = Rc<RefCell<Box<dyn FnMut() -> TsonicResult<()>>>>;
+type TimerCallback = Rc<dyn Fn() -> TsonicResult<()>>;
 
 struct TimerEntry {
     callback: TimerCallback,
@@ -80,7 +80,7 @@ fn schedule_callback<E>(callback: Callable<(), Result<(), E>>, delay_ms: u64, in
 where
     E: std::fmt::Display + 'static,
 {
-    let callback = Box::new(move || {
+    let callback: TimerCallback = Rc::new(move || {
         callback
             .call(())
             .map_err(|error| TsonicError::from(JsError::error(&error.to_string())))
@@ -91,7 +91,7 @@ where
         timers.insert(
             id,
             TimerEntry {
-                callback: Rc::new(RefCell::new(callback)),
+                callback,
                 delay,
                 due: Instant::now() + delay,
                 interval,
@@ -124,7 +124,7 @@ pub fn poll_timers() -> TsonicResult<bool> {
     });
     let did_work = !callbacks.is_empty();
     for callback in callbacks {
-        callback.borrow_mut()()?;
+        callback()?;
     }
     Ok(did_work)
 }
