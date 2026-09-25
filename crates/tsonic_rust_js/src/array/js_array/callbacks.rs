@@ -544,5 +544,4 @@ impl<T> JsArray<T> {
     {
         self.every_with(predicate)
     }
-
 }
