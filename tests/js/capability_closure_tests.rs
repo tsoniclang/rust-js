@@ -1,6 +1,4 @@
 use std::future::Future;
-use std::pin::pin;
-use std::task::{Context, Poll, Waker};
 
 use tsonic_rust_js::abi::{promise_all_settled, promise_any, promise_race};
 use tsonic_rust_js::{
@@ -393,10 +391,5 @@ fn string_value(value: &str) -> JsValue {
 }
 
 fn block_on<T>(future: impl Future<Output = T>) -> T {
-    let mut future = pin!(future);
-    let mut context = Context::from_waker(Waker::noop());
-    match future.as_mut().poll(&mut context) {
-        Poll::Ready(value) => value,
-        Poll::Pending => panic!("capability-closure future unexpectedly remained pending"),
-    }
+    tsonic_rust_js::event_loop::block_on(future).unwrap()
 }

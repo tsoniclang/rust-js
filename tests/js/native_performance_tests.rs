@@ -237,7 +237,7 @@ impl Clone for Counted {
 #[test]
 fn unique_promise_moves_values_and_shared_promise_remains_repeatable() {
     let copies = Rc::new(Cell::new(0));
-    let promise = JsPromise::resolved(Counted(copies.clone()));
+    let promise = JsPromise::<Counted>::resolved(Counted(copies.clone()));
     let mut future = std::pin::pin!(promise.into_result());
     let mut context = Context::from_waker(Waker::noop());
     assert!(matches!(
@@ -245,7 +245,7 @@ fn unique_promise_moves_values_and_shared_promise_remains_repeatable() {
         Poll::Ready(Ok(_))
     ));
     assert_eq!(copies.get(), 0);
-    let promise = JsPromise::resolved(String::from("retained"));
+    let promise = JsPromise::<String>::resolved(String::from("retained"));
     let alias = promise.clone();
     let mut first = std::pin::pin!(promise.into_result());
     let mut second = std::pin::pin!(alias.into_result());

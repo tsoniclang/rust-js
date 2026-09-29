@@ -1,29 +1,39 @@
 use std::cell::RefCell;
-use std::future::{poll_fn, Future};
+use std::future::Future;
 use std::pin::Pin;
 use std::rc::Rc;
-use std::task::{Context, Poll, Waker};
+use std::task::Waker;
 
-use tsonic_rust_runtime::{Callable, TsonicError, TsonicResult};
+use futures_util::future::Shared;
+use slab::Slab;
 
-use crate::array::JsArray;
-use crate::value::JsValue;
+use tsonic_rust_runtime::TsonicError;
 
-type PromiseFuture<'a, T> = Pin<Box<dyn Future<Output = TsonicResult<T>> + 'a>>;
+mod awaiting;
+mod combinators;
+mod settlement;
 
-enum PromiseState<'a, T> {
-    Pending {
-        future: Option<PromiseFuture<'a, T>>,
-        waiters: Vec<Waker>,
+pub use combinators::{promise_all_settled, promise_any, promise_race};
+pub use settlement::{PromiseExecutor, PromiseReject, PromiseResolution, PromiseResolve};
+
+type PromiseFuture<'a, T, Error> = Pin<Box<dyn Future<Output = Result<T, Error>> + 'a>>;
+
+enum PromiseState<'a, T, Error> {
+    Deferred {
+        waiters: Slab<Waker>,
     },
-    Settled(TsonicResult<T>),
+    Pending {
+        future: Option<PromiseFuture<'a, T, Error>>,
+    },
+    Shared(Shared<PromiseFuture<'a, T, Error>>),
+    Settled(Result<T, Error>),
 }
 
-pub struct JsPromise<'a, T> {
-    state: Rc<RefCell<PromiseState<'a, T>>>,
+pub struct JsPromise<'a, T, Error = TsonicError> {
+    state: Rc<RefCell<PromiseState<'a, T, Error>>>,
 }
 
-impl<'a, T> Clone for JsPromise<'a, T> {
+impl<'a, T, Error> Clone for JsPromise<'a, T, Error> {
     fn clone(&self) -> Self {
         Self {
             state: Rc::clone(&self.state),
@@ -31,7 +41,7 @@ impl<'a, T> Clone for JsPromise<'a, T> {
     }
 }
 
-impl<'a, T> JsPromise<'a, T> {
+impl<'a, T, Error: 'a> JsPromise<'a, T, Error> {
     pub fn from_infallible_factory<F, Fut>(factory: F) -> Self
     where
         F: FnOnce() -> Fut + 'a,
@@ -43,7 +53,7 @@ impl<'a, T> JsPromise<'a, T> {
     pub fn from_fallible_factory<F, Fut>(factory: F) -> Self
     where
         F: FnOnce() -> Fut + 'a,
-        Fut: Future<Output = TsonicResult<T>> + 'a,
+        Fut: Future<Output = Result<T, Error>> + 'a,
     {
         Self::from_fallible_future(factory())
     }
@@ -54,126 +64,60 @@ impl<'a, T> JsPromise<'a, T> {
         }
     }
 
-    pub fn rejected(error: TsonicError) -> Self {
+    pub fn rejected(error: Error) -> Self {
         Self {
             state: Rc::new(RefCell::new(PromiseState::Settled(Err(error)))),
         }
     }
 
-    fn from_fallible_future(future: impl Future<Output = TsonicResult<T>> + 'a) -> Self {
+    fn from_fallible_future(future: impl Future<Output = Result<T, Error>> + 'a) -> Self {
         Self {
             state: Rc::new(RefCell::new(PromiseState::Pending {
                 future: Some(Box::pin(future)),
-                waiters: Vec::new(),
             })),
         }
     }
 }
 
-impl<'a, T: Clone + 'a> JsPromise<'a, T> {
-    pub async fn into_result(self) -> TsonicResult<T> {
+impl<'a, T: Clone + 'a, Error: Clone + 'a> JsPromise<'a, T, Error> {
+    pub async fn into_result(self) -> Result<T, Error> {
         match Rc::try_unwrap(self.state) {
             Ok(state) => match state.into_inner() {
                 PromiseState::Settled(result) => result,
+                PromiseState::Deferred { .. } => std::future::pending().await,
                 PromiseState::Pending { future, .. } => {
                     future
                         .expect("an exclusively owned Promise cannot be polling")
                         .await
                 }
+                PromiseState::Shared(future) => future.await,
             },
             Err(state) => Self { state }.await_result().await,
         }
     }
 
-    pub async fn into_value(self) -> T {
+    pub async fn into_value(self) -> T
+    where
+        Error: std::fmt::Display,
+    {
         match self.into_result().await {
             Ok(value) => value,
             Err(error) => panic!("compiler-proven infallible Promise rejected: {error}"),
         }
     }
 
-    fn poll_result(&self, context: &mut Context<'_>) -> Poll<TsonicResult<T>> {
-        let future = {
-            let mut state = self.state.borrow_mut();
-            match &mut *state {
-                PromiseState::Settled(result) => return Poll::Ready(result.clone()),
-                PromiseState::Pending { future, waiters } => {
-                    if !waiters
-                        .iter()
-                        .any(|waiter| waiter.will_wake(context.waker()))
-                    {
-                        waiters.push(context.waker().clone());
-                    }
-                    match future.take() {
-                        Some(future) => future,
-                        None => return Poll::Pending,
-                    }
-                }
-            }
-        };
-        let mut future = future;
-        match future.as_mut().poll(context) {
-            Poll::Pending => {
-                let mut state = self.state.borrow_mut();
-                match &mut *state {
-                    PromiseState::Pending {
-                        future: pending_future,
-                        ..
-                    } => *pending_future = Some(future),
-                    PromiseState::Settled(_) => {
-                        panic!("Promise settled while its retained future was being polled")
-                    }
-                }
-                Poll::Pending
-            }
-            Poll::Ready(result) => {
-                let waiters = {
-                    let mut state = self.state.borrow_mut();
-                    let waiters = match &mut *state {
-                        PromiseState::Pending { waiters, .. } => std::mem::take(waiters),
-                        PromiseState::Settled(_) => {
-                            panic!("Promise settled twice while polling its retained future")
-                        }
-                    };
-                    *state = PromiseState::Settled(result.clone());
-                    waiters
-                };
-                for waiter in waiters {
-                    waiter.wake();
-                }
-                Poll::Ready(result)
-            }
-        }
+    pub async fn await_result(&self) -> Result<T, Error> {
+        awaiting::PromiseAwait::new(self).await
     }
 
-    pub async fn await_result(&self) -> TsonicResult<T> {
-        poll_fn(|context| self.poll_result(context)).await
-    }
-
-    pub async fn await_value(&self) -> T {
+    pub async fn await_value(&self) -> T
+    where
+        Error: std::fmt::Display,
+    {
         match self.await_result().await {
             Ok(value) => value,
             Err(error) => panic!("compiler-proven infallible Promise rejected: {error}"),
         }
-    }
-
-    pub fn finally_default(&self) -> Self {
-        self.finally_callback(None)
-    }
-
-    pub fn finally(&self, callback: Callable<(), TsonicResult<()>>) -> Self {
-        self.finally_callback(Some(callback))
-    }
-
-    fn finally_callback(&self, callback: Option<Callable<(), TsonicResult<()>>>) -> Self {
-        let source = self.clone();
-        Self::from_fallible_factory(move || async move {
-            let result = source.await_result().await;
-            if let Some(callback) = callback {
-                callback.call(())?;
-            }
-            result
-        })
     }
 }
 
@@ -184,108 +128,22 @@ pub struct PromiseFulfilledResult<T> {
 }
 
 #[derive(Clone, Debug)]
-pub struct PromiseRejectedResult {
+pub struct PromiseRejectedResult<Error = TsonicError> {
     pub status: String,
-    pub reason: JsValue,
+    pub reason: Error,
 }
 
 #[derive(Clone, Debug)]
-pub enum PromiseSettledResult<T> {
+pub enum PromiseSettledResult<T, Error = TsonicError> {
     Fulfilled(PromiseFulfilledResult<T>),
-    Rejected(PromiseRejectedResult),
+    Rejected(PromiseRejectedResult<Error>),
 }
 
-impl<T> PromiseSettledResult<T> {
+impl<T, Error> PromiseSettledResult<T, Error> {
     pub fn status(&self) -> &String {
         match self {
             Self::Fulfilled(result) => &result.status,
             Self::Rejected(result) => &result.status,
         }
     }
-}
-
-pub fn promise_race<'a, T: Clone + 'a>(values: &JsArray<JsPromise<'a, T>>) -> JsPromise<'a, T> {
-    let values = values.values();
-    JsPromise::from_fallible_factory(move || async move {
-        poll_fn(move |context| {
-            for value in &values {
-                if let Poll::Ready(result) = value.poll_result(context) {
-                    return Poll::Ready(result);
-                }
-            }
-            Poll::Pending
-        })
-        .await
-    })
-}
-
-pub fn promise_any<'a, T: Clone + 'a>(values: &JsArray<JsPromise<'a, T>>) -> JsPromise<'a, T> {
-    let values = values.values();
-    JsPromise::from_fallible_factory(move || async move {
-        if values.is_empty() {
-            return Err(TsonicError::Js(crate::aggregate_error(
-                "All promises were rejected",
-            )));
-        }
-        let mut rejected = vec![false; values.len()];
-        poll_fn(move |context| {
-            for (index, value) in values.iter().enumerate() {
-                if rejected[index] {
-                    continue;
-                }
-                match value.poll_result(context) {
-                    Poll::Ready(Ok(value)) => return Poll::Ready(Ok(value)),
-                    Poll::Ready(Err(_)) => rejected[index] = true,
-                    Poll::Pending => {}
-                }
-            }
-            if rejected.iter().all(|rejected| *rejected) {
-                Poll::Ready(Err(TsonicError::Js(crate::aggregate_error(
-                    "All promises were rejected",
-                ))))
-            } else {
-                Poll::Pending
-            }
-        })
-        .await
-    })
-}
-
-pub fn promise_all_settled<'a, T: Clone + 'a>(
-    values: &JsArray<JsPromise<'a, T>>,
-) -> JsPromise<'a, JsArray<PromiseSettledResult<T>>> {
-    let values = values.values();
-    JsPromise::from_infallible_factory(move || async move {
-        let mut settled = vec![None; values.len()];
-        poll_fn(move |context| {
-            for (index, value) in values.iter().enumerate() {
-                if settled[index].is_some() {
-                    continue;
-                }
-                settled[index] = match value.poll_result(context) {
-                    Poll::Pending => None,
-                    Poll::Ready(Ok(value)) => {
-                        Some(PromiseSettledResult::Fulfilled(PromiseFulfilledResult {
-                            status: "fulfilled".to_string(),
-                            value,
-                        }))
-                    }
-                    Poll::Ready(Err(error)) => {
-                        Some(PromiseSettledResult::Rejected(PromiseRejectedResult {
-                            status: "rejected".to_string(),
-                            reason: JsValue::String(error.to_string()),
-                        }))
-                    }
-                };
-            }
-            if settled.iter().all(Option::is_some) {
-                Poll::Ready(JsArray::from_dense(
-                    settled.iter().map(|value| value.clone().unwrap()).collect(),
-                ))
-            } else {
-                Poll::Pending
-            }
-        })
-        .await
-    })
 }

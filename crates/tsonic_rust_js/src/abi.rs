@@ -108,7 +108,7 @@ pub use crate::object::records::{
 pub use crate::object::{is as object_is, JsObject};
 pub use crate::promise::{
     promise_all_settled, promise_any, promise_race, JsPromise, PromiseFulfilledResult,
-    PromiseRejectedResult, PromiseSettledResult,
+    PromiseRejectedResult, PromiseResolution, PromiseSettledResult,
 };
 pub use crate::regexp::{
     regexp_call_from_regexp_native, regexp_call_from_regexp_with_flags_native,
