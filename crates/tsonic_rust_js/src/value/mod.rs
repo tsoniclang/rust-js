@@ -16,6 +16,7 @@ use crate::{JsString, JsSymbol};
 use tsonic_rust_runtime::{JsError, JsErrorKind, ToSourceString};
 
 mod numbers;
+mod primitives;
 
 pub trait JsClosedValueCarrier: fmt::Debug {
     fn identity_key(&self) -> usize;
@@ -119,6 +120,15 @@ pub enum JsValue {
     Number(f64),
     Integer(i64),
     UnsignedInteger(u64),
+    Int8(i8),
+    Uint8(u8),
+    Int16(i16),
+    Uint16(u16),
+    Int32(i32),
+    Uint32(u32),
+    NativeInt(isize),
+    NativeUint(usize),
+    Float32(f32),
     String(String),
     Utf16String(JsString),
     Symbol(JsSymbol),
@@ -318,6 +328,15 @@ impl InspectState {
             JsValue::Number(value) => format_js_number(*value),
             JsValue::Integer(value) => value.to_string(),
             JsValue::UnsignedInteger(value) => value.to_string(),
+            JsValue::Int8(value) => crate::number::to_string(*value),
+            JsValue::Uint8(value) => crate::number::to_string(*value),
+            JsValue::Int16(value) => crate::number::to_string(*value),
+            JsValue::Uint16(value) => crate::number::to_string(*value),
+            JsValue::Int32(value) => crate::number::to_string(*value),
+            JsValue::Uint32(value) => crate::number::to_string(*value),
+            JsValue::NativeInt(value) => crate::number::to_string(*value),
+            JsValue::NativeUint(value) => crate::number::to_string(*value),
+            JsValue::Float32(value) => crate::number::to_string(*value),
             JsValue::String(value) => format!("{:?}", value),
             JsValue::Utf16String(value) => value.inspect_quoted(),
             JsValue::Symbol(value) => format!("{value:?}"),
@@ -410,7 +429,7 @@ impl JsSameValue for JsValue {
                 left.identity_key() == right.identity_key()
             }
             (Self::JsonProjection(left), Self::JsonProjection(right)) => left.ptr_eq(right),
-            _ => numbers::integer_equal(self, other, true),
+            _ => numbers::equal(self, other, true, true),
         }
     }
 }
@@ -430,7 +449,7 @@ impl JsSameValueZero for JsValue {
                 left.identity_key() == right.identity_key()
             }
             (Self::JsonProjection(left), Self::JsonProjection(right)) => left.ptr_eq(right),
-            _ => numbers::integer_equal(self, other, false),
+            _ => numbers::equal(self, other, false, true),
         }
     }
 }
@@ -443,6 +462,15 @@ impl JsHash for JsValue {
             Self::Number(value) => numbers::float_hash(*value),
             Self::Integer(value) => value.js_hash(),
             Self::UnsignedInteger(value) => value.js_hash(),
+            Self::Int8(value) => i64::from(*value).js_hash(),
+            Self::Uint8(value) => u64::from(*value).js_hash(),
+            Self::Int16(value) => i64::from(*value).js_hash(),
+            Self::Uint16(value) => u64::from(*value).js_hash(),
+            Self::Int32(value) => i64::from(*value).js_hash(),
+            Self::Uint32(value) => u64::from(*value).js_hash(),
+            Self::NativeInt(value) => (*value as i64).js_hash(),
+            Self::NativeUint(value) => (*value as u64).js_hash(),
+            Self::Float32(value) => numbers::float_hash(f64::from(*value)),
             Self::String(value) => value.js_hash(),
             Self::Utf16String(value) => value.js_hash(),
             Self::Symbol(value) => value.js_hash(),
@@ -469,7 +497,7 @@ impl JsStrictEqual for JsValue {
                 left.identity_key() == right.identity_key()
             }
             (Self::JsonProjection(left), Self::JsonProjection(right)) => left.ptr_eq(right),
-            _ => numbers::integer_equal(self, other, false),
+            _ => numbers::equal(self, other, false, false),
         }
     }
 }
@@ -483,32 +511,6 @@ impl From<Vec<JsValue>> for JsValue {
 impl From<bool> for JsValue {
     fn from(value: bool) -> Self {
         Self::Bool(value)
-    }
-}
-
-macro_rules! impl_native_number_from {
-    ($variant:ident, $carrier:ty; $($source:ty),+ $(,)?) => {
-        $(impl From<$source> for JsValue {
-            fn from(value: $source) -> Self {
-                Self::$variant(<$carrier>::from(value))
-            }
-        })+
-    };
-}
-
-impl_native_number_from!(Integer, i64; i8, i16, i32, i64);
-impl_native_number_from!(UnsignedInteger, u64; u8, u16, u32, u64);
-impl_native_number_from!(Number, f64; f32, f64);
-
-impl From<isize> for JsValue {
-    fn from(value: isize) -> Self {
-        Self::Integer(value as i64)
-    }
-}
-
-impl From<usize> for JsValue {
-    fn from(value: usize) -> Self {
-        Self::UnsignedInteger(value as u64)
     }
 }
 

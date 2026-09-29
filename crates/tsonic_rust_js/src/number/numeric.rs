@@ -39,12 +39,11 @@ impl JsNumeric {
         Self::BigInt(value.clone())
     }
 
-    pub fn type_of(&self) -> String {
+    pub fn type_of(&self) -> &'static str {
         match self {
             Self::Number(_) => "number",
             Self::BigInt(_) => "bigint",
         }
-        .to_owned()
     }
 
     pub fn as_number(&self) -> f64 {

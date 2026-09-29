@@ -21,6 +21,15 @@ pub fn to_number(value: &JsValue) -> f64 {
         JsValue::Number(value) => *value,
         JsValue::Integer(value) => *value as f64,
         JsValue::UnsignedInteger(value) => *value as f64,
+        JsValue::Int8(value) => f64::from(*value),
+        JsValue::Uint8(value) => f64::from(*value),
+        JsValue::Int16(value) => f64::from(*value),
+        JsValue::Uint16(value) => f64::from(*value),
+        JsValue::Int32(value) => f64::from(*value),
+        JsValue::Uint32(value) => f64::from(*value),
+        JsValue::NativeInt(value) => *value as f64,
+        JsValue::NativeUint(value) => *value as f64,
+        JsValue::Float32(value) => f64::from(*value),
         JsValue::String(value) => crate::number::numeric_string(value),
         JsValue::Utf16String(value) => {
             let Ok(text) = value.to_utf8() else {

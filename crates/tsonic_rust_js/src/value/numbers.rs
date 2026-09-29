@@ -1,5 +1,7 @@
 use super::JsValue;
 use crate::equality::JsHash;
+use crate::number::NumericRef;
+use std::cmp::Ordering;
 
 fn signed(value: f64) -> Option<i64> {
     (value >= i64::MIN as f64 && value < -(i64::MIN as f64) && value.fract() == 0.0)
@@ -11,26 +13,22 @@ fn unsigned(value: f64) -> Option<u64> {
         .then_some(value as u64)
 }
 
-pub(super) fn integer_equal(left: &JsValue, right: &JsValue, signed_zero: bool) -> bool {
-    match (left, right) {
-        (JsValue::Integer(left), JsValue::Integer(right)) => left == right,
-        (JsValue::UnsignedInteger(left), JsValue::UnsignedInteger(right)) => left == right,
-        (JsValue::Integer(signed), JsValue::UnsignedInteger(unsigned))
-        | (JsValue::UnsignedInteger(unsigned), JsValue::Integer(signed)) => {
-            u64::try_from(*signed).ok() == Some(*unsigned)
+pub(super) fn equal(left: &JsValue, right: &JsValue, signed_zero: bool, equal_nan: bool) -> bool {
+    let (Some(left), Some(right)) = (left.numeric_ref(), right.numeric_ref()) else {
+        return false;
+    };
+    if let (NumericRef::Float(left), NumericRef::Float(right)) = (left, right) {
+        if left.is_nan() && right.is_nan() {
+            return equal_nan;
         }
-        (JsValue::Integer(integer), JsValue::Number(number))
-        | (JsValue::Number(number), JsValue::Integer(integer)) => {
-            !(signed_zero && number.is_sign_negative() && *number == 0.0)
-                && signed(*number) == Some(*integer)
+        if signed_zero && left == 0.0 && right == 0.0 {
+            return left.is_sign_negative() == right.is_sign_negative();
         }
-        (JsValue::UnsignedInteger(integer), JsValue::Number(number))
-        | (JsValue::Number(number), JsValue::UnsignedInteger(integer)) => {
-            !(signed_zero && number.is_sign_negative() && *number == 0.0)
-                && unsigned(*number) == Some(*integer)
-        }
-        _ => false,
+    } else if signed_zero && [left, right].iter().any(|value|
+        matches!(value, NumericRef::Float(value) if *value == 0.0 && value.is_sign_negative())) {
+        return false;
     }
+    left.compare(right) == Some(Ordering::Equal)
 }
 
 pub(super) fn float_hash(value: f64) -> u64 {

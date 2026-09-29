@@ -273,6 +273,15 @@ fn normalize_property_list(values: &JsValue) -> JsResult<Vec<PropertyKey>> {
             JsValue::Number(value) => PropertyKey::Native(crate::number::to_string(value)),
             JsValue::Integer(value) => PropertyKey::Native(value.to_string()),
             JsValue::UnsignedInteger(value) => PropertyKey::Native(value.to_string()),
+            JsValue::Int8(value) => PropertyKey::Native(crate::number::to_string(value)),
+            JsValue::Uint8(value) => PropertyKey::Native(crate::number::to_string(value)),
+            JsValue::Int16(value) => PropertyKey::Native(crate::number::to_string(value)),
+            JsValue::Uint16(value) => PropertyKey::Native(crate::number::to_string(value)),
+            JsValue::Int32(value) => PropertyKey::Native(crate::number::to_string(value)),
+            JsValue::Uint32(value) => PropertyKey::Native(crate::number::to_string(value)),
+            JsValue::NativeInt(value) => PropertyKey::Native(crate::number::to_string(value)),
+            JsValue::NativeUint(value) => PropertyKey::Native(crate::number::to_string(value)),
+            JsValue::Float32(value) => PropertyKey::Native(crate::number::to_string(value)),
             _ => continue,
         };
         if !properties.contains(&key) {
@@ -404,6 +413,42 @@ where
             }
             JsValue::UnsignedInteger(value) => {
                 self.push_str(&value.to_string())?;
+                Ok(true)
+            }
+            JsValue::Int8(value) => {
+                self.push_str(&value.to_string())?;
+                Ok(true)
+            }
+            JsValue::Uint8(value) => {
+                self.push_str(&value.to_string())?;
+                Ok(true)
+            }
+            JsValue::Int16(value) => {
+                self.push_str(&value.to_string())?;
+                Ok(true)
+            }
+            JsValue::Uint16(value) => {
+                self.push_str(&value.to_string())?;
+                Ok(true)
+            }
+            JsValue::Int32(value) => {
+                self.push_str(&value.to_string())?;
+                Ok(true)
+            }
+            JsValue::Uint32(value) => {
+                self.push_str(&value.to_string())?;
+                Ok(true)
+            }
+            JsValue::NativeInt(value) => {
+                self.push_str(&value.to_string())?;
+                Ok(true)
+            }
+            JsValue::NativeUint(value) => {
+                self.push_str(&value.to_string())?;
+                Ok(true)
+            }
+            JsValue::Float32(value) => {
+                self.push_str(&json_number(*value))?;
                 Ok(true)
             }
             JsValue::String(value) => {
@@ -676,14 +721,15 @@ where
     }
 }
 
-fn json_number(value: f64) -> String {
-    if !value.is_finite() {
+fn json_number<T: Copy + Into<f64> + std::fmt::Display + std::fmt::LowerExp>(value: T) -> String {
+    let magnitude = value.into();
+    if !magnitude.is_finite() {
         return "null".to_string();
     }
-    if value == 0.0 {
+    if magnitude == 0.0 {
         return "0".to_string();
     }
-    let absolute = value.abs();
+    let absolute = magnitude.abs();
     if !(1e-6..1e21).contains(&absolute) {
         return normalize_exponential(format!("{value:e}"));
     }

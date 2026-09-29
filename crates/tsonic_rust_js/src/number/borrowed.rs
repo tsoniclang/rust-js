@@ -12,7 +12,7 @@ pub enum NumericRef<'value> {
 }
 
 impl NumericRef<'_> {
-    pub(super) fn compare(self, other: Self) -> Option<Ordering> {
+    pub fn compare(self, other: Self) -> Option<Ordering> {
         match (self, other) {
             (Self::Float(left), Self::Float(right)) => left.partial_cmp(&right),
             (Self::Signed(left), Self::Signed(right)) => Some(left.cmp(&right)),

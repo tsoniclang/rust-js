@@ -31,6 +31,39 @@ unsafe impl GlobalAlloc for CountingAllocator {
 static ALLOCATOR: CountingAllocator = CountingAllocator;
 
 #[test]
+fn closed_native_primitives_box_without_allocating() {
+    use tsonic_rust_js::{equality::JsHash, JsValue};
+    TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
+    for _ in 0..1000 {
+        macro_rules! check {
+            ($($value:expr),+ $(,)?) => {$({
+                let boxed = JsValue::from(black_box($value));
+                black_box(boxed.js_hash());
+                black_box(boxed.numeric_ref());
+                black_box(boxed.type_of());
+                black_box(boxed);
+            })+};
+        }
+        check!(
+            i8::MIN,
+            u8::MAX,
+            i16::MIN,
+            u16::MAX,
+            i32::MIN,
+            u32::MAX,
+            i64::MIN,
+            u64::MAX,
+            isize::MIN,
+            usize::MAX,
+            0.1_f32,
+            0.1_f64
+        );
+    }
+    let allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
+    assert_eq!(allocations, 0);
+}
+
+#[test]
 fn typed_array_search_does_not_allocate_for_native_or_unrepresentable_queries() {
     use tsonic_rust_js::{Float64Array, Uint8Array};
     let bytes = Uint8Array::from_bytes(vec![0, 1, 255]);
