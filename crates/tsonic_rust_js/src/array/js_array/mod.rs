@@ -555,6 +555,16 @@ impl<T> JsArray<T> {
         self.state.borrow().values.clone()
     }
 
+    pub fn into_values(self) -> Vec<T>
+    where
+        T: Clone,
+    {
+        match Rc::try_unwrap(self.state) {
+            Ok(owner) => owner.values.into_inner().values,
+            Err(owner) => owner.values.borrow().values.clone(),
+        }
+    }
+
     pub fn with_values<Result>(&self, read: impl FnOnce(&[T]) -> Result) -> Result {
         read(&self.state.borrow().values)
     }

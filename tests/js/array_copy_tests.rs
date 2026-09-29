@@ -6,6 +6,42 @@ use tsonic_rust_js::abi::{
 };
 
 #[test]
+fn consuming_array_values_move_exclusive_storage_and_preserve_shared_aliases() {
+    struct Counted {
+        copies: Rc<Cell<usize>>,
+        value: usize,
+    }
+    impl Clone for Counted {
+        fn clone(&self) -> Self {
+            self.copies.set(self.copies.get() + 1);
+            Self {
+                copies: Rc::clone(&self.copies),
+                value: self.value,
+            }
+        }
+    }
+    let copies = Rc::new(Cell::new(0));
+    let values = vec![Counted {
+        copies: Rc::clone(&copies),
+        value: 7,
+    }];
+    let pointer = values.as_ptr();
+    let owned = JsArray::from_dense(values).into_values();
+    assert_eq!(owned.as_ptr(), pointer);
+    assert_eq!(copies.get(), 0);
+    assert_eq!(owned[0].value, 7);
+
+    let shared = JsArray::from_dense(owned);
+    let alias = shared.clone();
+    let copied = shared.into_values();
+    assert_ne!(copied.as_ptr(), pointer);
+    assert_eq!(copies.get(), 1);
+    alias.with_values(|retained| assert_eq!(retained[0].value, 7));
+    assert_eq!(copied[0].value, 7);
+    assert!(JsArray::<usize>::new().into_values().is_empty());
+}
+
+#[test]
 fn copies_preserve_element_identity_and_create_independent_array_storage() {
     let object = Rc::new(Cell::new(3));
     let original = JsArray::from_dense(vec![Rc::clone(&object)]);
