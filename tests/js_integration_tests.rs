@@ -1,5 +1,8 @@
 use tsonic_rust_js::JsString;
 
+#[path = "js/record_tests.rs"]
+mod record_tests;
+
 fn js(value: impl AsRef<str>) -> JsString {
     JsString::from_utf8(value.as_ref())
 }
