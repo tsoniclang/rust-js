@@ -42,6 +42,10 @@ pub trait JsToString {
         output.push_str(&self.to_js_string());
     }
 
+    fn write_js_join_value(&self, output: &mut String) {
+        self.write_js_string(output);
+    }
+
     fn join_js_strings(values: &[Self], separator: &str) -> String
     where
         Self: Sized,
@@ -51,7 +55,7 @@ pub trait JsToString {
             if index != 0 {
                 output.push_str(separator);
             }
-            value.write_js_string(&mut output);
+            value.write_js_join_value(&mut output);
         }
         output
     }
@@ -92,6 +96,26 @@ impl_source_string_value!(
 
 pub fn from_value<Value: JsToString + ?Sized>(value: &Value) -> String {
     value.to_js_string()
+}
+
+impl<Value: JsToString> JsToString for Option<Value> {
+    fn to_js_string(&self) -> String {
+        self.as_ref()
+            .map_or_else(|| "null".to_owned(), JsToString::to_js_string)
+    }
+
+    fn write_js_string(&self, output: &mut String) {
+        match self {
+            Some(value) => value.write_js_string(output),
+            None => output.push_str("null"),
+        }
+    }
+
+    fn write_js_join_value(&self, output: &mut String) {
+        if let Some(value) = self {
+            value.write_js_join_value(output);
+        }
+    }
 }
 
 impl JsToString for String {

@@ -2,6 +2,28 @@ use tsonic_rust_js::{abi, array::ArrayLength, JsErrorKind};
 use tsonic_rust_runtime::BigInt;
 
 #[test]
+fn optional_primitive_conversions_preserve_payloads_and_absence() {
+    assert_eq!(abi::number_from_value(&Some(" 0x10 ".to_owned())), 16.0);
+    assert_eq!(abi::number_from_value(&None::<String>), 0.0);
+    assert_eq!(abi::number_from_value(&Some(u64::MAX)), u64::MAX as f64);
+    assert_eq!(abi::number_from_value(&Some(false)), 0.0);
+    assert!(abi::number_from_value(&Some("invalid".to_owned())).is_nan());
+    assert_eq!(
+        abi::number_from_value(&tsonic_rust_js::JsValue::String("42".to_owned())),
+        42.0
+    );
+    assert_eq!(
+        abi::string_from_value(&Some(9_007_199_254_740_993_i64)),
+        "9007199254740993"
+    );
+    assert_eq!(abi::string_from_value(&None::<i64>), "null");
+    assert_eq!(abi::string_from_value(&Some(String::new())), "");
+    assert_eq!(abi::string_from_value(&Some(false)), "false");
+    let values = tsonic_rust_js::JsArray::from_dense(vec![None, Some("value".to_owned()), None]);
+    assert_eq!(values.join("|"), "|value|");
+}
+
+#[test]
 fn compiler_provider_error_constructors_retain_kind_and_message() {
     for (error, expected) in [
         (abi::range_error("range"), JsErrorKind::RangeError),

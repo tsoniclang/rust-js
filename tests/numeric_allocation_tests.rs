@@ -31,6 +31,26 @@ unsafe impl GlobalAlloc for CountingAllocator {
 static ALLOCATOR: CountingAllocator = CountingAllocator;
 
 #[test]
+fn optional_primitive_conversion_avoids_boxing_and_intermediate_strings() {
+    use tsonic_rust_js::{abi, string::JsToString};
+    let optional_text = Some(" 42 ".to_owned());
+    let integer = Some(9_007_199_254_740_993_i64);
+    let mut buffer = String::with_capacity(32);
+    TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
+    for _ in 0..1000 {
+        black_box(abi::number_from_value(black_box(&optional_text)));
+        black_box(abi::number_from_value(black_box(&integer)));
+        black_box(abi::number_from_value(black_box(&None::<u64>)));
+        buffer.clear();
+        black_box(&integer).write_js_string(&mut buffer);
+        black_box(&buffer);
+    }
+    let allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
+    assert_eq!(allocations, 0);
+    assert_eq!(buffer, "9007199254740993");
+}
+
+#[test]
 fn closed_native_primitives_box_without_allocating() {
     use tsonic_rust_js::{equality::JsHash, JsValue};
     TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
