@@ -31,6 +31,26 @@ unsafe impl GlobalAlloc for CountingAllocator {
 static ALLOCATOR: CountingAllocator = CountingAllocator;
 
 #[test]
+fn closed_string_conversion_allocates_only_its_requested_result() {
+    use tsonic_rust_js::{abi, JsArray, JsValue};
+    let value = JsValue::String("a native string with enough bytes".to_owned());
+    let values = JsValue::array(JsArray::from_dense(vec![
+        JsValue::Integer(42),
+        JsValue::Null,
+    ]));
+    TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
+    let result = abi::closed_value_string(black_box(&value)).unwrap();
+    let scalar_allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
+    assert_eq!(scalar_allocations, 1);
+    assert_eq!(result, "a native string with enough bytes");
+    TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
+    let result = abi::closed_value_string(black_box(&values)).unwrap();
+    let array_allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
+    assert_eq!(array_allocations, 1);
+    assert_eq!(result, "42,");
+}
+
+#[test]
 fn optional_primitive_conversion_avoids_boxing_and_intermediate_strings() {
     use tsonic_rust_js::{abi, string::JsToString};
     let optional_text = Some(" 42 ".to_owned());

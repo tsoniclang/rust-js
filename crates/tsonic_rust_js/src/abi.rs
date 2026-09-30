@@ -173,6 +173,7 @@ pub use crate::typed_array::{
     Uint8Array, Uint8ClampedArray,
 };
 pub use crate::uri::{decode_uri, decode_uri_component, encode_uri, encode_uri_component};
+pub use crate::value::closed_value_string;
 pub use crate::value::{
     clone_value as clone_js_value, from_closed as js_value_from_closed,
     from_exact_string as js_value_from_exact_string, from_string as js_value_from_string,

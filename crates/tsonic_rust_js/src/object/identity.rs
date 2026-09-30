@@ -13,6 +13,11 @@ impl JsClosedValueCarrier for EmptyObject {
         "[object Object]".to_owned()
     }
 
+    fn write_string(&self, output: &mut String) -> JsResult<()> {
+        output.push_str("[object Object]");
+        Ok(())
+    }
+
     fn project_json(&self) -> JsResult<JsValue> {
         Ok(JsValue::object(JsObject::new()))
     }

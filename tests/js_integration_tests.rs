@@ -19,6 +19,8 @@ mod array_location_tests;
 mod atomics_tests;
 #[path = "js/capability_closure_tests.rs"]
 mod capability_closure_tests;
+#[path = "js/closed_string_tests.rs"]
+mod closed_string_tests;
 #[path = "js/console_tests.rs"]
 mod console_tests;
 #[path = "js/construction_tests.rs"]

@@ -17,10 +17,14 @@ use tsonic_rust_runtime::{JsError, JsErrorKind, ToSourceString};
 
 mod numbers;
 mod primitives;
+mod string;
+
+pub use string::closed_value_string;
 
 pub trait JsClosedValueCarrier: fmt::Debug {
     fn identity_key(&self) -> usize;
     fn inspect_value(&self) -> String;
+    fn write_string(&self, output: &mut String) -> JsResult<()>;
     fn project_json(&self) -> JsResult<JsValue>;
 }
 
