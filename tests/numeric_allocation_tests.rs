@@ -31,6 +31,80 @@ unsafe impl GlobalAlloc for CountingAllocator {
 static ALLOCATOR: CountingAllocator = CountingAllocator;
 
 #[test]
+fn native_shared_identity_admission_preserves_the_original_owner_without_allocating() {
+    use std::rc::Rc;
+    use tsonic_rust_js::{equality::JsStrictEqual, JsValue};
+    use tsonic_rust_runtime::{EmptyObject, ObjectHandle};
+    struct Dropped(Rc<Cell<usize>>);
+    impl Drop for Dropped {
+        fn drop(&mut self) {
+            self.0.set(self.0.get() + 1);
+        }
+    }
+    let drops = Rc::new(Cell::new(0));
+    let object = ObjectHandle::new(Dropped(drops.clone()));
+    let empty = EmptyObject::new();
+    TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
+    let left = JsValue::from_shared_identity(object.clone().into_shared());
+    let right = JsValue::from_shared_identity(object.clone().into_shared());
+    let empty_value = JsValue::from(empty.clone());
+    let empty_alias = JsValue::from(empty);
+    for _ in 0..1000 {
+        assert!(black_box(&left).strict_equal(black_box(&right)));
+        assert!(black_box(&empty_value).strict_equal(black_box(&empty_alias)));
+    }
+    let allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
+    assert_eq!(allocations, 0);
+    if usize::BITS == 64 {
+        assert_eq!(std::mem::size_of::<JsValue>(), 40);
+    }
+    assert_eq!(left.type_of(), "object");
+    assert!(tsonic_rust_js::value::closed_value_string(&left).is_err());
+    if let JsValue::Closed(value) = &left {
+        assert!(value.project_json().is_err());
+    } else {
+        panic!("native identity must be closed");
+    }
+    drop(object);
+    drop(left);
+    assert_eq!(drops.get(), 0);
+    drop(right);
+    assert_eq!(drops.get(), 1);
+}
+
+#[test]
+fn native_passive_erasure_allocates_one_owner_and_never_inspects_its_payload() {
+    use std::rc::Rc;
+    use tsonic_rust_js::{equality::JsStrictEqual, JsValue};
+    struct Dropped(Rc<Cell<usize>>);
+    impl Drop for Dropped {
+        fn drop(&mut self) {
+            self.0.set(self.0.get() + 1);
+        }
+    }
+    let drops = Rc::new(Cell::new(0));
+    let payload = Dropped(drops.clone());
+    TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
+    let value = JsValue::from_closed(payload);
+    let alias = value.clone();
+    let equals = value.strict_equal(&alias);
+    let allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
+    assert_eq!(allocations, 1);
+    assert!(equals);
+    assert_eq!(value.inspect(), "[Native value]");
+    assert!(tsonic_rust_js::value::closed_value_string(&value).is_err());
+    if let JsValue::Closed(value) = &value {
+        assert!(value.project_json().is_err());
+    } else {
+        panic!("native payload must be closed");
+    }
+    drop(value);
+    assert_eq!(drops.get(), 0);
+    drop(alias);
+    assert_eq!(drops.get(), 1);
+}
+
+#[test]
 fn closed_string_conversion_allocates_only_its_requested_result() {
     use tsonic_rust_js::{abi, JsArray, JsValue};
     let value = JsValue::String("a native string with enough bytes".to_owned());

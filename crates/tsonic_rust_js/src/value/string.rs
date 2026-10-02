@@ -1,4 +1,4 @@
-use super::{JsClosedValuePayload, JsValue};
+use super::{JsClosedValueCarrier, JsClosedValuePayload, JsValue};
 use crate::errors::{type_error, unsupported, JsResult};
 use crate::string::JsToString;
 use std::fmt::Write;
@@ -66,6 +66,12 @@ fn write_value(
             })?;
         }
         JsValue::Closed(value) => match &value.0 {
+            JsClosedValuePayload::Empty(value) => value.write_string(output)?,
+            JsClosedValuePayload::NativeShared(_) => {
+                return Err(unsupported(
+                    "Native object erasure does not expose string conversion",
+                ));
+            }
             JsClosedValuePayload::Object(value) => value.write_string(output)?,
             JsClosedValuePayload::Error(error) => {
                 write!(output, "{}", error.kind()).unwrap();

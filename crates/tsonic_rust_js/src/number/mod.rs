@@ -1,6 +1,5 @@
 //! Native numeric operations exposed through the source Number API.
 
-mod borrowed;
 mod formatting;
 mod parsing;
 pub use parsing::numeric_string;
@@ -8,9 +7,9 @@ pub use parsing::numeric_string;
 use formatting::{integer_significant, SignificantFormat};
 mod numeric;
 mod source_numeric;
-pub use borrowed::NumericRef;
 pub use numeric::{bigint_to_number, JsNumeric};
 pub use source_numeric::SourceNumeric;
+pub use tsonic_rust_runtime::numeric::NumericRef;
 
 use std::fmt::{Display, LowerExp, Write};
 use std::str::FromStr;

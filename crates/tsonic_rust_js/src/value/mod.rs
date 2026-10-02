@@ -13,8 +13,11 @@ use crate::equality::{
 use crate::errors::JsResult;
 use crate::object::JsObject;
 use crate::{JsString, JsSymbol};
-use tsonic_rust_runtime::{JsError, JsErrorKind, ToSourceString};
+use tsonic_rust_runtime::{
+    EmptyObject, JsError, JsErrorKind, ObjectIdentityCarrier, ToSourceString,
+};
 
+mod native;
 mod numbers;
 mod primitives;
 mod string;
@@ -34,6 +37,8 @@ pub struct JsClosedValue(JsClosedValuePayload);
 #[derive(Clone)]
 enum JsClosedValuePayload {
     Object(Rc<dyn JsClosedValueCarrier>),
+    Empty(EmptyObject),
+    NativeShared(Rc<dyn ObjectIdentityCarrier>),
     Error(JsError),
 }
 
@@ -54,13 +59,30 @@ impl JsClosedValue {
     pub fn identity_key(&self) -> usize {
         match &self.0 {
             JsClosedValuePayload::Object(value) => value.identity_key(),
+            JsClosedValuePayload::Empty(value) => value.identity_key(),
+            JsClosedValuePayload::NativeShared(value) => value.object_identity_key(),
             JsClosedValuePayload::Error(error) => error.identity_key(),
         }
+    }
+
+    fn same(&self, other: &Self) -> bool {
+        if let (
+            JsClosedValuePayload::NativeShared(left),
+            JsClosedValuePayload::NativeShared(right),
+        ) = (&self.0, &other.0)
+        {
+            if Rc::ptr_eq(left, right) {
+                return true;
+            }
+        }
+        self.identity_key() == other.identity_key()
     }
 
     pub fn inspect(&self) -> String {
         match &self.0 {
             JsClosedValuePayload::Object(value) => value.inspect_value(),
+            JsClosedValuePayload::Empty(value) => value.inspect_value(),
+            JsClosedValuePayload::NativeShared(_) => "[Native object]".to_owned(),
             JsClosedValuePayload::Error(error) => error.to_source_string(),
         }
     }
@@ -68,6 +90,10 @@ impl JsClosedValue {
     pub fn project_json(&self) -> JsResult<JsValue> {
         match &self.0 {
             JsClosedValuePayload::Object(value) => value.project_json(),
+            JsClosedValuePayload::Empty(value) => value.project_json(),
+            JsClosedValuePayload::NativeShared(_) => Err(crate::errors::unsupported(
+                "Native object erasure does not expose a JSON projection",
+            )),
             JsClosedValuePayload::Error(_) => Ok(JsValue::object(JsObject::new())),
         }
     }
@@ -75,7 +101,9 @@ impl JsClosedValue {
     fn as_error(&self) -> Option<&JsError> {
         match &self.0 {
             JsClosedValuePayload::Error(error) => Some(error),
-            JsClosedValuePayload::Object(_) => None,
+            JsClosedValuePayload::Object(_)
+            | JsClosedValuePayload::Empty(_)
+            | JsClosedValuePayload::NativeShared(_) => None,
         }
     }
 }
@@ -429,9 +457,7 @@ impl JsSameValue for JsValue {
             (Self::Symbol(left), Self::Symbol(right)) => left == right,
             (Self::Object(left), Self::Object(right)) => Rc::ptr_eq(left, right),
             (Self::Array(left), Self::Array(right)) => left.ptr_eq(right),
-            (Self::Closed(left), Self::Closed(right)) => {
-                left.identity_key() == right.identity_key()
-            }
+            (Self::Closed(left), Self::Closed(right)) => left.same(right),
             (Self::JsonProjection(left), Self::JsonProjection(right)) => left.ptr_eq(right),
             _ => numbers::equal(self, other, true, true),
         }
@@ -449,9 +475,7 @@ impl JsSameValueZero for JsValue {
             (Self::Symbol(left), Self::Symbol(right)) => left == right,
             (Self::Object(left), Self::Object(right)) => Rc::ptr_eq(left, right),
             (Self::Array(left), Self::Array(right)) => left.ptr_eq(right),
-            (Self::Closed(left), Self::Closed(right)) => {
-                left.identity_key() == right.identity_key()
-            }
+            (Self::Closed(left), Self::Closed(right)) => left.same(right),
             (Self::JsonProjection(left), Self::JsonProjection(right)) => left.ptr_eq(right),
             _ => numbers::equal(self, other, false, true),
         }
@@ -497,9 +521,7 @@ impl JsStrictEqual for JsValue {
             (Self::Symbol(left), Self::Symbol(right)) => left == right,
             (Self::Object(left), Self::Object(right)) => Rc::ptr_eq(left, right),
             (Self::Array(left), Self::Array(right)) => left.ptr_eq(right),
-            (Self::Closed(left), Self::Closed(right)) => {
-                left.identity_key() == right.identity_key()
-            }
+            (Self::Closed(left), Self::Closed(right)) => left.same(right),
             (Self::JsonProjection(left), Self::JsonProjection(right)) => left.ptr_eq(right),
             _ => numbers::equal(self, other, false, false),
         }
