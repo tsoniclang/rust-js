@@ -49,7 +49,7 @@ fn json_callbacks_observe_current_values_without_retaining_container_borrows() {
         JsValue::from(String::from("old")),
     ]);
     let alias = values.clone();
-    let output = json::stringify_with_replacer(&JsValue::Array(values), move |key, value| {
+    let output = json::stringify_with_replacer(&JsValue::array(values), move |key, value| {
         if key == "0" {
             alias.set(1, JsValue::from(String::from("new")));
             alias.push(JsValue::from(String::from("not in initial length")));
@@ -89,7 +89,7 @@ fn json_callbacks_observe_current_values_without_retaining_container_borrows() {
         });
     values.set(0, projected);
     assert_eq!(
-        stringify_text(&JsValue::Array(values.clone())),
+        stringify_text(&JsValue::array(values.clone())),
         "[\"projected\",\"new\"]"
     );
     values.set(0, JsValue::Null);

@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use std::fmt;
 use std::rc::Rc;
 
-use crate::array::JsArray;
+use crate::array::{JsArray, JsArrayProjection, JsArrayValue};
 use crate::equality::{
     hash_identity, same_value_f64, same_value_zero_f64, strict_equal_f64, JsHash, JsSameValue,
     JsSameValueZero, JsStrictEqual,
@@ -165,7 +165,7 @@ pub enum JsValue {
     Utf16String(JsString),
     Symbol(JsSymbol),
     Object(Rc<RefCell<JsObject>>),
-    Array(JsArray<JsValue>),
+    Array(JsArrayValue),
     Closed(JsClosedValue),
     JsonProjection(JsonProjection),
 }
@@ -245,7 +245,10 @@ impl JsValue {
 
     /// Wraps an array reference-identity handle.
     pub fn array(values: JsArray<JsValue>) -> Self {
-        Self::Array(values)
+        Self::Array(JsArrayValue::new(
+            &values,
+            crate::array::js_array::project_broad_array_element,
+        ))
     }
 
     pub fn symbol(value: JsSymbol) -> Self {
@@ -275,11 +278,19 @@ impl JsValue {
     }
 
     /// Returns the array handle when the value is an array.
-    pub fn as_array(&self) -> Option<&JsArray<JsValue>> {
+    pub fn as_array(&self) -> Option<&JsArrayValue> {
         match self {
             Self::Array(values) => Some(values),
             _ => None,
         }
+    }
+
+    pub fn cast_array<Value: 'static>(&self) -> JsResult<JsArray<Value>> {
+        self.as_array()
+            .ok_or_else(|| {
+                crate::errors::type_error("An array assertion requires a native array backing.")
+            })?
+            .cast()
     }
 
     pub fn reference_identity_key(&self) -> Option<usize> {
@@ -314,13 +325,8 @@ impl JsValue {
     }
 }
 
-pub fn js_value_from_array<T, F>(values: &JsArray<T>, mut convert: F) -> JsValue
-where
-    T: Clone,
-    F: FnMut(T) -> JsValue,
-{
-    let converted = values.entries().map(|(_, value)| convert(value)).collect();
-    JsValue::array(JsArray::from_dense(converted))
+pub fn js_value_from_array<T: 'static>(values: &JsArray<T>, project: JsArrayProjection) -> JsValue {
+    JsValue::Array(JsArrayValue::new(values, project))
 }
 
 pub fn js_value_from_optional_pairs<K>(pairs: Vec<Option<(K, JsValue)>>) -> JsValue
@@ -411,7 +417,7 @@ impl InspectState {
         format!("{{{}}}", rendered.join(", "))
     }
 
-    fn render_array(&mut self, values: &JsArray<JsValue>, depth: usize) -> String {
+    fn render_array(&mut self, values: &JsArrayValue, depth: usize) -> String {
         if depth > self.max_depth {
             return "[Array]".to_string();
         }

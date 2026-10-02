@@ -10,7 +10,9 @@ pub mod statics;
 
 pub use construction::{construct_length, ArrayLength};
 pub use entries::JsArrayEntries;
-pub use js_array::{JsArray, JsArrayIterator};
+pub use js_array::{
+    JsArray, JsArrayElement, JsArrayIndex, JsArrayIterator, JsArrayProjection, JsArrayValue,
+};
 pub use statics::{
     from_dense_array, from_string, from_string_map, from_string_map_with_index,
     from_string_map_zero, from_string_try_map, from_string_try_map_with_index,

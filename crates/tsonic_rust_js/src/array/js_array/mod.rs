@@ -1,4 +1,8 @@
 mod callbacks;
+mod erasure;
+
+pub(crate) use erasure::project_broad_array_element;
+pub use erasure::{JsArrayElement, JsArrayIndex, JsArrayProjection, JsArrayValue};
 
 use std::cell::{OnceCell, Ref, RefCell};
 use std::convert::Infallible;
@@ -18,6 +22,43 @@ struct JsArrayState<T> {
 }
 
 impl<T> JsArrayState<T> {
+    fn set(&mut self, index: usize, value: T) {
+        assert!(
+            index <= self.values.len(),
+            "Array assignment exceeds initialized dense storage"
+        );
+        if index == self.values.len() {
+            self.values.push(value);
+        } else {
+            self.values[index] = value;
+        }
+    }
+
+    fn push(&mut self, value: T) -> usize {
+        self.values.push(value);
+        self.values.len()
+    }
+
+    fn set_property(&mut self, key: String, value: T) {
+        if let Some((_, current)) = self
+            .numeric_properties
+            .iter_mut()
+            .find(|(candidate, _)| candidate == &key)
+        {
+            *current = value;
+        } else {
+            self.numeric_properties.push((key, value));
+        }
+    }
+
+    fn truncate(&mut self, length: usize) {
+        assert!(
+            length <= self.values.len(),
+            "Dense array growth requires initialized values; use push or fill at construction"
+        );
+        self.values.truncate(length);
+    }
+
     fn enumerable_own_keys(&self) -> impl Iterator<Item = String> + '_ {
         self.values
             .iter()
@@ -226,12 +267,7 @@ impl<T> JsArray<T> {
         let len = len
             .checked_integer()
             .expect("Array length must be an exact native index");
-        let mut state = self.state.borrow_mut();
-        assert!(
-            len <= state.values.len(),
-            "Dense array growth requires initialized values; use push or fill at construction"
-        );
-        state.values.truncate(len);
+        self.state.borrow_mut().truncate(len);
     }
 
     pub fn has_index(&self, index: usize) -> bool {
@@ -264,14 +300,6 @@ impl<T> JsArray<T> {
         T: Clone,
     {
         self.state.borrow().values.get(index).cloned()
-    }
-
-    pub(crate) fn with_element<Result>(
-        &self,
-        index: usize,
-        read: impl FnOnce(Option<&T>) -> Result,
-    ) -> Result {
-        read(self.state.borrow().values.get(index))
     }
 
     pub fn get_number(&self, index: impl IndexInput + JsToString) -> Option<T>
@@ -311,16 +339,7 @@ impl<T> JsArray<T> {
     }
 
     pub fn set(&self, index: usize, value: T) {
-        let mut state = self.state.borrow_mut();
-        assert!(
-            index <= state.values.len(),
-            "Array assignment exceeds initialized dense storage"
-        );
-        if index == state.values.len() {
-            state.values.push(value);
-        } else {
-            state.values[index] = value;
-        }
+        self.state.borrow_mut().set(index, value);
     }
 
     pub fn set_number(&self, index: impl IndexInput + JsToString, value: T) {
@@ -329,16 +348,7 @@ impl<T> JsArray<T> {
             return;
         }
         let key = index.to_js_string();
-        let mut state = self.state.borrow_mut();
-        if let Some((_, current)) = state
-            .numeric_properties
-            .iter_mut()
-            .find(|(candidate, _)| candidate == &key)
-        {
-            *current = value;
-        } else {
-            state.numeric_properties.push((key, value));
-        }
+        self.state.borrow_mut().set_property(key, value);
     }
 
     pub fn delete_number(&self, index: impl IndexInput + JsToString) -> bool {
@@ -354,9 +364,7 @@ impl<T> JsArray<T> {
     }
 
     pub fn push(&self, value: T) -> usize {
-        let mut state = self.state.borrow_mut();
-        state.values.push(value);
-        state.values.len()
+        self.state.borrow_mut().push(value)
     }
 
     pub fn push_many(&self, items: impl IntoIterator<Item = T>) -> usize {
@@ -774,7 +782,7 @@ pub(super) fn canonical_array_index(value: impl IndexInput) -> Option<usize> {
 
 impl<T> ObjectIdentityCarrier for JsArray<T> {
     fn object_identity(&self) -> &ObjectIdentity {
-        self.state.identity.get_or_init(ObjectIdentity::new)
+        self.state.object_identity()
     }
 }
 

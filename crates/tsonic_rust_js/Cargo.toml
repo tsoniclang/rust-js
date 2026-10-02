@@ -30,6 +30,10 @@ name = "native_result_carriers"
 path = "../../tests/native_result_carriers.rs"
 
 [[test]]
+name = "native_array_erasure"
+path = "../../tests/native_array_erasure.rs"
+
+[[test]]
 name = "native_index_inputs"
 path = "../../tests/native_index_inputs.rs"
 

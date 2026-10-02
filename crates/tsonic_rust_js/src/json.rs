@@ -4,6 +4,7 @@ use std::borrow::Cow;
 use std::collections::HashSet;
 use std::rc::Rc;
 
+use crate::array::JsArrayElement;
 use crate::errors::{range_error, syntax_error, type_error, JsResult};
 use crate::object::{JsObject, PropertyKey};
 use crate::value::JsValue;
@@ -467,18 +468,26 @@ where
                     for index in 0..values.len() {
                         serializer.count_member()?;
                         serializer.member_prefix(depth, &mut first)?;
-                        let pending = values.with_element(index, |value| -> Result<_, E> {
-                            let value = value.unwrap_or(&JsValue::Null);
-                            if serializer.can_borrow_leaf(value) {
-                                if !serializer.serialize_value(value, depth + 1)? {
-                                    serializer.push_str("null")?;
+                        let mut pending = Ok(None);
+                        values.visit_element(index, &mut |element| {
+                            pending = (|| -> Result<_, E> {
+                                match element {
+                                    JsArrayElement::String(value) if serializer.replacer.is_none() => {
+                                        serializer.push_quoted_native(value)?;
+                                        Ok(None)
+                                    }
+                                    JsArrayElement::String(value) => Ok(Some(JsValue::String(value.to_owned()))),
+                                    JsArrayElement::Value(value) if serializer.can_borrow_leaf(value) => {
+                                        if !serializer.serialize_value(value, depth + 1)? {
+                                            serializer.push_str("null")?;
+                                        }
+                                        Ok(None)
+                                    }
+                                    JsArrayElement::Value(value) => Ok(Some(value.clone())),
                                 }
-                                Ok(None)
-                            } else {
-                                Ok(Some(value.clone()))
-                            }
-                        })?;
-                        if let Some(value) = pending {
+                            })();
+                        });
+                        if let Some(value) = pending? {
                             if !serializer.serialize_property(
                                 &PropertyKey::Native(index.to_string()), &value, depth + 1,
                             )? {

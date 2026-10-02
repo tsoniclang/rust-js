@@ -1,4 +1,5 @@
 use super::{JsClosedValueCarrier, JsClosedValuePayload, JsValue};
+use crate::array::JsArrayElement;
 use crate::errors::{type_error, unsupported, JsResult};
 use crate::string::JsToString;
 use std::fmt::Write;
@@ -53,17 +54,23 @@ fn write_value(
                 identity,
                 parent: ancestors,
             };
-            values.with_values(|values| {
-                for (index, value) in values.iter().enumerate() {
-                    if index != 0 {
-                        output.push(',');
-                    }
-                    if !matches!(value, JsValue::Null) {
-                        write_value(value, output, Some(&path))?;
-                    }
+            for index in 0..values.len() {
+                if index != 0 {
+                    output.push(',');
                 }
-                Ok(())
-            })?;
+                let mut result = Ok(());
+                values.visit_element(index, &mut |element| {
+                    result = match element {
+                        JsArrayElement::String(value) => {
+                            output.push_str(value);
+                            Ok(())
+                        }
+                        JsArrayElement::Value(JsValue::Null) => Ok(()),
+                        JsArrayElement::Value(value) => write_value(value, output, Some(&path)),
+                    };
+                });
+                result?;
+            }
         }
         JsValue::Closed(value) => match &value.0 {
             JsClosedValuePayload::Empty(value) => value.write_string(output)?,

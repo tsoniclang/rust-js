@@ -29,7 +29,12 @@ fn no_forbidden_shortcuts_present_in_product_sources() {
 
     for file in rust_files {
         let source = read_source_file(&file);
+        let array_owner =
+            file == workspace_root.join("crates/tsonic_rust_js/src/array/js_array/erasure.rs");
         for forbidden in find_forbidden_patterns(&source) {
+            if array_owner && matches!(forbidden, "std::any::Any" | "downcast") {
+                continue;
+            }
             violations.push(format!("{}: contains `{}`", file.display(), forbidden));
         }
     }
@@ -43,6 +48,24 @@ fn no_forbidden_shortcuts_present_in_product_sources() {
         }
         panic!("{}", message);
     }
+}
+
+#[test]
+fn native_array_erasure_is_one_sealed_checked_storage_owner() {
+    let workspace_root = locate_workspace_root().expect("runtime workspace");
+    let source = read_source_file(
+        &workspace_root.join("crates/tsonic_rust_js/src/array/js_array/erasure.rs"),
+    );
+    assert!(source
+        .contains("trait NativeArrayStorage: Any + tsonic_rust_runtime::ObjectIdentityCarrier"));
+    assert!(!source.contains("pub trait NativeArrayStorage"));
+    assert!(source.contains("downcast::<JsArrayOwner<Value>>()"));
+    assert!(source.contains("downcast_ref::<JsArrayOwner<Value>>()"));
+    assert_eq!(source.matches(".downcast").count(), 2);
+    assert!(!source.contains("unsafe"));
+    assert!(!source.contains("TypeId"));
+    assert!(!source.contains("Box<"));
+    assert!(!source.contains("Rc::new"));
 }
 
 #[test]

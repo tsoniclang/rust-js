@@ -19,6 +19,7 @@ pub use crate::array::{
     from_vec_try_map_zero as array_from_vec_try_map_zero, is_array_value as array_is_array_value,
     of as array_of, JsArray, JsArrayConcatItem,
 };
+pub use crate::array::{JsArrayElement, JsArrayIndex, JsArrayValue};
 pub use crate::array_buffer::ArrayBuffer;
 pub use crate::atomics::{
     load as atomics_load, notify as atomics_notify, notify_all as atomics_notify_all,
