@@ -31,6 +31,29 @@ unsafe impl GlobalAlloc for CountingAllocator {
 static ALLOCATOR: CountingAllocator = CountingAllocator;
 
 #[test]
+fn generic_number_predicates_borrow_existing_numeric_storage_without_allocations() {
+    use tsonic_rust_js::number::{self, NativeNumberPredicate};
+    fn integer<Value: NativeNumberPredicate>(value: &Value) -> bool {
+        number::is_integer(value)
+    }
+    let large = tsonic_rust_js::bigint::from_string("9007199254740993").unwrap();
+    let union = tsonic_rust_js::number::JsNumeric::from_bigint(&large);
+    TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
+    for _iteration in 0..10_000 {
+        assert!(integer(black_box(&large)));
+        assert!(integer(black_box(&union)));
+        assert!(integer(black_box(&u64::MAX)));
+        assert!(!integer(black_box(&1.5_f64)));
+        assert!(!number::is_safe_integer(black_box(&large)));
+        assert!(number::is_finite(black_box(&union)));
+        assert!(!number::is_nan(black_box(&union)));
+    }
+    let allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
+    assert_eq!(allocations, 0);
+    assert_eq!(large.to_string(), "9007199254740993");
+}
+
+#[test]
 fn native_record_json_borrows_scalar_keys_instead_of_snapshotting_every_string() {
     use tsonic_rust_js::{json, JsArray, JsValue};
     use tsonic_rust_runtime::Record;
@@ -321,10 +344,15 @@ fn native_numeric_conversion_and_borrowed_comparison_do_not_allocate() {
             u64::MAX,
             i128::MIN,
             u128::MAX,
+            isize::MIN,
+            usize::MAX,
             1.5_f32,
             1.5_f64
         );
         valid &= SourceNumeric::greater_than(&explicit_bigint, &black_box(9007199254740992_f64));
+        valid &= SourceNumeric::strict_equal(&black_box(0_usize), &black_box(0_f64));
+        valid &= SourceNumeric::less_than(&black_box(isize::MIN), &black_box(0_f64));
+        valid &= SourceNumeric::greater_than(&black_box(usize::MAX), &black_box(0_f64));
         valid &= SourceNumeric::strict_equal(&explicit_bigint, &black_box(9007199254740993_u64));
         valid &= SourceNumeric::greater_than(&enormous, &black_box(u128::MAX));
         valid &= SourceNumeric::loose_equal(&enormous, &black_box(2_f64.powi(128)));

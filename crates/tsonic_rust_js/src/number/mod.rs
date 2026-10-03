@@ -35,24 +35,66 @@ pub trait JsNumberValue: Copy + NativeNumberPredicate + Display + LowerExp {
 }
 
 pub trait NativeNumberPredicate {
-    fn native_is_integer(self) -> bool;
-    fn native_is_safe_integer(self) -> bool;
-    fn native_is_finite(self) -> bool;
-    fn native_is_nan(self) -> bool;
+    fn native_is_integer(&self) -> bool;
+    fn native_is_safe_integer(&self) -> bool;
+    fn native_is_finite(&self) -> bool;
+    fn native_is_nan(&self) -> bool;
 }
 
-impl NativeNumberPredicate for &tsonic_rust_runtime::BigInt {
-    fn native_is_integer(self) -> bool {
+impl NativeNumberPredicate for tsonic_rust_runtime::BigInt {
+    fn native_is_integer(&self) -> bool {
         true
     }
-    fn native_is_safe_integer(self) -> bool {
+    fn native_is_safe_integer(&self) -> bool {
         self.as_ref().bits() <= 53
     }
-    fn native_is_finite(self) -> bool {
+    fn native_is_finite(&self) -> bool {
         true
     }
-    fn native_is_nan(self) -> bool {
+    fn native_is_nan(&self) -> bool {
         false
+    }
+}
+
+impl<Value: NativeNumberPredicate + ?Sized> NativeNumberPredicate for &Value {
+    fn native_is_integer(&self) -> bool {
+        Value::native_is_integer(self)
+    }
+    fn native_is_safe_integer(&self) -> bool {
+        Value::native_is_safe_integer(self)
+    }
+    fn native_is_finite(&self) -> bool {
+        Value::native_is_finite(self)
+    }
+    fn native_is_nan(&self) -> bool {
+        Value::native_is_nan(self)
+    }
+}
+
+impl NativeNumberPredicate for JsNumeric {
+    fn native_is_integer(&self) -> bool {
+        match self {
+            Self::Number(value) => value.native_is_integer(),
+            Self::BigInt(value) => value.native_is_integer(),
+        }
+    }
+    fn native_is_safe_integer(&self) -> bool {
+        match self {
+            Self::Number(value) => value.native_is_safe_integer(),
+            Self::BigInt(value) => value.native_is_safe_integer(),
+        }
+    }
+    fn native_is_finite(&self) -> bool {
+        match self {
+            Self::Number(value) => value.native_is_finite(),
+            Self::BigInt(value) => value.native_is_finite(),
+        }
+    }
+    fn native_is_nan(&self) -> bool {
+        match self {
+            Self::Number(value) => value.native_is_nan(),
+            Self::BigInt(value) => value.native_is_nan(),
+        }
     }
 }
 
@@ -64,10 +106,10 @@ macro_rules! impl_signed_integer {
     ($($type:ty),+ $(,)?) => {
         $(
             impl NativeNumberPredicate for $type {
-                fn native_is_integer(self) -> bool { true }
-                fn native_is_safe_integer(self) -> bool { (self as i128).unsigned_abs() < (1_u128 << 53) }
-                fn native_is_finite(self) -> bool { true }
-                fn native_is_nan(self) -> bool { false }
+                fn native_is_integer(&self) -> bool { true }
+                fn native_is_safe_integer(&self) -> bool { (*self as i128).unsigned_abs() < (1_u128 << 53) }
+                fn native_is_finite(&self) -> bool { true }
+                fn native_is_nan(&self) -> bool { false }
             }
 
             impl JsNumberValue for $type {
@@ -101,10 +143,10 @@ macro_rules! impl_unsigned_integer {
     ($($type:ty),+ $(,)?) => {
         $(
             impl NativeNumberPredicate for $type {
-                fn native_is_integer(self) -> bool { true }
-                fn native_is_safe_integer(self) -> bool { (self as u128) < (1_u128 << 53) }
-                fn native_is_finite(self) -> bool { true }
-                fn native_is_nan(self) -> bool { false }
+                fn native_is_integer(&self) -> bool { true }
+                fn native_is_safe_integer(&self) -> bool { (*self as u128) < (1_u128 << 53) }
+                fn native_is_finite(&self) -> bool { true }
+                fn native_is_nan(&self) -> bool { false }
             }
 
             impl JsNumberValue for $type {
@@ -138,16 +180,16 @@ impl_signed_integer!(i8, i16, i32, i64, i128, isize);
 impl_unsigned_integer!(u8, u16, u32, u64, u128, usize);
 
 impl NativeNumberPredicate for f32 {
-    fn native_is_integer(self) -> bool {
+    fn native_is_integer(&self) -> bool {
         self.is_finite() && self.fract() == 0.0
     }
-    fn native_is_safe_integer(self) -> bool {
+    fn native_is_safe_integer(&self) -> bool {
         self.native_is_integer() && self.abs() < 9_007_199_254_740_992_f32
     }
-    fn native_is_finite(self) -> bool {
+    fn native_is_finite(&self) -> bool {
         self.is_finite()
     }
-    fn native_is_nan(self) -> bool {
+    fn native_is_nan(&self) -> bool {
         self.is_nan()
     }
 }
@@ -185,16 +227,16 @@ impl JsNumberValue for f32 {
 }
 
 impl NativeNumberPredicate for f64 {
-    fn native_is_integer(self) -> bool {
+    fn native_is_integer(&self) -> bool {
         self.is_finite() && self.fract() == 0.0
     }
-    fn native_is_safe_integer(self) -> bool {
+    fn native_is_safe_integer(&self) -> bool {
         self.native_is_integer() && self.abs() <= ((1_u64 << Self::MANTISSA_DIGITS) - 1) as f64
     }
-    fn native_is_finite(self) -> bool {
+    fn native_is_finite(&self) -> bool {
         self.is_finite()
     }
-    fn native_is_nan(self) -> bool {
+    fn native_is_nan(&self) -> bool {
         self.is_nan()
     }
 }
