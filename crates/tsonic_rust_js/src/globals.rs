@@ -110,6 +110,7 @@ pub fn to_number(value: &JsValue) -> f64 {
         }
         JsValue::Symbol(_)
         | JsValue::Object(_)
+        | JsValue::Record(_)
         | JsValue::Array(_)
         | JsValue::Closed(_)
         | JsValue::JsonProjection(_) => f64::NAN,

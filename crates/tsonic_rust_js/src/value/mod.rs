@@ -14,7 +14,7 @@ use crate::errors::JsResult;
 use crate::object::JsObject;
 use crate::{JsString, JsSymbol};
 use tsonic_rust_runtime::{
-    EmptyObject, JsError, JsErrorKind, ObjectIdentityCarrier, ToSourceString,
+    EmptyObject, JsError, JsErrorKind, ObjectIdentityCarrier, Record, ToSourceString,
 };
 
 mod native;
@@ -165,6 +165,7 @@ pub enum JsValue {
     Utf16String(JsString),
     Symbol(JsSymbol),
     Object(Rc<RefCell<JsObject>>),
+    Record(Record<String, JsValue>),
     Array(JsArrayValue),
     Closed(JsClosedValue),
     JsonProjection(JsonProjection),
@@ -277,6 +278,13 @@ impl JsValue {
         }
     }
 
+    pub fn as_record(&self) -> Option<&Record<String, JsValue>> {
+        match self {
+            Self::Record(record) => Some(record),
+            _ => None,
+        }
+    }
+
     /// Returns the array handle when the value is an array.
     pub fn as_array(&self) -> Option<&JsArrayValue> {
         match self {
@@ -296,6 +304,7 @@ impl JsValue {
     pub fn reference_identity_key(&self) -> Option<usize> {
         match self {
             Self::Object(value) => Some(Rc::as_ptr(value) as usize),
+            Self::Record(value) => Some(value.storage_identity_key()),
             Self::Array(value) => Some(value.identity()),
             Self::Closed(value) => Some(value.identity_key()),
             Self::JsonProjection(value) => Some(value.identity()),
@@ -349,6 +358,7 @@ const MAX_INSPECT_DEPTH: usize = 64;
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum ContainerId {
     Object(usize),
+    Record(usize),
     Array(usize),
 }
 
@@ -379,6 +389,7 @@ impl InspectState {
             JsValue::Utf16String(value) => value.inspect_quoted(),
             JsValue::Symbol(value) => format!("{value:?}"),
             JsValue::Object(object) => self.render_object(object, depth),
+            JsValue::Record(record) => self.render_record(record, depth),
             JsValue::Array(values) => self.render_array(values, depth),
             JsValue::Closed(value) => value.inspect(),
             JsValue::JsonProjection(_) => "[JSON projection]".to_string(),
@@ -436,6 +447,29 @@ impl InspectState {
         self.active.remove(&id);
         format!("[{}]", rendered.join(", "))
     }
+
+    fn render_record(&mut self, record: &Record<String, JsValue>, depth: usize) -> String {
+        if depth > self.max_depth {
+            return "[Object]".to_string();
+        }
+        let identity = ContainerId::Record(record.storage_identity_key());
+        if !self.active.insert(identity) {
+            return "[Circular]".to_string();
+        }
+        let keys = record.keys();
+        let total = keys.len();
+        let mut rendered = keys
+            .into_iter()
+            .take(self.max_entries)
+            .map(|key| {
+                let value = record.get_or_default(&key);
+                format!("{}: {}", key, self.render(&value, depth + 1))
+            })
+            .collect::<Vec<_>>();
+        append_remaining(&mut rendered, total, self.max_entries);
+        self.active.remove(&identity);
+        format!("{{{}}}", rendered.join(", "))
+    }
 }
 
 fn append_remaining(rendered: &mut Vec<String>, total: usize, max_entries: usize) {
@@ -462,6 +496,7 @@ impl JsSameValue for JsValue {
             (Self::Utf16String(left), Self::Utf16String(right)) => left == right,
             (Self::Symbol(left), Self::Symbol(right)) => left == right,
             (Self::Object(left), Self::Object(right)) => Rc::ptr_eq(left, right),
+            (Self::Record(left), Self::Record(right)) => left == right,
             (Self::Array(left), Self::Array(right)) => left.ptr_eq(right),
             (Self::Closed(left), Self::Closed(right)) => left.same(right),
             (Self::JsonProjection(left), Self::JsonProjection(right)) => left.ptr_eq(right),
@@ -480,6 +515,7 @@ impl JsSameValueZero for JsValue {
             (Self::Utf16String(left), Self::Utf16String(right)) => left == right,
             (Self::Symbol(left), Self::Symbol(right)) => left == right,
             (Self::Object(left), Self::Object(right)) => Rc::ptr_eq(left, right),
+            (Self::Record(left), Self::Record(right)) => left == right,
             (Self::Array(left), Self::Array(right)) => left.ptr_eq(right),
             (Self::Closed(left), Self::Closed(right)) => left.same(right),
             (Self::JsonProjection(left), Self::JsonProjection(right)) => left.ptr_eq(right),
@@ -509,6 +545,7 @@ impl JsHash for JsValue {
             Self::Utf16String(value) => value.js_hash(),
             Self::Symbol(value) => value.js_hash(),
             Self::Object(value) => hash_identity(Rc::as_ptr(value) as usize),
+            Self::Record(value) => hash_identity(value.storage_identity_key()),
             Self::Array(value) => value.js_hash(),
             Self::Closed(value) => hash_identity(value.identity_key()),
             Self::JsonProjection(value) => hash_identity(value.identity()),
@@ -526,6 +563,7 @@ impl JsStrictEqual for JsValue {
             (Self::Utf16String(left), Self::Utf16String(right)) => left == right,
             (Self::Symbol(left), Self::Symbol(right)) => left == right,
             (Self::Object(left), Self::Object(right)) => Rc::ptr_eq(left, right),
+            (Self::Record(left), Self::Record(right)) => left == right,
             (Self::Array(left), Self::Array(right)) => left.ptr_eq(right),
             (Self::Closed(left), Self::Closed(right)) => left.same(right),
             (Self::JsonProjection(left), Self::JsonProjection(right)) => left.ptr_eq(right),
@@ -537,6 +575,12 @@ impl JsStrictEqual for JsValue {
 impl From<Vec<JsValue>> for JsValue {
     fn from(values: Vec<JsValue>) -> Self {
         Self::array(JsArray::from_dense(values))
+    }
+}
+
+impl From<Record<String, JsValue>> for JsValue {
+    fn from(record: Record<String, JsValue>) -> Self {
+        Self::Record(record)
     }
 }
 

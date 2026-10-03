@@ -31,6 +31,35 @@ unsafe impl GlobalAlloc for CountingAllocator {
 static ALLOCATOR: CountingAllocator = CountingAllocator;
 
 #[test]
+fn native_record_admission_reuses_one_backing_with_zero_additional_allocations() {
+    use tsonic_rust_js::{equality::JsStrictEqual, JsValue};
+    use tsonic_rust_runtime::Record;
+    let original =
+        Record::from_entries([(String::from("value"), JsValue::UnsignedInteger(u64::MAX))]);
+    let distinct =
+        Record::from_entries([(String::from("value"), JsValue::UnsignedInteger(u64::MAX))]);
+    let identity = original.storage_identity_key();
+    TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
+    let value = JsValue::from(original.clone());
+    let alias = JsValue::from(original.clone());
+    let other = JsValue::from(distinct);
+    for _iteration in 0..10_000 {
+        assert!(black_box(&value).strict_equal(black_box(&alias)));
+        assert!(!black_box(&value).strict_equal(black_box(&other)));
+        assert_eq!(value.reference_identity_key(), Some(identity));
+        assert_eq!(
+            value.as_record().unwrap().get("value"),
+            JsValue::UnsignedInteger(u64::MAX)
+        );
+    }
+    let allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
+    assert_eq!(allocations, 0);
+    if usize::BITS == 64 {
+        assert_eq!(std::mem::size_of::<JsValue>(), 40);
+    }
+}
+
+#[test]
 fn native_shared_identity_admission_preserves_the_original_owner_without_allocating() {
     use std::rc::Rc;
     use tsonic_rust_js::{equality::JsStrictEqual, JsValue};

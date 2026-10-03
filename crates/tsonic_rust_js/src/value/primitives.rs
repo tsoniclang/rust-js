@@ -64,6 +64,7 @@ impl JsValue {
             Self::Null
             | Self::Utf16String(_)
             | Self::Object(_)
+            | Self::Record(_)
             | Self::Array(_)
             | Self::Closed(_)
             | Self::JsonProjection(_) => "object",

@@ -858,19 +858,18 @@ fn first_locale(locales: &JsArray<String>) -> JsResult<String> {
         .ok_or_else(|| range_error("Intl locale list must contain at least one locale"))
 }
 
-fn options_object(options: &JsValue) -> JsResult<Option<std::cell::Ref<'_, crate::JsObject>>> {
+fn option_value(options: &JsValue, name: &str) -> JsResult<JsValue> {
     match options {
-        JsValue::Null => Ok(None),
+        JsValue::Null => Ok(JsValue::Null),
         JsValue::Object(object) => object
             .try_borrow()
-            .map(Some)
+            .map(|object| object.get(name))
             .map_err(|_| type_error("Intl options object is already mutably borrowed")),
+        JsValue::Record(record) => {
+            Ok(record.with_entries(|entries| entries.get(name).cloned().unwrap_or_default()))
+        }
         _ => Err(type_error("Intl options must be an object")),
     }
-}
-
-fn option_value(options: &JsValue, name: &str) -> JsResult<JsValue> {
-    Ok(options_object(options)?.map_or(JsValue::Null, |object| object.get(name)))
 }
 
 fn string_option(options: &JsValue, name: &str) -> JsResult<Option<String>> {

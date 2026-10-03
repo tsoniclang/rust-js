@@ -38,7 +38,7 @@ fn write_value(
         JsValue::String(value) => output.push_str(value),
         JsValue::Utf16String(value) => output.push_str(&value.to_utf8_lossy()),
         JsValue::Symbol(value) => write!(output, "{value:?}").unwrap(),
-        JsValue::Object(_) => output.push_str("[object Object]"),
+        JsValue::Object(_) | JsValue::Record(_) => output.push_str("[object Object]"),
         JsValue::Array(values) => {
             let identity = values.identity();
             let mut previous = ancestors;

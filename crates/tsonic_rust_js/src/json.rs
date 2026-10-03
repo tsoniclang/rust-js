@@ -295,6 +295,7 @@ fn normalize_property_list(values: &JsValue) -> JsResult<Vec<PropertyKey>> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum ContainerId {
     Object(usize),
+    Record(usize),
     Array(usize),
     Closed(usize),
     Projection(usize),
@@ -508,33 +509,24 @@ where
                             type_error("JSON.stringify cannot read a mutably borrowed object")
                         })?
                         .serialization_keys();
-                    serializer.push_char('{')?;
-                    let mut first = true;
-                    for key in keys {
-                        if serializer
-                            .property_list
-                            .is_some_and(|properties| !properties.contains(&key))
-                        {
-                            continue;
-                        }
-                        let pending = {
-                            let object = object.try_borrow().map_err(|_| {
-                                type_error("JSON.stringify cannot read a mutably borrowed object")
-                            })?;
-                            let value = object.get_key_ref(&key).unwrap_or(&JsValue::Null);
-                            if serializer.can_borrow_leaf(value) {
-                                serializer.serialize_object_member(&key, value, depth, &mut first)?;
-                                None
-                            } else {
-                                Some(value.clone())
-                            }
-                        };
-                        if let Some(value) = pending {
-                            serializer.serialize_object_member(&key, &value, depth, &mut first)?;
-                        }
-                    }
-                    serializer.container_suffix('}', depth, first)?;
-                    Ok(true)
+                    serializer.serialize_object_fields(keys, depth, |key, serializer, first| {
+                        let object = object.try_borrow().map_err(|_| {
+                            type_error("JSON.stringify cannot read a mutably borrowed object")
+                        })?;
+                        serializer.read_object_member(key, object.get_key_ref(key).unwrap_or(&JsValue::Null), depth, first)
+                    })
+                })
+            }
+            JsValue::Record(record) => {
+                let identity = ContainerId::Record(record.storage_identity_key());
+                self.with_container(identity, |serializer| {
+                    let keys = record.keys().into_iter().map(PropertyKey::Native);
+                    serializer.serialize_object_fields(keys, depth, |key, serializer, first| {
+                        record.with_entries(|entries| {
+                            let PropertyKey::Native(name) = key else { unreachable!() };
+                            serializer.read_object_member(key, entries.get(name).unwrap_or(&JsValue::Null), depth, first)
+                        })
+                    })
                 })
             }
             JsValue::Closed(_) => Err(type_error(
@@ -559,6 +551,44 @@ where
         let result = serialize(self);
         self.active.remove(&id);
         result
+    }
+
+    fn serialize_object_fields(
+        &mut self,
+        keys: impl IntoIterator<Item = PropertyKey>,
+        depth: usize,
+        mut read: impl FnMut(&PropertyKey, &mut Self, &mut bool) -> Result<Option<JsValue>, E>,
+    ) -> Result<bool, E> {
+        self.push_char('{')?;
+        let mut first = true;
+        for key in keys {
+            if self
+                .property_list
+                .is_some_and(|properties| !properties.contains(&key))
+            {
+                continue;
+            }
+            if let Some(value) = read(&key, self, &mut first)? {
+                self.serialize_object_member(&key, &value, depth, &mut first)?;
+            }
+        }
+        self.container_suffix('}', depth, first)?;
+        Ok(true)
+    }
+
+    fn read_object_member(
+        &mut self,
+        key: &PropertyKey,
+        value: &JsValue,
+        depth: usize,
+        first: &mut bool,
+    ) -> Result<Option<JsValue>, E> {
+        if self.can_borrow_leaf(value) {
+            self.serialize_object_member(key, value, depth, first)?;
+            Ok(None)
+        } else {
+            Ok(Some(value.clone()))
+        }
     }
 
     fn count_node(&mut self, depth: usize) -> Result<(), E> {
@@ -675,6 +705,7 @@ where
                 value,
                 JsValue::Array(_)
                     | JsValue::Object(_)
+                    | JsValue::Record(_)
                     | JsValue::Closed(_)
                     | JsValue::JsonProjection(_)
             )
