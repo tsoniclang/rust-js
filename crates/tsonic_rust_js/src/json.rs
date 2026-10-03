@@ -520,30 +520,39 @@ where
             JsValue::Record(record) => {
                 let identity = ContainerId::Record(record.storage_identity_key());
                 self.with_container(identity, |serializer| {
-                    let borrowed = record.with_entries(|entries| entries.iter().all(|(key, value)| {
-                        !serializer.includes_native_property(key) || serializer.can_borrow_leaf(value)
-                    }));
-                    if borrowed {
-                        return record.with_entries(|entries| {
-                            serializer.push_char('{')?;
-                            let mut first = true;
-                            for (key, value) in entries {
-                                if serializer.includes_native_property(key) {
-                                    serializer.serialize_object_field(value, depth, &mut first,
-                                        |serializer| serializer.push_quoted_native(key))?;
-                                }
+                    serializer.push_char('{')?;
+                    let mut first = true;
+                    let pending = record.with_entries(|entries| -> Result<_, E> {
+                        let mut entries = entries.iter();
+                        while let Some((key, value)) = entries.next() {
+                            if !serializer.includes_native_property(key) {
+                                continue;
                             }
-                            serializer.container_suffix('}', depth, first)?;
-                            Ok(true)
-                        });
+                            if !serializer.can_borrow_leaf(value) {
+                                let keys = std::iter::once(PropertyKey::Native(key.clone()))
+                                    .chain(entries.map(|(key, _value)| PropertyKey::Native(key.clone())))
+                                    .collect::<Vec<_>>();
+                                return Ok(Some(keys));
+                            }
+                            serializer.serialize_object_field(value, depth, &mut first,
+                                |serializer| serializer.push_quoted_native(key))?;
+                        }
+                        Ok(None)
+                    })?;
+                    if let Some(keys) = pending {
+                        serializer.serialize_object_members(keys, depth, &mut first, |key, serializer, first| {
+                            record.with_entries(|entries| {
+                                let PropertyKey::Native(name) = key else { unreachable!() };
+                                match entries.get(name) {
+                                    Some(value) => serializer.read_object_member(key, value, depth, first),
+                                    None if serializer.replacer.is_some() => serializer.read_object_member(key, &JsValue::Null, depth, first),
+                                    None => Ok(None),
+                                }
+                            })
+                        })?;
                     }
-                    let keys = record.keys().into_iter().map(PropertyKey::Native);
-                    serializer.serialize_object_fields(keys, depth, |key, serializer, first| {
-                        record.with_entries(|entries| {
-                            let PropertyKey::Native(name) = key else { unreachable!() };
-                            serializer.read_object_member(key, entries.get(name).unwrap_or(&JsValue::Null), depth, first)
-                        })
-                    })
+                    serializer.container_suffix('}', depth, first)?;
+                    Ok(true)
                 })
             }
             JsValue::Closed(_) => Err(type_error(
@@ -574,10 +583,22 @@ where
         &mut self,
         keys: impl IntoIterator<Item = PropertyKey>,
         depth: usize,
-        mut read: impl FnMut(&PropertyKey, &mut Self, &mut bool) -> Result<Option<JsValue>, E>,
+        read: impl FnMut(&PropertyKey, &mut Self, &mut bool) -> Result<Option<JsValue>, E>,
     ) -> Result<bool, E> {
         self.push_char('{')?;
         let mut first = true;
+        self.serialize_object_members(keys, depth, &mut first, read)?;
+        self.container_suffix('}', depth, first)?;
+        Ok(true)
+    }
+
+    fn serialize_object_members(
+        &mut self,
+        keys: impl IntoIterator<Item = PropertyKey>,
+        depth: usize,
+        first: &mut bool,
+        mut read: impl FnMut(&PropertyKey, &mut Self, &mut bool) -> Result<Option<JsValue>, E>,
+    ) -> Result<(), E> {
         for key in keys {
             if self
                 .property_list
@@ -585,12 +606,11 @@ where
             {
                 continue;
             }
-            if let Some(value) = read(&key, self, &mut first)? {
-                self.serialize_object_member(&key, &value, depth, &mut first)?;
+            if let Some(value) = read(&key, self, first)? {
+                self.serialize_object_member(&key, &value, depth, first)?;
             }
         }
-        self.container_suffix('}', depth, first)?;
-        Ok(true)
+        Ok(())
     }
 
     fn read_object_member(

@@ -161,6 +161,86 @@ fn closed_record_json_releases_the_backing_before_nested_native_projections() {
 }
 
 #[test]
+fn closed_record_json_snapshots_only_unprocessed_members_before_native_projection() {
+    use std::cell::Cell;
+    use std::rc::Rc;
+    use tsonic_rust_js::{json, value::js_value_from_json_projection, JsValue};
+    let record =
+        Record::from_entries((0..8).map(|index| (format!("field_{index}"), JsValue::Bool(true))));
+    let keys = record.keys();
+    let selected_key = keys[3].clone();
+    let removed_key = keys.last().unwrap().clone();
+    let calls = Rc::new(Cell::new(0));
+    let projected = js_value_from_json_projection(
+        (record.clone(), keys.clone(), calls.clone()),
+        |(record, keys, calls), key| {
+            calls.set(calls.get() + 1);
+            assert_eq!(key, keys[3]);
+            for key in keys {
+                record.set(key.clone(), JsValue::Bool(false));
+            }
+            record.set(keys[4].clone(), JsValue::Null);
+            record.remove(keys.last().unwrap());
+            record.set(String::from("added"), JsValue::Bool(true));
+            Ok(JsValue::Int32(7))
+        },
+    );
+    record.set(selected_key.clone(), projected);
+    let output = json::stringify(&JsValue::from(record.clone()))
+        .unwrap()
+        .unwrap();
+    let parsed = json::parse(&output).unwrap();
+    let fields = parsed.as_object().unwrap().borrow();
+    for key in &keys[..3] {
+        assert_eq!(fields.get(key), JsValue::Bool(true));
+        assert_eq!(record.get(key), JsValue::Bool(false));
+    }
+    assert_eq!(fields.get(&selected_key), JsValue::Int32(7));
+    assert!(fields.has_own_property(&keys[4]));
+    assert!(fields.get(&keys[4]).is_nullish());
+    for key in &keys[5..7] {
+        assert_eq!(fields.get(key), JsValue::Bool(false));
+    }
+    assert!(!fields.has_own_property(&removed_key));
+    assert!(!fields.has_own_property("added"));
+    assert!(!record.contains_key(&removed_key));
+    assert!(record.contains_key("added"));
+    assert_eq!(calls.get(), 1);
+}
+
+#[test]
+fn closed_record_json_replacer_can_restore_an_original_key_deleted_by_an_earlier_callback() {
+    use tsonic_rust_js::{json, JsValue};
+    let record =
+        Record::from_entries((0..3).map(|index| (format!("field_{index}"), JsValue::Bool(true))));
+    let keys = record.keys();
+    let mut restored = false;
+    let output = json::stringify_with_replacer(&JsValue::from(record.clone()), |key, value| {
+        if key == keys[0] {
+            assert!(record.remove(&keys[1]));
+            record.set(keys[2].clone(), JsValue::Null);
+            record.set(String::from("added"), JsValue::Bool(false));
+        } else if key == keys[1] {
+            assert!(value.is_nullish());
+            restored = true;
+            return JsValue::Int32(19);
+        }
+        value
+    })
+    .unwrap()
+    .unwrap();
+    let parsed = json::parse(&output).unwrap();
+    let fields = parsed.as_object().unwrap().borrow();
+    assert!(restored);
+    assert_eq!(fields.get(&keys[0]), JsValue::Bool(true));
+    assert_eq!(fields.get(&keys[1]), JsValue::Int32(19));
+    assert!(fields.has_own_property(&keys[2]));
+    assert!(fields.get(&keys[2]).is_nullish());
+    assert!(!fields.has_own_property("added"));
+    assert!(!record.contains_key(&keys[1]));
+}
+
+#[test]
 fn closed_record_intl_reads_share_the_existing_native_read_borrow() {
     use tsonic_rust_js::{IntlNumberFormat, JsValue};
     let record = Record::from_entries([(String::from("useGrouping"), JsValue::Bool(false))]);
