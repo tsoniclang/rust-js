@@ -520,6 +520,23 @@ where
             JsValue::Record(record) => {
                 let identity = ContainerId::Record(record.storage_identity_key());
                 self.with_container(identity, |serializer| {
+                    let borrowed = record.with_entries(|entries| entries.iter().all(|(key, value)| {
+                        !serializer.includes_native_property(key) || serializer.can_borrow_leaf(value)
+                    }));
+                    if borrowed {
+                        return record.with_entries(|entries| {
+                            serializer.push_char('{')?;
+                            let mut first = true;
+                            for (key, value) in entries {
+                                if serializer.includes_native_property(key) {
+                                    serializer.serialize_object_field(value, depth, &mut first,
+                                        |serializer| serializer.push_quoted_native(key))?;
+                                }
+                            }
+                            serializer.container_suffix('}', depth, first)?;
+                            Ok(true)
+                        });
+                    }
                     let keys = record.keys().into_iter().map(PropertyKey::Native);
                     serializer.serialize_object_fields(keys, depth, |key, serializer, first| {
                         record.with_entries(|entries| {
@@ -719,14 +736,32 @@ where
         first: &mut bool,
     ) -> Result<(), E> {
         let value = self.replaced_value(key, value)?;
+        self.serialize_object_field(&value, depth, first, |serializer| match key {
+            PropertyKey::Native(value) => serializer.push_quoted_native(value),
+            PropertyKey::Utf16(value) => serializer.push_quoted(value),
+        })
+    }
+
+    fn includes_native_property(&self, key: &str) -> bool {
+        !self.property_list.is_some_and(|properties| {
+            !properties
+                .iter()
+                .any(|property| matches!(property, PropertyKey::Native(value) if value == key))
+        })
+    }
+
+    fn serialize_object_field(
+        &mut self,
+        value: &JsValue,
+        depth: usize,
+        first: &mut bool,
+        write_key: impl FnOnce(&mut Self) -> Result<(), E>,
+    ) -> Result<(), E> {
         self.count_member()?;
         self.member_prefix(depth, first)?;
-        match key {
-            PropertyKey::Native(value) => self.push_quoted_native(value)?,
-            PropertyKey::Utf16(value) => self.push_quoted(value)?,
-        }
+        write_key(self)?;
         self.push_str(if self.indent.is_empty() { ":" } else { ": " })?;
-        if !self.serialize_value(&value, depth + 1)? {
+        if !self.serialize_value(value, depth + 1)? {
             return Err(
                 type_error("JSON object member unexpectedly had no serialized value").into(),
             );

@@ -31,6 +31,46 @@ unsafe impl GlobalAlloc for CountingAllocator {
 static ALLOCATOR: CountingAllocator = CountingAllocator;
 
 #[test]
+fn native_record_json_borrows_scalar_keys_instead_of_snapshotting_every_string() {
+    use tsonic_rust_js::{json, JsArray, JsValue};
+    use tsonic_rust_runtime::Record;
+    let record = Record::from_entries((0..1000).map(|index| {
+        (
+            format!("field_{index:04}_with_a_long_native_string_key_that_must_not_be_copied"),
+            JsValue::Bool(true),
+        )
+    }));
+    TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
+    let requested_keys = black_box(&record).keys();
+    let snapshot_allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
+    assert_eq!(snapshot_allocations, 1001);
+    let value = JsValue::from(record.clone());
+    TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
+    let rendered = json::stringify(black_box(&value)).unwrap().unwrap();
+    let allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
+    eprintln!("1000 native keys: requested snapshot allocations={snapshot_allocations}; default JSON allocations={allocations}");
+    assert!(
+        allocations <= 24,
+        "default serialization unexpectedly copied native keys: {allocations}"
+    );
+    let nested = JsValue::from(Record::from_entries(requested_keys.iter().map(|key| {
+        (
+            key.clone(),
+            JsValue::array(JsArray::from_dense(vec![JsValue::Bool(true)])),
+        )
+    })));
+    TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
+    let nested_rendered = json::stringify(black_box(&nested)).unwrap().unwrap();
+    let nested_allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
+    eprintln!("1000 native keys with nested arrays: conservative default JSON allocations={nested_allocations}");
+    for key in requested_keys {
+        assert!(rendered.contains(&format!("\"{key}\":true")));
+        assert!(nested_rendered.contains(&format!("\"{key}\":[true]")));
+    }
+    assert!(record.contains_key("field_0000_with_a_long_native_string_key_that_must_not_be_copied"));
+}
+
+#[test]
 fn native_record_admission_reuses_one_backing_with_zero_additional_allocations() {
     use tsonic_rust_js::{equality::JsStrictEqual, JsValue};
     use tsonic_rust_runtime::Record;

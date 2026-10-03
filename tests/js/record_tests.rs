@@ -136,3 +136,88 @@ fn closed_record_intl_options_read_current_exact_native_values() {
     assert_eq!(absent.resolved_options().maximum_fraction_digits(), Some(3));
     assert!(IntlNumberFormat::with_locale_options("en", &JsValue::Bool(false)).is_err());
 }
+
+#[test]
+fn closed_record_json_releases_the_backing_before_nested_native_projections() {
+    use tsonic_rust_js::{json, value::js_value_from_json_projection, JsArray, JsValue};
+    let original = Record::default();
+    let projected = js_value_from_json_projection(original.clone(), |record, key| {
+        assert_eq!(key, "0");
+        record.set(String::from("value"), JsValue::Null);
+        record.set(String::from("added"), JsValue::Bool(false));
+        Ok(JsValue::Bool(true))
+    });
+    original.set(
+        String::from("value"),
+        JsValue::array(JsArray::from_dense(vec![projected])),
+    );
+    let value = JsValue::from(original.clone());
+    assert_eq!(
+        json::stringify(&value).unwrap().as_deref(),
+        Some("{\"value\":[true]}")
+    );
+    assert!(original.get("value").is_nullish());
+    assert_eq!(original.get("added"), JsValue::Bool(false));
+}
+
+#[test]
+fn closed_record_intl_reads_share_the_existing_native_read_borrow() {
+    use tsonic_rust_js::{IntlNumberFormat, JsValue};
+    let record = Record::from_entries([(String::from("useGrouping"), JsValue::Bool(false))]);
+    let options = JsValue::from(record.clone());
+    let rendered = record.with_entries(|entries| {
+        assert_eq!(entries.get("useGrouping"), Some(&JsValue::Bool(false)));
+        IntlNumberFormat::with_locale_options("en", &options)
+            .unwrap()
+            .format(u64::MAX)
+    });
+    assert_eq!(rendered, "18446744073709551615");
+    let object = JsValue::object(tsonic_rust_js::JsObject::from_pairs([(
+        "useGrouping",
+        false,
+    )]));
+    let borrowed = object.as_object().unwrap().borrow_mut();
+    let error = IntlNumberFormat::with_locale_options("en", &object).unwrap_err();
+    assert_eq!(error.kind(), tsonic_rust_js::JsErrorKind::TypeError);
+    drop(borrowed);
+}
+
+#[test]
+fn closed_record_intl_retains_native_exclusive_reentrancy_failure() {
+    use tsonic_rust_js::{value::js_value_from_json_projection, IntlNumberFormat, JsValue};
+    struct ReentrantRead {
+        record: Record<String, JsValue>,
+        read: fn(&Record<String, JsValue>),
+    }
+    impl Drop for ReentrantRead {
+        fn drop(&mut self) {
+            (self.read)(&self.record);
+        }
+    }
+    let readers: [fn(&Record<String, JsValue>); 2] = [
+        |record| {
+            record.get_or_default("useGrouping");
+        },
+        |record| {
+            let _result =
+                IntlNumberFormat::with_locale_options("en", &JsValue::from(record.clone()));
+        },
+    ];
+    for read in readers {
+        let record = Record::from_entries([(String::from("useGrouping"), JsValue::Bool(false))]);
+        let projected = js_value_from_json_projection(
+            ReentrantRead {
+                record: record.clone(),
+                read,
+            },
+            |_source, _key| Ok(JsValue::Null),
+        );
+        record.set(String::from("probe"), projected);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            record.set(String::from("probe"), JsValue::Null);
+        }));
+        assert!(result.is_err());
+        assert!(record.get("probe").is_nullish());
+        assert_eq!(record.get("useGrouping"), JsValue::Bool(false));
+    }
+}
