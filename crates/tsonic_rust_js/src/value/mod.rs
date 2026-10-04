@@ -25,6 +25,10 @@ mod string;
 pub use string::closed_value_string;
 
 pub trait JsClosedValueCarrier: fmt::Debug {
+    fn native_value(&self) -> Option<&dyn core::any::Any> {
+        None
+    }
+
     fn identity_key(&self) -> usize;
     fn inspect_value(&self) -> String;
     fn write_string(&self, output: &mut String) -> JsResult<()>;

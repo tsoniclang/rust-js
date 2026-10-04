@@ -15,6 +15,10 @@ impl<Value> fmt::Debug for NativeValue<Value> {
 }
 
 impl<Value: 'static> JsClosedValueCarrier for NativeValue<Value> {
+    fn native_value(&self) -> Option<&dyn core::any::Any> {
+        Some(&self._value)
+    }
+
     fn identity_key(&self) -> usize {
         (self as *const Self).addr()
     }
@@ -37,6 +41,26 @@ impl<Value: 'static> JsClosedValueCarrier for NativeValue<Value> {
 }
 
 impl JsValue {
+    pub fn native_shared<Payload: ?Sized + 'static>(&self) -> Option<Rc<Payload>> {
+        match self {
+            Self::Closed(JsClosedValue(JsClosedValuePayload::NativeShared(value))) => {
+                let mut selected = None;
+                Rc::clone(value).project_native(&mut selected);
+                selected
+            }
+            _ => None,
+        }
+    }
+
+    pub fn native_value<Payload: Clone + 'static>(&self) -> Option<Payload> {
+        match self {
+            Self::Closed(JsClosedValue(JsClosedValuePayload::Object(value))) => {
+                value.native_value()?.downcast_ref::<Payload>().cloned()
+            }
+            _ => None,
+        }
+    }
+
     pub fn from_shared_identity(value: Rc<dyn ObjectIdentityCarrier>) -> Self {
         Self::Closed(JsClosedValue(JsClosedValuePayload::NativeShared(value)))
     }

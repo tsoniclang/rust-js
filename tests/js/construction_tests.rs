@@ -306,3 +306,36 @@ fn native_bigint_operands_truncate_without_losing_high_bits() {
         JsErrorKind::RangeError
     );
 }
+#[test]
+fn closed_native_nominal_queries_preserve_exact_shared_storage_and_mutation() {
+    use std::rc::Rc;
+    use tsonic_rust_js::value::JsValue;
+    use tsonic_rust_runtime::{ObjectHandle, ObjectHandleState, ObjectRefState};
+
+    let original = ObjectHandle::new(u64::MAX);
+    let owner = original.clone().into_shared();
+    let retained = JsValue::from_shared_identity(owner.clone());
+    let recovered = retained.native_shared::<ObjectHandleState<u64>>().unwrap();
+    assert!(Rc::ptr_eq(&owner, &recovered));
+    assert!(retained.native_shared::<ObjectRefState<u64>>().is_none());
+    let projected = ObjectHandle::from_shared(recovered);
+    original.with_mut(|value| *value = 7);
+    assert_eq!(projected.with(|value| *value), 7);
+    drop(original);
+    drop(owner);
+    drop(retained);
+    assert_eq!(projected.with(|value| *value), 7);
+}
+
+#[test]
+fn closed_native_value_queries_preserve_exact_payload_types() {
+    use tsonic_rust_js::value::JsValue;
+
+    #[derive(Clone, PartialEq, Debug)]
+    struct Record(u64);
+    let original = Record(u64::MAX);
+    let retained = JsValue::from_closed(original.clone());
+    assert_eq!(retained.native_value::<Record>(), Some(original));
+    assert!(retained.native_value::<u64>().is_none());
+    assert!(retained.native_shared::<Record>().is_none());
+}
