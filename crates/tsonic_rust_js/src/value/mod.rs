@@ -14,7 +14,7 @@ use crate::errors::JsResult;
 use crate::object::JsObject;
 use crate::{JsString, JsSymbol};
 use tsonic_rust_runtime::{
-    EmptyObject, JsError, JsErrorKind, ObjectIdentityCarrier, Record, ToSourceString,
+    EmptyObject, ErrorObject, JsErrorKind, ObjectIdentityCarrier, Record, RetainedError,
 };
 
 mod native;
@@ -39,7 +39,7 @@ enum JsClosedValuePayload {
     Object(Rc<dyn JsClosedValueCarrier>),
     Empty(EmptyObject),
     NativeShared(Rc<dyn ObjectIdentityCarrier>),
-    Error(JsError),
+    Error(RetainedError),
 }
 
 impl fmt::Debug for JsClosedValue {
@@ -61,7 +61,7 @@ impl JsClosedValue {
             JsClosedValuePayload::Object(value) => value.identity_key(),
             JsClosedValuePayload::Empty(value) => value.identity_key(),
             JsClosedValuePayload::NativeShared(value) => value.object_identity_key(),
-            JsClosedValuePayload::Error(error) => error.identity_key(),
+            JsClosedValuePayload::Error(error) => error.error_identity_key(),
         }
     }
 
@@ -83,7 +83,11 @@ impl JsClosedValue {
             JsClosedValuePayload::Object(value) => value.inspect_value(),
             JsClosedValuePayload::Empty(value) => value.inspect_value(),
             JsClosedValuePayload::NativeShared(_) => "[Native object]".to_owned(),
-            JsClosedValuePayload::Error(error) => error.to_source_string(),
+            JsClosedValuePayload::Error(error) => {
+                let mut output = String::new();
+                string::write_error(error, &mut output);
+                output
+            }
         }
     }
 
@@ -94,11 +98,20 @@ impl JsClosedValue {
             JsClosedValuePayload::NativeShared(_) => Err(crate::errors::unsupported(
                 "Native object erasure does not expose a JSON projection",
             )),
-            JsClosedValuePayload::Error(_) => Ok(JsValue::object(JsObject::new())),
+            JsClosedValuePayload::Error(RetainedError::Native(_) | RetainedError::Created(_)) => {
+                Ok(JsValue::object(JsObject::new()))
+            }
+            JsClosedValuePayload::Error(
+                RetainedError::Runtime(_)
+                | RetainedError::Project(_)
+                | RetainedError::WritableProject(_),
+            ) => Err(crate::errors::unsupported(
+                "Retained Error transport does not expose a JSON projection",
+            )),
         }
     }
 
-    fn as_error(&self) -> Option<&JsError> {
+    fn as_error(&self) -> Option<&RetainedError> {
         match &self.0 {
             JsClosedValuePayload::Error(error) => Some(error),
             JsClosedValuePayload::Object(_)
@@ -209,26 +222,37 @@ impl tsonic_rust_runtime::OptionalStorage<JsValue> for JsValue {
 }
 
 impl JsValue {
-    pub fn from_error(error: &JsError) -> Self {
-        Self::Closed(JsClosedValue(JsClosedValuePayload::Error(error.clone())))
+    pub fn from_error(error: impl Into<RetainedError>) -> Self {
+        Self::Closed(JsClosedValue(JsClosedValuePayload::Error(error.into())))
+    }
+
+    pub fn as_error(&self) -> Option<&RetainedError> {
+        match self {
+            Self::Closed(value) => value.as_error(),
+            _ => None,
+        }
+    }
+
+    pub fn into_error(self) -> Result<RetainedError, Self> {
+        match self {
+            Self::Closed(JsClosedValue(JsClosedValuePayload::Error(error))) => Ok(error),
+            original => Err(original),
+        }
     }
 
     pub fn is_error(&self) -> bool {
-        matches!(self, Self::Closed(value) if value.as_error().is_some())
+        self.as_error().is_some()
     }
 
     pub fn is_error_kind(&self, kind: JsErrorKind) -> bool {
-        matches!(self, Self::Closed(value) if value.as_error().is_some_and(|error| error.kind() == kind))
+        self.as_error()
+            .is_some_and(|error| error.error_kind() == kind)
     }
 
-    pub fn error_value(&self) -> JsError {
-        match self {
-            Self::Closed(value) => value
-                .as_error()
-                .expect("checked Error projection selected a non-error payload")
-                .clone(),
-            _ => panic!("checked Error projection selected a non-error payload"),
-        }
+    pub fn error_value(&self) -> RetainedError {
+        self.as_error()
+            .expect("checked Error projection selected a non-error payload")
+            .clone()
     }
 
     pub const fn undefined() -> Self {

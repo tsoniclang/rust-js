@@ -3,11 +3,21 @@ use crate::array::JsArrayElement;
 use crate::errors::{type_error, unsupported, JsResult};
 use crate::string::JsToString;
 use std::fmt::Write;
+use tsonic_rust_runtime::{ErrorObject, RetainedError};
 
 pub fn closed_value_string(value: &JsValue) -> JsResult<String> {
     let mut output = String::new();
     write_value(value, &mut output, None)?;
     Ok(output)
+}
+
+pub(super) fn write_error(error: &RetainedError, output: &mut String) {
+    write!(output, "{}", error.error_name()).unwrap();
+    let message = error.error_message();
+    if !message.is_empty() {
+        output.push_str(": ");
+        output.push_str(&message);
+    }
 }
 
 struct ArrayPath<'scope> {
@@ -80,13 +90,7 @@ fn write_value(
                 ));
             }
             JsClosedValuePayload::Object(value) => value.write_string(output)?,
-            JsClosedValuePayload::Error(error) => {
-                write!(output, "{}", error.kind()).unwrap();
-                if !error.message().is_empty() {
-                    output.push_str(": ");
-                    output.push_str(error.message());
-                }
-            }
+            JsClosedValuePayload::Error(error) => write_error(error, output),
         },
         JsValue::JsonProjection(_) => {
             return Err(unsupported(

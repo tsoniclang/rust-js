@@ -13,9 +13,9 @@ fn closed_strings_preserve_native_values_without_inspector_quoting() {
         (JsValue::UnsignedInteger(u64::MAX), "18446744073709551615"),
         (JsValue::String("text\n😀".to_owned()), "text\n😀"),
         (JsValue::closed(EmptyObject::new()), "[object Object]"),
-        (JsValue::from_error(&JsError::error("")), "Error"),
+        (JsValue::from_error(JsError::error("")), "Error"),
         (
-            JsValue::from_error(&JsError::error("failure")),
+            JsValue::from_error(JsError::error("failure")),
             "Error: failure",
         ),
     ] {
