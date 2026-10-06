@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 use crate::number::NativeNumberPredicate;
 use num_traits::ToPrimitive;
+use tsonic_rust_runtime::ordered_dispatch::poll_ordered_entries;
 use tsonic_rust_runtime::{Callable, JsError, TsonicError, TsonicResult};
 
 static NEXT_TIMER_ID: AtomicU64 = AtomicU64::new(1);
@@ -85,7 +86,7 @@ where
             .call(())
             .map_err(|error| TsonicError::from(JsError::error(&error.to_string())))
     });
-    let id = NEXT_TIMER_ID.fetch_add(1, Ordering::SeqCst);
+    let id = next_timer_id();
     let delay = Duration::from_millis(delay_ms);
     TIMERS.with_borrow_mut(|timers| {
         timers.insert(
@@ -103,30 +104,28 @@ where
 
 pub fn poll_timers() -> TsonicResult<bool> {
     let now = Instant::now();
-    let callbacks = TIMERS.with_borrow_mut(|timers| {
-        let due = timers
-            .iter()
-            .filter_map(|(id, entry)| (entry.due <= now).then_some(*id))
-            .collect::<Vec<_>>();
-        let mut callbacks = Vec::with_capacity(due.len());
-        for id in due {
-            let Some(entry) = timers.get_mut(&id) else {
-                continue;
-            };
-            callbacks.push(Rc::clone(&entry.callback));
-            if entry.interval {
-                entry.due = now + entry.delay;
-            } else {
-                timers.remove(&id);
-            }
-        }
-        callbacks
-    });
-    let did_work = !callbacks.is_empty();
-    for callback in callbacks {
-        callback()?;
-    }
-    Ok(did_work)
+    TIMERS.with(|timers| {
+        poll_ordered_entries(
+            timers,
+            |entry| entry.due <= now,
+            |timers, id| {
+                let entry = timers.get_mut(&id).expect("selected native timer");
+                if entry.interval {
+                    entry.due = now + entry.delay;
+                    Rc::clone(&entry.callback)
+                } else {
+                    timers.remove(&id).expect("selected native timer").callback
+                }
+            },
+            |callback| callback(),
+        )
+    })
+}
+
+fn next_timer_id() -> u64 {
+    NEXT_TIMER_ID
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
+        .expect("native timer identity range is exhausted")
 }
 
 fn normalized_delay(value: f64) -> u64 {

@@ -118,6 +118,62 @@ fn retained_timer_allocations_match_one_native_callback_owner() {
 }
 
 #[test]
+fn ready_timer_dispatch_allocates_no_callback_snapshots() {
+    assert!(!timers::has_timers());
+    let observed = Rc::new(Cell::new(0));
+    for _ in 0..2 {
+        let recorded = observed.clone();
+        timers::set_timeout_callable(
+            Callable::new(move |()| {
+                recorded.set(recorded.get() + 1);
+                Ok::<(), TsonicError>(())
+            }),
+            0.0,
+        );
+    }
+    let allocations = measure(|| assert!(timers::poll_timers().unwrap()));
+    assert_eq!(allocations, (0, 0));
+    assert_eq!(observed.get(), 2);
+    assert!(!timers::has_timers());
+}
+
+#[test]
+fn ready_timer_cancellation_and_reentrant_admission_follow_the_live_store() {
+    assert!(!timers::has_timers());
+    let observed = Rc::new(Cell::new(0));
+    let cancelled = Rc::new(Cell::new(0_u64));
+    let handle = cancelled.clone();
+    let recorded = observed.clone();
+    timers::set_timeout_callable(
+        Callable::new(move |()| {
+            timers::clear_timeout(handle.get());
+            let later = recorded.clone();
+            timers::set_timeout_callable(
+                Callable::new(move |()| {
+                    later.set(7);
+                    Ok::<(), TsonicError>(())
+                }),
+                0.0,
+            );
+            Ok::<(), TsonicError>(())
+        }),
+        0.0,
+    );
+    cancelled.set(timers::set_timeout_callable(
+        Callable::new(|()| -> TsonicResult<()> {
+            panic!("a cancelled ready timer must not execute")
+        }),
+        0.0,
+    ));
+    assert!(timers::poll_timers().unwrap());
+    assert_eq!(observed.get(), 0);
+    assert!(timers::has_timers());
+    assert!(timers::poll_timers().unwrap());
+    assert_eq!(observed.get(), 7);
+    assert!(!timers::has_timers());
+}
+
+#[test]
 fn cancellation_releases_the_callback_without_invoking_it() {
     let drops = Rc::new(Cell::new(0));
     let probe = DropProbe(Rc::clone(&drops));
