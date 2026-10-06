@@ -4,15 +4,16 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll, Wake, Waker};
 use std::thread::{self, Thread};
-use std::time::Duration;
 
 use tsonic_rust_runtime::TsonicResult;
 
 pub trait EventLoopDriver {
-    fn poll(&mut self) -> TsonicResult<bool>;
+    type Error;
+
+    fn poll(&mut self) -> Result<bool, Self::Error>;
     fn has_work(&self) -> bool;
-    fn wait(&mut self, timer_delay: Option<Duration>) -> TsonicResult<()>;
-    fn waker(&mut self) -> TsonicResult<Waker>;
+    fn wait(&mut self) -> Result<(), Self::Error>;
+    fn waker(&mut self) -> Result<Waker, Self::Error>;
 }
 
 struct LoopWake {
@@ -46,16 +47,18 @@ impl Wake for ThreadWake {
 struct TimerDriver;
 
 impl EventLoopDriver for TimerDriver {
+    type Error = tsonic_rust_runtime::TsonicError;
+
     fn poll(&mut self) -> TsonicResult<bool> {
-        Ok(false)
+        crate::timers::poll_timers()
     }
 
     fn has_work(&self) -> bool {
-        false
+        crate::timers::has_timers()
     }
 
-    fn wait(&mut self, timer_delay: Option<Duration>) -> TsonicResult<()> {
-        match timer_delay {
+    fn wait(&mut self) -> TsonicResult<()> {
+        match crate::timers::next_timer_delay() {
             Some(delay) => thread::park_timeout(delay),
             None => thread::park(),
         }
@@ -75,27 +78,23 @@ pub fn run_event_loop() -> TsonicResult<()> {
     run_with_driver(&mut TimerDriver)
 }
 
-pub fn block_on_with_driver<Output>(
+pub fn block_on_with_driver<Output, Driver: EventLoopDriver>(
     future: impl Future<Output = Output>,
-    driver: &mut impl EventLoopDriver,
-) -> TsonicResult<Output> {
+    driver: &mut Driver,
+) -> Result<Output, Driver::Error> {
     let mut future = pin!(future);
     Ok(drive(Some(future.as_mut()), driver)?.expect("a driven root future returns its output"))
 }
 
-pub fn run_with_driver(driver: &mut impl EventLoopDriver) -> TsonicResult<()> {
-    drive::<std::future::Pending<()>>(None, driver).map(|_| ())
+pub fn run_with_driver<Driver: EventLoopDriver>(driver: &mut Driver) -> Result<(), Driver::Error> {
+    drive::<std::future::Pending<()>, Driver>(None, driver).map(|_| ())
 }
 
-fn drive<Root: Future>(
+fn drive<Root: Future, Driver: EventLoopDriver>(
     mut root: Option<Pin<&mut Root>>,
-    driver: &mut impl EventLoopDriver,
-) -> TsonicResult<Option<Root::Output>> {
-    if root.is_none()
-        && !driver.has_work()
-        && !crate::timers::has_timers()
-        && !crate::promise_jobs::has_jobs()
-    {
+    driver: &mut Driver,
+) -> Result<Option<Root::Output>, Driver::Error> {
+    if root.is_none() && !driver.has_work() && !crate::promise_jobs::has_jobs() {
         return Ok(None);
     }
     let wake = Arc::new(LoopWake {
@@ -105,7 +104,6 @@ fn drive<Root: Future>(
     let waker = Waker::from(Arc::clone(&wake));
     let mut context = Context::from_waker(&waker);
     loop {
-        let timer_work = crate::timers::poll_timers()?;
         let driver_work = driver.poll()?;
         let mut job_work = false;
         if wake.ready.swap(false, Ordering::AcqRel) {
@@ -116,15 +114,11 @@ fn drive<Root: Future>(
             }
             job_work = crate::promise_jobs::poll(&mut context);
         }
-        if root.is_none()
-            && !driver.has_work()
-            && !crate::timers::has_timers()
-            && !wake.ready.load(Ordering::Acquire)
-        {
+        if root.is_none() && !driver.has_work() && !wake.ready.load(Ordering::Acquire) {
             return Ok(None);
         }
-        if !timer_work && !driver_work && !job_work && !wake.ready.load(Ordering::Acquire) {
-            driver.wait(crate::timers::next_timer_delay())?;
+        if !driver_work && !job_work && !wake.ready.load(Ordering::Acquire) {
+            driver.wait()?;
         }
     }
 }

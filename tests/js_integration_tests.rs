@@ -31,6 +31,8 @@ mod date_tests;
 mod equality_tests;
 #[path = "js/error_value_tests.rs"]
 mod error_value_tests;
+#[path = "js/event_loop_tests.rs"]
+mod event_loop_tests;
 #[path = "js/fallible_callback_tests.rs"]
 mod fallible_callback_tests;
 #[path = "js/globals_uri_dataview_tests.rs"]
