@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll, Wake, Waker};
 use std::thread::{self, Thread};
 
+use tsonic_rust_runtime::dispatch::{DispatchContexts, DispatchEnd, DispatchPhase};
 use tsonic_rust_runtime::TsonicResult;
 
 pub trait EventLoopDriver {
@@ -44,38 +45,77 @@ impl Wake for ThreadWake {
     }
 }
 
-struct TimerDriver;
+struct TimerDriver<TContexts> {
+    contexts: TContexts,
+}
 
-impl EventLoopDriver for TimerDriver {
-    type Error = tsonic_rust_runtime::TsonicError;
+impl<TContexts: DispatchContexts> EventLoopDriver for TimerDriver<TContexts>
+where
+    TContexts::Error: From<tsonic_rust_runtime::TsonicError>,
+{
+    type Error = TContexts::Error;
 
-    fn poll(&mut self) -> TsonicResult<bool> {
-        crate::timers::poll_timers()
+    fn poll(&mut self) -> Result<bool, Self::Error> {
+        crate::timers::with_default(|native| {
+            tsonic_rust_runtime::dispatch::poll_phase(
+                &tsonic_rust_runtime::dispatch::prepend(native, &self.contexts),
+                DispatchPhase::JsTimers,
+            )
+        })
     }
 
     fn has_work(&self) -> bool {
-        crate::timers::has_timers()
+        crate::timers::has_timers() || self.contexts.has_work()
     }
 
-    fn wait(&mut self) -> TsonicResult<()> {
-        match crate::timers::next_timer_delay() {
+    fn wait(&mut self) -> Result<(), Self::Error> {
+        let native = crate::timers::next_timer_delay();
+        let selected = self.contexts.next_delay();
+        let delay = match (native, selected) {
+            (Some(native), Some(selected)) => Some(native.min(selected)),
+            (Some(delay), None) | (None, Some(delay)) => Some(delay),
+            (None, None) => None,
+        };
+        match delay {
             Some(delay) => thread::park_timeout(delay),
             None => thread::park(),
         }
         Ok(())
     }
 
-    fn waker(&mut self) -> TsonicResult<Waker> {
+    fn waker(&mut self) -> Result<Waker, Self::Error> {
         Ok(Waker::from(Arc::new(ThreadWake(thread::current()))))
     }
 }
 
 pub fn block_on<Output>(future: impl Future<Output = Output>) -> TsonicResult<Output> {
-    block_on_with_driver(future, &mut TimerDriver)
+    block_on_with_contexts(
+        future,
+        DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+    )
 }
 
 pub fn run_event_loop() -> TsonicResult<()> {
-    run_with_driver(&mut TimerDriver)
+    run_with_contexts(DispatchEnd::<tsonic_rust_runtime::TsonicError>::new())
+}
+
+pub fn block_on_with_contexts<TOutput, TContexts: DispatchContexts>(
+    future: impl Future<Output = TOutput>,
+    contexts: TContexts,
+) -> Result<TOutput, TContexts::Error>
+where
+    TContexts::Error: From<tsonic_rust_runtime::TsonicError>,
+{
+    block_on_with_driver(future, &mut TimerDriver { contexts })
+}
+
+pub fn run_with_contexts<TContexts: DispatchContexts>(
+    contexts: TContexts,
+) -> Result<(), TContexts::Error>
+where
+    TContexts::Error: From<tsonic_rust_runtime::TsonicError>,
+{
+    run_with_driver(&mut TimerDriver { contexts })
 }
 
 pub fn block_on_with_driver<Output, Driver: EventLoopDriver>(

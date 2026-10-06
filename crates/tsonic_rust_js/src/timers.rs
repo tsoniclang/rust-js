@@ -1,131 +1,94 @@
-use std::cell::RefCell;
-use std::collections::BTreeMap;
-use std::rc::Rc;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use crate::number::NativeNumberPredicate;
+use crate::{JsError, JsResult};
 use num_traits::ToPrimitive;
-use tsonic_rust_runtime::ordered_dispatch::poll_ordered_entries;
-use tsonic_rust_runtime::{Callable, JsError, TsonicError, TsonicResult};
+use tsonic_rust_runtime::dispatch::{DispatchContexts, DispatchPhase};
+use tsonic_rust_runtime::timer_queue::{TimerContext, TimerQueueError};
+use tsonic_rust_runtime::{Callable, TsonicResult};
 
-static NEXT_TIMER_ID: AtomicU64 = AtomicU64::new(1);
-
-type TimerCallback = Rc<dyn Fn() -> TsonicResult<()>>;
-
-struct TimerEntry {
-    callback: TimerCallback,
-    delay: Duration,
-    due: Instant,
-    interval: bool,
+pub const fn new<TError>() -> TimerContext<Callable<(), Result<(), TError>>> {
+    TimerContext::new(DispatchPhase::JsTimers)
 }
 
 thread_local! {
-    static TIMERS: RefCell<BTreeMap<u64, TimerEntry>> = const { RefCell::new(BTreeMap::new()) };
+    static DEFAULT_TIMERS: TimerContext<Callable<(), TsonicResult<()>>> = const { new() };
 }
 
-pub fn set_timeout_callable<E>(callback: Callable<(), Result<(), E>>, delay_ms: f64) -> u64
-where
-    E: std::fmt::Display + 'static,
-{
-    schedule_callback(callback, normalized_delay(delay_ms), false)
+pub fn with_default<TOutput>(
+    operation: impl FnOnce(&TimerContext<Callable<(), TsonicResult<()>>>) -> TOutput,
+) -> TOutput {
+    DEFAULT_TIMERS.with(operation)
 }
 
-pub fn set_interval_callable<E>(callback: Callable<(), Result<(), E>>, delay_ms: f64) -> u64
-where
-    E: std::fmt::Display + 'static,
-{
-    schedule_callback(callback, normalized_delay(delay_ms).max(1), true)
+pub fn set_timeout_callable<TError>(
+    timers: &TimerContext<Callable<(), Result<(), TError>>>,
+    callback: Callable<(), Result<(), TError>>,
+    delay_ms: f64,
+) -> JsResult<u64> {
+    schedule_callback(timers, callback, normalized_delay(delay_ms), false)
 }
 
-pub fn clear_timeout<Value: Copy + NativeNumberPredicate + ToPrimitive>(value: Value) {
-    if let Some(timer_id) = timer_id(value) {
-        TIMERS.with_borrow_mut(|timers| {
-            timers.remove(&timer_id);
-        });
+pub fn set_interval_callable<TError>(
+    timers: &TimerContext<Callable<(), Result<(), TError>>>,
+    callback: Callable<(), Result<(), TError>>,
+    delay_ms: f64,
+) -> JsResult<u64> {
+    schedule_callback(timers, callback, normalized_delay(delay_ms).max(1), true)
+}
+
+pub fn clear_timeout<TError, Value: Copy + NativeNumberPredicate + ToPrimitive>(
+    timers: &TimerContext<Callable<(), Result<(), TError>>>,
+    value: Value,
+) {
+    if let Some(id) = timer_id(value) {
+        timers.cancel(id);
     }
 }
 
-pub fn clear_interval<Value: Copy + NativeNumberPredicate + ToPrimitive>(timer_id: Value) {
-    clear_timeout(timer_id);
+pub fn clear_interval<TError, Value: Copy + NativeNumberPredicate + ToPrimitive>(
+    timers: &TimerContext<Callable<(), Result<(), TError>>>,
+    id: Value,
+) {
+    clear_timeout(timers, id);
 }
 
 pub fn run_timers() -> TsonicResult<()> {
-    loop {
-        let next_delay = next_timer_delay();
-        let Some(delay) = next_delay else {
-            return Ok(());
-        };
-        if !delay.is_zero() {
-            std::thread::sleep(delay);
-        }
-        poll_timers()?;
-    }
+    crate::event_loop::run_event_loop()
 }
 
 pub fn has_timers() -> bool {
-    TIMERS.with_borrow(|timers| !timers.is_empty())
+    with_default(TimerContext::has_pending_work)
 }
 
 pub fn next_timer_delay() -> Option<Duration> {
-    TIMERS.with_borrow(|timers| {
-        let now = Instant::now();
-        timers
-            .values()
-            .map(|entry| entry.due.saturating_duration_since(now))
-            .min()
-    })
+    with_default(DispatchContexts::next_delay)
 }
 
-fn schedule_callback<E>(callback: Callable<(), Result<(), E>>, delay_ms: u64, interval: bool) -> u64
-where
-    E: std::fmt::Display + 'static,
-{
-    let callback: TimerCallback = Rc::new(move || {
-        callback
-            .call(())
-            .map_err(|error| TsonicError::from(JsError::error(&error.to_string())))
-    });
-    let id = next_timer_id();
-    let delay = Duration::from_millis(delay_ms);
-    TIMERS.with_borrow_mut(|timers| {
-        timers.insert(
-            id,
-            TimerEntry {
-                callback,
-                delay,
-                due: Instant::now() + delay,
-                interval,
-            },
-        );
-    });
-    id
+fn schedule_callback<TError>(
+    timers: &TimerContext<Callable<(), Result<(), TError>>>,
+    callback: Callable<(), Result<(), TError>>,
+    delay_ms: u64,
+    interval: bool,
+) -> JsResult<u64> {
+    timers
+        .schedule_with(
+            Duration::from_millis(delay_ms),
+            interval,
+            true,
+            false,
+            || callback,
+        )
+        .map(|handle| handle.id())
+        .map_err(timer_error)
+}
+
+fn timer_error(error: TimerQueueError) -> JsError {
+    crate::range_error(&error.to_string())
 }
 
 pub fn poll_timers() -> TsonicResult<bool> {
-    let now = Instant::now();
-    TIMERS.with(|timers| {
-        poll_ordered_entries(
-            timers,
-            |entry| entry.due <= now,
-            |timers, id| {
-                let entry = timers.get_mut(&id).expect("selected native timer");
-                if entry.interval {
-                    entry.due = now + entry.delay;
-                    Rc::clone(&entry.callback)
-                } else {
-                    timers.remove(&id).expect("selected native timer").callback
-                }
-            },
-            |callback| callback(),
-        )
-    })
-}
-
-fn next_timer_id() -> u64 {
-    NEXT_TIMER_ID
-        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
-        .expect("native timer identity range is exhausted")
+    with_default(TimerContext::poll)
 }
 
 fn normalized_delay(value: f64) -> u64 {
@@ -144,23 +107,4 @@ fn timer_id<Value: Copy + NativeNumberPredicate + ToPrimitive>(value: Value) -> 
 }
 
 #[cfg(test)]
-mod tests {
-    use super::timer_id;
-
-    #[test]
-    fn timer_identifiers_retain_native_precision() {
-        assert_eq!(
-            timer_id(9_007_199_254_740_993_u64),
-            Some(9_007_199_254_740_993)
-        );
-        assert_eq!(timer_id(u64::MAX), Some(u64::MAX));
-        assert_eq!(timer_id(7_i32), Some(7));
-        assert_eq!(timer_id(7.0), Some(7));
-        assert_eq!(timer_id(7.5), None);
-        assert_eq!(timer_id(-1_i64), None);
-        assert_eq!(timer_id(0_u64), None);
-        assert_eq!(timer_id(f64::NAN), None);
-        assert_eq!(timer_id(f64::INFINITY), None);
-        assert_eq!(timer_id(u64::MAX as f64), None);
-    }
-}
+mod tests;

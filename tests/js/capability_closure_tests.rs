@@ -351,12 +351,18 @@ fn intl_is_deterministic_and_rejects_unapproved_locale_data() {
 #[test]
 fn timer_inventory_tracks_live_callbacks_exactly() {
     assert!(!tsonic_rust_js::timers::has_timers());
-    let timer = tsonic_rust_js::timers::set_timeout_callable(
-        Callable::new(|()| Ok::<(), String>(())),
-        1_000.0,
-    );
+    let timer = tsonic_rust_js::timers::with_default(|timers| {
+        tsonic_rust_js::timers::set_timeout_callable(
+            timers,
+            Callable::new(|()| Ok::<(), tsonic_rust_runtime::TsonicError>(())),
+            1_000.0,
+        )
+    })
+    .unwrap();
     assert!(tsonic_rust_js::timers::has_timers());
-    tsonic_rust_js::timers::clear_timeout(timer);
+    tsonic_rust_js::timers::with_default(|timers| {
+        tsonic_rust_js::timers::clear_timeout(timers, timer)
+    });
     assert!(!tsonic_rust_js::timers::has_timers());
 }
 

@@ -45,10 +45,14 @@ fn timer_settlement_wakes_a_borrowed_root_future() {
     let value = String::from("borrowed root");
     let promise = JsPromise::create(Callable::new(
         |(resolve, _): (PromiseResolve<i32>, PromiseReject)| {
-            tsonic_rust_js::timers::set_timeout_callable(
-                Callable::new(move |()| resolve.call((PromiseResolution::Value(7),))),
-                1.0,
-            );
+            tsonic_rust_js::timers::with_default(|timers| {
+                tsonic_rust_js::timers::set_timeout_callable(
+                    timers,
+                    Callable::new(move |()| resolve.call((PromiseResolution::Value(7),))),
+                    1.0,
+                )
+            })
+            .unwrap();
             Ok(())
         },
     ));
