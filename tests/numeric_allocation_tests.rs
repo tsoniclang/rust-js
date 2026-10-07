@@ -10,6 +10,8 @@ struct CountingAllocator;
 
 thread_local! {
     static TRACKED_ALLOCATIONS: Cell<Option<usize>> = const { Cell::new(None) };
+    static TRACKED_BYTES: Cell<Option<usize>> = const { Cell::new(None) };
+    static TRACKED_ALIGNMENT: Cell<Option<usize>> = const { Cell::new(None) };
 }
 
 unsafe impl GlobalAlloc for CountingAllocator {
@@ -17,6 +19,16 @@ unsafe impl GlobalAlloc for CountingAllocator {
         TRACKED_ALLOCATIONS.with(|count| {
             if let Some(value) = count.get() {
                 count.set(Some(value + 1));
+            }
+        });
+        TRACKED_BYTES.with(|count| {
+            if let Some(value) = count.get() {
+                count.set(Some(value + layout.size()));
+            }
+        });
+        TRACKED_ALIGNMENT.with(|alignment| {
+            if let Some(value) = alignment.get() {
+                alignment.set(Some(value.max(layout.align())));
             }
         });
         unsafe { System.alloc(layout) }
@@ -29,6 +41,140 @@ unsafe impl GlobalAlloc for CountingAllocator {
 
 #[global_allocator]
 static ALLOCATOR: CountingAllocator = CountingAllocator;
+
+fn measured_allocation<Output>(
+    operation: impl FnOnce() -> Output,
+) -> (Output, usize, usize, usize) {
+    TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
+    TRACKED_BYTES.with(|count| count.set(Some(0)));
+    TRACKED_ALIGNMENT.with(|alignment| alignment.set(Some(0)));
+    let output = operation();
+    let allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
+    let bytes = TRACKED_BYTES.with(|count| count.replace(None).unwrap());
+    let alignment = TRACKED_ALIGNMENT.with(|value| value.replace(None).unwrap());
+    (output, allocations, bytes, alignment)
+}
+
+#[test]
+fn native_payload_does_not_grow_closed_js_carriers_or_their_allocation() {
+    use std::mem::{align_of, size_of};
+    use std::rc::Rc;
+    use tsonic_rust_js::{JsClosedValue, JsValue};
+    use tsonic_rust_runtime::NativePayload;
+    #[repr(align(64))]
+    struct Aligned([u8; 64]);
+    fn check<Payload: 'static>(create: impl Fn() -> Payload) {
+        let direct = create();
+        let closed = create();
+        let (direct, direct_count, direct_bytes, direct_alignment) =
+            measured_allocation(|| Rc::new(direct));
+        let (closed, closed_count, closed_bytes, closed_alignment) =
+            measured_allocation(|| JsValue::from_closed(closed));
+        assert_eq!(direct_count, 1);
+        assert_eq!(closed_count, 1);
+        assert_eq!(closed_bytes, direct_bytes);
+        assert_eq!(closed_alignment, direct_alignment);
+        drop((direct, closed));
+    }
+    check(|| ());
+    check(|| u64::MAX);
+    check(|| u128::MAX);
+    check(|| [7_u8; 256]);
+    check(|| String::from("owned native string"));
+    check(|| Aligned([7; 64]));
+    assert_eq!(Aligned([7; 64]).0[0], 7);
+    if usize::BITS == 64 {
+        assert_eq!(size_of::<NativePayload>(), 16);
+        assert_eq!(align_of::<NativePayload>(), 8);
+        assert_eq!(size_of::<JsClosedValue>(), 24);
+        assert_eq!(align_of::<JsClosedValue>(), 8);
+        assert_eq!(size_of::<JsValue>(), 40);
+        assert_eq!(align_of::<JsValue>(), 8);
+    }
+}
+
+#[test]
+fn native_passive_aliases_and_queries_preserve_exact_clone_and_drop_costs() {
+    use std::rc::Rc;
+    use tsonic_rust_js::{
+        equality::{JsHash, JsSameValue, JsSameValueZero, JsStrictEqual},
+        JsValue,
+    };
+    struct Probe {
+        clones: Rc<Cell<usize>>,
+        drops: Rc<Cell<usize>>,
+        value: u64,
+    }
+    impl Clone for Probe {
+        fn clone(&self) -> Self {
+            self.clones.set(self.clones.get() + 1);
+            Self {
+                clones: self.clones.clone(),
+                drops: self.drops.clone(),
+                value: self.value,
+            }
+        }
+    }
+    impl Drop for Probe {
+        fn drop(&mut self) {
+            self.drops.set(self.drops.get() + 1);
+        }
+    }
+    let clones = Rc::new(Cell::new(0));
+    let drops = Rc::new(Cell::new(0));
+    let value = JsValue::from_closed(Probe {
+        clones: clones.clone(),
+        drops: drops.clone(),
+        value: u64::MAX,
+    });
+    let identity = value.reference_identity_key();
+    let (alias, count, bytes, _) = measured_allocation(|| value.clone());
+    assert_eq!(count, 0);
+    assert_eq!(bytes, 0);
+    assert_eq!(clones.get(), 0);
+    assert_eq!(alias.reference_identity_key(), identity);
+    let (observations, count, bytes, _) = measured_allocation(|| {
+        (
+            value.strict_equal(&alias),
+            value.same_value(&alias),
+            value.same_value_zero(&alias),
+            value.js_hash() == alias.js_hash(),
+            alias.native_value::<u64>(),
+        )
+    });
+    assert_eq!(observations, (true, true, true, true, None));
+    assert_eq!(count, 0);
+    assert_eq!(bytes, 0);
+    assert_eq!(clones.get(), 0);
+    let (recovered, count, bytes, _) = measured_allocation(|| alias.native_value::<Probe>());
+    assert_eq!(count, 0);
+    assert_eq!(bytes, 0);
+    assert_eq!(clones.get(), 1);
+    let recovered = recovered.unwrap();
+    assert_eq!(recovered.value, u64::MAX);
+    drop(recovered);
+    assert_eq!(drops.get(), 1);
+    drop(value);
+    assert_eq!(drops.get(), 1);
+    drop(alias);
+    assert_eq!(drops.get(), 2);
+}
+
+#[test]
+fn exact_native_string_recovery_clones_only_the_requested_payload() {
+    use tsonic_rust_js::JsValue;
+    let original = String::from("one explicitly requested native string clone");
+    let retained = JsValue::from_closed(original.clone());
+    let (direct, direct_count, direct_bytes, direct_alignment) =
+        measured_allocation(|| original.clone());
+    let (recovered, count, bytes, alignment) =
+        measured_allocation(|| retained.native_value::<String>().unwrap());
+    assert_eq!(count, 1);
+    assert_eq!(count, direct_count);
+    assert_eq!(bytes, direct_bytes);
+    assert_eq!(alignment, direct_alignment);
+    assert_eq!(recovered, direct);
+}
 
 #[test]
 fn generic_number_predicates_borrow_existing_numeric_storage_without_allocations() {

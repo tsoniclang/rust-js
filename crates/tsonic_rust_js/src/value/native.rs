@@ -1,44 +1,6 @@
-use super::{JsClosedValue, JsClosedValueCarrier, JsClosedValuePayload, JsValue};
-use crate::errors::{unsupported, JsResult};
-use std::fmt;
+use super::{JsClosedValue, JsClosedValuePayload, JsValue};
 use std::rc::Rc;
-use tsonic_rust_runtime::{EmptyObject, ObjectIdentityCarrier};
-
-struct NativeValue<Value> {
-    _value: Value,
-}
-
-impl<Value> fmt::Debug for NativeValue<Value> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("NativeValue")
-    }
-}
-
-impl<Value: 'static> JsClosedValueCarrier for NativeValue<Value> {
-    fn native_value(&self) -> Option<&dyn core::any::Any> {
-        Some(&self._value)
-    }
-
-    fn identity_key(&self) -> usize {
-        (self as *const Self).addr()
-    }
-
-    fn inspect_value(&self) -> String {
-        "[Native value]".to_owned()
-    }
-
-    fn write_string(&self, _output: &mut String) -> JsResult<()> {
-        Err(unsupported(
-            "Native value erasure does not expose string conversion",
-        ))
-    }
-
-    fn project_json(&self) -> JsResult<JsValue> {
-        Err(unsupported(
-            "Native value erasure does not expose a JSON projection",
-        ))
-    }
-}
+use tsonic_rust_runtime::{EmptyObject, NativePayload, ObjectIdentityCarrier};
 
 impl JsValue {
     pub fn native_shared<Payload: ?Sized + 'static>(&self) -> Option<Rc<Payload>> {
@@ -54,8 +16,8 @@ impl JsValue {
 
     pub fn native_value<Payload: Clone + 'static>(&self) -> Option<Payload> {
         match self {
-            Self::Closed(JsClosedValue(JsClosedValuePayload::Object(value))) => {
-                value.native_value()?.downcast_ref::<Payload>().cloned()
+            Self::Closed(JsClosedValue(JsClosedValuePayload::Native(value))) => {
+                value.native_value()
             }
             _ => None,
         }
@@ -66,7 +28,9 @@ impl JsValue {
     }
 
     pub fn from_closed<Value: 'static>(value: Value) -> Self {
-        Self::closed(NativeValue { _value: value })
+        Self::Closed(JsClosedValue(JsClosedValuePayload::Native(
+            NativePayload::from_closed(value),
+        )))
     }
 }
 

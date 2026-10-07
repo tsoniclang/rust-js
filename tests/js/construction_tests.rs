@@ -339,3 +339,59 @@ fn closed_native_value_queries_preserve_exact_payload_types() {
     assert!(retained.native_value::<u64>().is_none());
     assert!(retained.native_shared::<Record>().is_none());
 }
+
+#[test]
+fn native_payload_keeps_closed_observations_and_rejects_unselected_projections() {
+    use tsonic_rust_js::{
+        equality::{JsHash, JsSameValue, JsSameValueZero, JsStrictEqual},
+        JsValue,
+    };
+    use tsonic_rust_runtime::{EmptyObject, OptionalStorage};
+    let value = JsValue::from_closed(String::from("payload must not be inspected"));
+    let alias = value.clone();
+    let other = JsValue::from_closed(String::from("payload must not be inspected"));
+    assert_eq!(value.type_of(), "object");
+    assert_eq!(value.inspect(), "[Native value]");
+    assert!(value.strict_equal(&alias));
+    assert!(value.same_value(&alias));
+    assert!(value.same_value_zero(&alias));
+    assert_eq!(value.js_hash(), alias.js_hash());
+    assert!(!value.strict_equal(&other));
+    assert!(!value.same_value(&other));
+    assert!(!value.same_value_zero(&other));
+    assert!(value.as_error().is_none());
+    assert!(value.clone().into_error().is_err());
+    assert!(!OptionalStorage::<JsValue>::is_absent(&value));
+    assert!(!value.strict_equal(&JsValue::Null));
+    let string_error = tsonic_rust_js::value::closed_value_string(&value).unwrap_err();
+    assert_eq!(string_error.kind(), JsErrorKind::Unsupported);
+    assert_eq!(
+        string_error.message(),
+        "Native value erasure does not expose string conversion"
+    );
+    let json_error = tsonic_rust_js::json::stringify(&value).unwrap_err();
+    assert_eq!(json_error.kind(), JsErrorKind::Unsupported);
+    assert_eq!(
+        json_error.message(),
+        "Native value erasure does not expose a JSON projection"
+    );
+    let JsValue::Closed(closed) = &value else {
+        panic!("native closed payload");
+    };
+    assert!(closed.project_json().is_err());
+    assert_eq!(format!("{closed:?}"), "[Native value]");
+    assert_eq!(
+        value.native_value::<String>().unwrap(),
+        "payload must not be inspected"
+    );
+    let empty = JsValue::closed(EmptyObject::new());
+    assert!(empty.native_value::<EmptyObject>().is_none());
+    assert_eq!(
+        tsonic_rust_js::value::closed_value_string(&empty).unwrap(),
+        "[object Object]"
+    );
+    assert_eq!(
+        tsonic_rust_js::json::stringify(&empty).unwrap(),
+        Some(String::from("{}"))
+    );
+}

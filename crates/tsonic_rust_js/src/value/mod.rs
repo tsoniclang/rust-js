@@ -14,7 +14,8 @@ use crate::errors::JsResult;
 use crate::object::JsObject;
 use crate::{JsString, JsSymbol};
 use tsonic_rust_runtime::{
-    EmptyObject, ErrorObject, JsErrorKind, ObjectIdentityCarrier, Record, RetainedError,
+    EmptyObject, ErrorObject, JsErrorKind, NativePayload, ObjectIdentityCarrier, Record,
+    RetainedError,
 };
 
 mod native;
@@ -25,10 +26,6 @@ mod string;
 pub use string::closed_value_string;
 
 pub trait JsClosedValueCarrier: fmt::Debug {
-    fn native_value(&self) -> Option<&dyn core::any::Any> {
-        None
-    }
-
     fn identity_key(&self) -> usize;
     fn inspect_value(&self) -> String;
     fn write_string(&self, output: &mut String) -> JsResult<()>;
@@ -41,6 +38,7 @@ pub struct JsClosedValue(JsClosedValuePayload);
 #[derive(Clone)]
 enum JsClosedValuePayload {
     Object(Rc<dyn JsClosedValueCarrier>),
+    Native(NativePayload),
     Empty(EmptyObject),
     NativeShared(Rc<dyn ObjectIdentityCarrier>),
     Error(RetainedError),
@@ -63,6 +61,7 @@ impl JsClosedValue {
     pub fn identity_key(&self) -> usize {
         match &self.0 {
             JsClosedValuePayload::Object(value) => value.identity_key(),
+            JsClosedValuePayload::Native(value) => value.identity_key(),
             JsClosedValuePayload::Empty(value) => value.identity_key(),
             JsClosedValuePayload::NativeShared(value) => value.object_identity_key(),
             JsClosedValuePayload::Error(error) => error.error_identity_key(),
@@ -85,6 +84,7 @@ impl JsClosedValue {
     pub fn inspect(&self) -> String {
         match &self.0 {
             JsClosedValuePayload::Object(value) => value.inspect_value(),
+            JsClosedValuePayload::Native(_) => "[Native value]".to_owned(),
             JsClosedValuePayload::Empty(value) => value.inspect_value(),
             JsClosedValuePayload::NativeShared(_) => "[Native object]".to_owned(),
             JsClosedValuePayload::Error(error) => {
@@ -98,6 +98,9 @@ impl JsClosedValue {
     pub fn project_json(&self) -> JsResult<JsValue> {
         match &self.0 {
             JsClosedValuePayload::Object(value) => value.project_json(),
+            JsClosedValuePayload::Native(_) => Err(crate::errors::unsupported(
+                "Native value erasure does not expose a JSON projection",
+            )),
             JsClosedValuePayload::Empty(value) => value.project_json(),
             JsClosedValuePayload::NativeShared(_) => Err(crate::errors::unsupported(
                 "Native object erasure does not expose a JSON projection",
@@ -119,6 +122,7 @@ impl JsClosedValue {
         match &self.0 {
             JsClosedValuePayload::Error(error) => Some(error),
             JsClosedValuePayload::Object(_)
+            | JsClosedValuePayload::Native(_)
             | JsClosedValuePayload::Empty(_)
             | JsClosedValuePayload::NativeShared(_) => None,
         }
