@@ -2,6 +2,51 @@ use tsonic_rust_js::{abi, array::ArrayLength, JsErrorKind};
 use tsonic_rust_runtime::BigInt;
 
 #[test]
+fn broad_empty_state_projection_rejects_other_variants_without_payload_mutation() {
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+    use tsonic_rust_js::{object::JsObject, JsValue};
+    use tsonic_rust_runtime::{EmptyObject, ObjectHandle, ObjectRef};
+    let original = EmptyObject::new();
+    let project = ObjectHandle::new(17_i32);
+    let immutable = ObjectRef::new(23_i32);
+    let project_identity = project.object_identity().clone();
+    let immutable_identity = immutable.object_identity().clone();
+    let values = [
+        JsValue::Null,
+        JsValue::Bool(false),
+        JsValue::Int32(0),
+        JsValue::UnsignedInteger(u64::MAX),
+        JsValue::String(String::from("unchanged")),
+        JsValue::from_closed(original.clone()),
+        JsValue::closed(original.clone()),
+        JsValue::from_shared_identity(project.clone().into_shared()),
+        JsValue::from_shared_identity(immutable.clone().into_shared()),
+        JsValue::from_error(abi::type_error("unchanged")),
+        JsValue::object(JsObject::new()),
+        JsValue::array(tsonic_rust_js::JsArray::from_dense(vec![JsValue::Int32(3)])),
+    ];
+    for (index, value) in values.iter().enumerate() {
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| value.freeze_object_state())).is_err(),
+            "unsupported freeze variant {index}"
+        );
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| value.object_state_is_frozen())).is_err(),
+            "unsupported query variant {index}"
+        );
+    }
+    assert!(!original.is_frozen());
+    assert!(!project_identity.is_frozen());
+    assert!(!immutable_identity.is_frozen());
+    assert_eq!(project.with(|value| *value), 17);
+    assert_eq!(immutable.with(|value| *value), 23);
+    assert!(matches!(&values[4], JsValue::String(value) if value == "unchanged"));
+    assert_eq!(values[5].native_value::<EmptyObject>(), Some(original));
+    assert!(values[9].as_error().is_some());
+    assert_eq!(values[11].inspect(), "[3]");
+}
+
+#[test]
 fn optional_primitive_conversions_preserve_payloads_and_absence() {
     assert_eq!(abi::number_from_value(&Some(" 0x10 ".to_owned())), 16.0);
     assert_eq!(abi::number_from_value(&None::<String>), 0.0);
