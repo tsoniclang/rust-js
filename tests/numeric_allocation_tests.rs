@@ -56,6 +56,95 @@ fn measured_allocation<Output>(
 }
 
 #[test]
+fn broad_empty_object_freeze_keeps_aliases_and_native_zero_allocation_cost() {
+    use tsonic_rust_js::{
+        equality::{JsHash, JsSameValue, JsSameValueZero, JsStrictEqual},
+        JsValue,
+    };
+    use tsonic_rust_runtime::EmptyObject;
+    fn retain(value: JsValue) -> JsValue {
+        value
+    }
+    let original = EmptyObject::new();
+    let other = EmptyObject::new();
+    let first = JsValue::from(original.clone());
+    let (result, allocations, bytes, _) = measured_allocation(|| {
+        let alias = retain(first.clone());
+        let initially_unfrozen = !alias.object_state_is_frozen();
+        let frozen = first.freeze_object_state();
+        let observations = (
+            initially_unfrozen,
+            first.strict_equal(&alias),
+            frozen.strict_equal(&alias),
+            frozen.same_value(&alias),
+            frozen.same_value_zero(&alias),
+            frozen.js_hash() == alias.js_hash(),
+            first.object_state_is_frozen(),
+            alias.object_state_is_frozen(),
+            frozen.object_state_is_frozen(),
+        );
+        (alias, frozen, observations)
+    });
+    assert_eq!(allocations, 0);
+    assert_eq!(bytes, 0);
+    let (alias, frozen, observations) = result;
+    assert_eq!(
+        observations,
+        (true, true, true, true, true, true, true, true, true)
+    );
+    assert!(original.is_frozen());
+    assert!(!other.is_frozen());
+    assert!(first.strict_equal(&JsValue::from(original.clone())));
+    assert!(!frozen.strict_equal(&JsValue::from(other.clone())));
+    assert_eq!(
+        first.reference_identity_key(),
+        alias.reference_identity_key()
+    );
+    assert_eq!(
+        first.reference_identity_key(),
+        frozen.reference_identity_key()
+    );
+    assert_eq!(frozen.type_of(), "object");
+    let weak = original.into_identity().downgrade();
+    drop(first);
+    assert!(weak.is_alive());
+    drop(alias);
+    assert!(weak.is_alive());
+    drop(frozen);
+    assert!(!weak.is_alive());
+}
+
+#[test]
+fn broad_empty_object_construction_and_freeze_match_direct_native_cost_and_layout() {
+    use tsonic_rust_js::{equality::JsStrictEqual, JsClosedValue, JsValue};
+    use tsonic_rust_runtime::EmptyObject;
+    let (direct, direct_count, direct_bytes, direct_alignment) = measured_allocation(|| {
+        let first = EmptyObject::new();
+        let alias = first.clone();
+        let frozen = first.freeze();
+        (first, alias, frozen)
+    });
+    let (broad, count, bytes, alignment) = measured_allocation(|| {
+        let first = JsValue::from(EmptyObject::new());
+        let alias = first.clone();
+        let frozen = first.freeze_object_state();
+        (first, alias, frozen)
+    });
+    assert_eq!(direct_count, 1);
+    assert_eq!(count, direct_count);
+    assert_eq!(bytes, direct_bytes);
+    assert_eq!(alignment, direct_alignment);
+    assert_eq!(direct.1, direct.2);
+    assert!(broad.1.strict_equal(&broad.2));
+    if usize::BITS == 64 {
+        assert_eq!(std::mem::size_of::<JsClosedValue>(), 24);
+        assert_eq!(std::mem::align_of::<JsClosedValue>(), 8);
+        assert_eq!(std::mem::size_of::<JsValue>(), 40);
+        assert_eq!(std::mem::align_of::<JsValue>(), 8);
+    }
+}
+
+#[test]
 fn native_payload_does_not_grow_closed_js_carriers_or_their_allocation() {
     use std::mem::{align_of, size_of};
     use std::rc::Rc;

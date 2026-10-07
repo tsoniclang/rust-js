@@ -1,8 +1,26 @@
 use super::{JsClosedValue, JsClosedValuePayload, JsValue};
 use std::rc::Rc;
-use tsonic_rust_runtime::{EmptyObject, NativePayload, ObjectIdentityCarrier};
+use tsonic_rust_runtime::{EmptyObject, NativePayload, ObjectIdentity, ObjectIdentityCarrier};
 
 impl JsValue {
+    fn object_state(&self) -> &ObjectIdentity {
+        match self {
+            Self::Closed(JsClosedValue(JsClosedValuePayload::Empty(value))) => {
+                value.object_identity()
+            }
+            _ => panic!("checked object-state projection selected an unsupported native value"),
+        }
+    }
+
+    pub fn freeze_object_state(&self) -> Self {
+        self.object_state().freeze();
+        self.clone()
+    }
+
+    pub fn object_state_is_frozen(&self) -> bool {
+        self.object_state().is_frozen()
+    }
+
     pub fn native_shared<Payload: ?Sized + 'static>(&self) -> Option<Rc<Payload>> {
         match self {
             Self::Closed(JsClosedValue(JsClosedValuePayload::NativeShared(value))) => {
