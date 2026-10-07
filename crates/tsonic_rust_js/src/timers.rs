@@ -84,7 +84,7 @@ fn schedule_callback<TError>(
 }
 
 fn timer_error(error: TimerQueueError) -> JsError {
-    crate::range_error(&error.to_string())
+    crate::range_error(error.to_string())
 }
 
 pub fn poll_timers() -> TsonicResult<bool> {

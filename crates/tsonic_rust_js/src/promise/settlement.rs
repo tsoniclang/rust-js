@@ -26,6 +26,9 @@ pub type PromiseReject<Error = TsonicError> = Callable<(Error,), Result<(), Erro
 pub type PromiseExecutor<T, Error = TsonicError> =
     Callable<(PromiseResolve<T, Error>, PromiseReject<Error>), Result<(), Error>>;
 
+type PromiseThenCallback<Input, Output, Error> =
+    Callable<(Input,), Result<JsPromise<'static, Output, Error>, Error>>;
+
 impl<T: Clone + 'static, Error: Clone + From<tsonic_rust_runtime::JsError> + 'static>
     JsPromise<'static, T, Error>
 {
@@ -117,8 +120,8 @@ impl<T: Clone + 'static, Error: Clone + From<tsonic_rust_runtime::JsError> + 'st
 
     pub fn then_async<Output: Clone + 'static>(
         &self,
-        fulfilled: Callable<(T,), Result<JsPromise<'static, Output, Error>, Error>>,
-        rejected: Option<Callable<(Error,), Result<JsPromise<'static, Output, Error>, Error>>>,
+        fulfilled: PromiseThenCallback<T, Output, Error>,
+        rejected: Option<PromiseThenCallback<Error, Output, Error>>,
     ) -> JsPromise<'static, Output, Error> {
         let source = self.clone();
         JsPromise::schedule(async move {
