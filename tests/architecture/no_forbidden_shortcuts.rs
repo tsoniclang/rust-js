@@ -14,7 +14,7 @@ const FORBIDDEN_PATTERNS: &[&str] = &[
     "Command::new(\"npm\")",
     "Command::new(\"npx\")",
     "Command::new(\"tsx\")",
-    "std::any::Any",
+    "Any",
     "TypeId",
     "downcast",
 ];
@@ -29,12 +29,10 @@ fn no_forbidden_shortcuts_present_in_product_sources() {
 
     for file in rust_files {
         let source = read_source_file(&file);
-        let array_owner =
-            file == workspace_root.join("crates/tsonic_rust_js/src/array/js_array/erasure.rs");
-        for forbidden in find_forbidden_patterns(&source) {
-            if array_owner && matches!(forbidden, "std::any::Any" | "downcast") {
-                continue;
-            }
+        let relative = file
+            .strip_prefix(&workspace_root)
+            .expect("product source path");
+        for forbidden in product_source_violations(relative, &source) {
             violations.push(format!("{}: contains `{}`", file.display(), forbidden));
         }
     }
@@ -69,6 +67,77 @@ fn native_array_erasure_is_one_sealed_checked_storage_owner() {
 }
 
 #[test]
+fn native_payload_reuses_runtime_without_a_local_erasure_contract() {
+    let root = locate_workspace_root().expect("runtime workspace");
+    let native = read_source_file(&root.join("crates/tsonic_rust_js/src/value/native.rs"));
+    let values = read_source_file(&root.join("crates/tsonic_rust_js/src/value/mod.rs"));
+    assert!(native.contains("NativePayload::from_closed(value)"));
+    assert!(native.contains("value.native_value()"));
+    assert!(values.contains("Native(NativePayload)"));
+    assert!(!native.contains("struct NativeValue"));
+    assert!(!values.contains("fn native_value"));
+    for (relative, source) in [
+        ("crates/tsonic_rust_js/src/value/native.rs", native),
+        ("crates/tsonic_rust_js/src/value/mod.rs", values),
+        (
+            "crates/tsonic_rust_js/src/array/js_array/erasure.rs",
+            read_source_file(&root.join("crates/tsonic_rust_js/src/array/js_array/erasure.rs")),
+        ),
+    ] {
+        let path = Path::new(relative);
+        assert!(product_source_violations(path, &source).is_empty());
+        for injected in [
+            "use core::any::Any;",
+            "use std::{any::{Any as Native}, fmt};",
+            "value.downcast_ref::<String>();",
+        ] {
+            let mutated = format!("{source}\n{injected}");
+            assert!(!product_source_violations(path, &mutated).is_empty());
+        }
+    }
+}
+
+#[test]
+fn any_import_spellings_and_mutated_array_recovery_are_rejected() {
+    for source in [
+        "use std::any::Any;",
+        "use core::any::Any;",
+        "use core::{any::Any, fmt};",
+        "use std::{any::{Any as Native}, fmt};",
+        "use core::any::{type_name, Any as Native};",
+        "use core::any::*;",
+        "use core::any as native;",
+        "use core::{any::{*}, fmt};",
+        "use std::{any as native, fmt};",
+        "fn reflect(value: &dyn Any) {}",
+        "value.downcast_ref::<u64>()",
+    ] {
+        assert!(!find_forbidden_patterns(source).is_empty());
+        assert!(!product_source_violations(Path::new("unowned.rs"), source).is_empty());
+    }
+    assert!(find_forbidden_patterns("enum Property { Any, Assigned }").is_empty());
+    assert!(find_forbidden_patterns("Property::Any").is_empty());
+    assert!(find_forbidden_patterns("fn valid(value: &dyn Anything) {}").is_empty());
+    assert!(find_forbidden_patterns("fn valid<Value: AnySuffix>() {}").is_empty());
+    assert!(find_forbidden_patterns("company::Any").is_empty());
+    assert!(find_forbidden_patterns("/// Any ByteSet may match a single char.").is_empty());
+    assert!(find_forbidden_patterns("core::any::type_name::<u64>()").is_empty());
+    let root = locate_workspace_root().expect("runtime workspace");
+    let path = Path::new("crates/tsonic_rust_js/src/array/js_array/erasure.rs");
+    let source = read_source_file(&root.join(path));
+    for mutated in [
+        source.replace("trait NativeArrayStorage:", "pub trait NativeArrayStorage:"),
+        source.replace("downcast::<JsArrayOwner<Value>>()", "downcast::<String>()"),
+        source.replace(
+            "downcast_ref::<JsArrayOwner<Value>>()",
+            "downcast_ref::<String>()",
+        ),
+    ] {
+        assert!(!product_source_violations(path, &mutated).is_empty());
+    }
+}
+
+#[test]
 fn no_forbidden_shortcuts_in_fixture_text() {
     let source = r#"
         let code = std::process::Command::new("node").arg("--version").spawn();
@@ -96,8 +165,93 @@ fn find_forbidden_patterns(source: &str) -> Vec<&'static str> {
     FORBIDDEN_PATTERNS
         .iter()
         .copied()
-        .filter(|pattern| source.contains(pattern))
+        .filter(|pattern| {
+            if *pattern == "Any" {
+                contains_native_any(source)
+            } else {
+                source.contains(pattern)
+            }
+        })
         .collect()
+}
+
+fn contains_native_any(source: &str) -> bool {
+    let compact: String = source
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .collect();
+    compact.contains("any::*")
+        || compact.contains("::anyas")
+        || compact.contains("{anyas")
+        || compact.contains(",anyas")
+        || compact.split("any::{").skip(1).any(|group| {
+            group
+                .split('}')
+                .next()
+                .unwrap_or_default()
+                .split(',')
+                .any(|item| item == "*")
+        })
+        || source.match_indices("Any").any(|(index, _)| {
+            let before = &source[..index];
+            let after = &source[index + "Any".len()..];
+            let identifier = |character: char| character.is_alphanumeric() || character == '_';
+            if before.chars().next_back().is_some_and(identifier)
+                || after.chars().next().is_some_and(identifier)
+            {
+                return false;
+            }
+            let prefix: String = before
+                .chars()
+                .filter(|character| !character.is_whitespace())
+                .collect();
+            let namespace = prefix
+                .strip_suffix("any::")
+                .is_some_and(|owner| !owner.chars().next_back().is_some_and(identifier));
+            namespace
+                || prefix.ends_with("dyn")
+                || prefix.ends_with('+')
+                || (prefix.ends_with(':') && !prefix.ends_with("::"))
+                || prefix
+                    .rsplit_once("any::{")
+                    .is_some_and(|(_, group)| !group.contains('}'))
+        })
+}
+
+fn product_source_violations(path: &Path, source: &str) -> Vec<&'static str> {
+    let mut remaining = source.to_owned();
+    if path == Path::new("crates/tsonic_rust_js/src/array/js_array/erasure.rs") {
+        if source.contains("pub trait NativeArrayStorage") {
+            return vec!["sealed native array owner contract"];
+        }
+        for fragment in [
+            "use std::any::Any;",
+            "trait NativeArrayStorage: Any + tsonic_rust_runtime::ObjectIdentityCarrier {",
+            r#"pub fn restore<Value: 'static>(&self) -> Option<JsArray<Value>> {
+        let owner: Rc<dyn Any> = self.owner.clone();
+        owner
+            .downcast::<JsArrayOwner<Value>>()
+            .ok()
+            .map(|state| JsArray { state })
+    }"#,
+            r#"fn checked_native_owner<Value: 'static>(
+        &self,
+    ) -> crate::errors::JsResult<&JsArrayOwner<Value>> {
+        let owner: &dyn Any = self.owner.as_ref();
+        owner.downcast_ref::<JsArrayOwner<Value>>().ok_or_else(|| {
+            crate::errors::type_error(
+                "An array operation requires the exact native element backing.",
+            )
+        })
+    }"#,
+        ] {
+            if remaining.matches(fragment).count() != 1 {
+                return vec!["exact native array recovery contract"];
+            }
+            remaining = remaining.replace(fragment, "");
+        }
+    }
+    find_forbidden_patterns(&remaining)
 }
 
 fn locate_workspace_root() -> Option<PathBuf> {

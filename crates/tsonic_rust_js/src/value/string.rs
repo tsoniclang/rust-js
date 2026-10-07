@@ -84,6 +84,11 @@ fn write_value(
         }
         JsValue::Closed(value) => match &value.0 {
             JsClosedValuePayload::Empty(value) => value.write_string(output)?,
+            JsClosedValuePayload::Native(_) => {
+                return Err(unsupported(
+                    "Native value erasure does not expose string conversion",
+                ));
+            }
             JsClosedValuePayload::NativeShared(_) => {
                 return Err(unsupported(
                     "Native object erasure does not expose string conversion",
