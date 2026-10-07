@@ -432,6 +432,64 @@ fn native_passive_erasure_allocates_one_owner_and_never_inspects_its_payload() {
 }
 
 #[test]
+fn native_shared_object_conversions_retain_aliases_without_additional_allocations() {
+    use std::rc::Rc;
+    use tsonic_rust_js::{equality::JsStrictEqual, JsValue};
+    use tsonic_rust_runtime::{ObjectHandle, ObjectHandleState, ObjectRef, ObjectRefState};
+    struct Payload {
+        count: Cell<u64>,
+        drops: Rc<Cell<usize>>,
+    }
+    impl Drop for Payload {
+        fn drop(&mut self) {
+            self.drops.set(self.drops.get() + 1);
+        }
+    }
+    let drops = Rc::new(Cell::new(0));
+    let handle = ObjectHandle::new(Payload {
+        count: Cell::new(u64::MAX),
+        drops: drops.clone(),
+    });
+    let reference = ObjectRef::new(Payload {
+        count: Cell::new(u64::MAX),
+        drops: drops.clone(),
+    });
+    TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
+    let left = JsValue::from(handle.clone());
+    let right = JsValue::from(handle.clone());
+    let shared = JsValue::from(reference.clone());
+    let shared_alias = JsValue::from(reference.clone());
+    let handle_projection = left.native_shared::<ObjectHandleState<Payload>>().unwrap();
+    let reference_projection = shared.native_shared::<ObjectRefState<Payload>>().unwrap();
+    assert!(Rc::ptr_eq(&handle.shared(), &handle_projection));
+    assert!(Rc::ptr_eq(&reference.shared(), &reference_projection));
+    let recovered = ObjectHandle::from_shared(handle_projection);
+    let recovered_reference = ObjectRef::from_shared(reference_projection);
+    handle.with_mut(|value| value.count.set(7));
+    reference.with(|value| value.count.set(11));
+    let allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
+    assert_eq!(allocations, 0);
+    for _iteration in 0..10_000 {
+        assert!(black_box(&left).strict_equal(black_box(&right)));
+        assert!(black_box(&shared).strict_equal(black_box(&shared_alias)));
+        assert!(!black_box(&left).strict_equal(black_box(&shared)));
+        assert_eq!(recovered.with(|value| value.count.get()), 7);
+        assert_eq!(recovered_reference.with(|value| value.count.get()), 11);
+    }
+    drop(handle);
+    drop(reference);
+    drop(left);
+    drop(right);
+    drop(shared);
+    drop(shared_alias);
+    assert_eq!(drops.get(), 0);
+    drop(recovered);
+    assert_eq!(drops.get(), 1);
+    drop(recovered_reference);
+    assert_eq!(drops.get(), 2);
+}
+
+#[test]
 fn closed_string_conversion_allocates_only_its_requested_result() {
     use tsonic_rust_js::{abi, JsArray, JsValue};
     let value = JsValue::String("a native string with enough bytes".to_owned());

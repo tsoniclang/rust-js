@@ -1,6 +1,8 @@
 use super::{JsClosedValue, JsClosedValuePayload, JsValue};
 use std::rc::Rc;
-use tsonic_rust_runtime::{EmptyObject, NativePayload, ObjectIdentity, ObjectIdentityCarrier};
+use tsonic_rust_runtime::{
+    EmptyObject, NativePayload, ObjectHandle, ObjectIdentity, ObjectIdentityCarrier, ObjectRef,
+};
 
 impl JsValue {
     fn object_state(&self) -> &ObjectIdentity {
@@ -55,5 +57,17 @@ impl JsValue {
 impl From<EmptyObject> for JsValue {
     fn from(value: EmptyObject) -> Self {
         Self::Closed(JsClosedValue(JsClosedValuePayload::Empty(value)))
+    }
+}
+
+impl<Payload: 'static, Context: 'static> From<ObjectRef<Payload, Context>> for JsValue {
+    fn from(value: ObjectRef<Payload, Context>) -> Self {
+        Self::from_shared_identity(value.into_shared())
+    }
+}
+
+impl<Payload: 'static, Context: 'static> From<ObjectHandle<Payload, Context>> for JsValue {
+    fn from(value: ObjectHandle<Payload, Context>) -> Self {
+        Self::from_shared_identity(value.into_shared())
     }
 }
