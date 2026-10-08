@@ -56,37 +56,26 @@ pub fn parse_with_limits(text: &str, limits: JsonLimits) -> JsResult<JsValue> {
     }
 }
 
-pub fn stringify(value: &JsValue) -> JsResult<Option<String>> {
-    stringify_with_options::<tsonic_rust_runtime::JsError>(
-        value,
-        "",
-        JsonLimits::default(),
-        None,
-        None,
-    )
+pub fn stringify(value: &JsValue) -> TsonicResult<Option<String>> {
+    stringify_with_options(value, "", JsonLimits::default(), None, None)
 }
 
-pub fn stringify_pretty(value: &JsValue) -> JsResult<Option<String>> {
+pub fn stringify_pretty(value: &JsValue) -> TsonicResult<Option<String>> {
     stringify(value)
 }
 
-pub fn stringify_string(value: &str) -> JsResult<String> {
-    let mut serializer = Serializer::<tsonic_rust_runtime::JsError>::new(
-        String::new(),
-        JsonLimits::default(),
-        None,
-        None,
-    );
+pub fn stringify_string(value: &str) -> TsonicResult<String> {
+    let mut serializer = Serializer::new(String::new(), JsonLimits::default(), None, None);
     serializer.count_node(0)?;
     serializer.push_quoted_native(value)?;
     Ok(serializer.output)
 }
 
-pub fn stringify_with_indent(value: &JsValue, indent: &str) -> JsResult<Option<String>> {
+pub fn stringify_with_indent(value: &JsValue, indent: &str) -> TsonicResult<Option<String>> {
     stringify_with_indent_and_limits(value, indent, JsonLimits::default())
 }
 
-pub fn stringify_with_limits(value: &JsValue, limits: JsonLimits) -> JsResult<Option<String>> {
+pub fn stringify_with_limits(value: &JsValue, limits: JsonLimits) -> TsonicResult<Option<String>> {
     stringify_with_indent_and_limits(value, "", limits)
 }
 
@@ -94,15 +83,15 @@ pub fn stringify_with_indent_and_limits(
     value: &JsValue,
     indent: &str,
     limits: JsonLimits,
-) -> JsResult<Option<String>> {
-    stringify_with_options::<tsonic_rust_runtime::JsError>(value, indent, limits, None, None)
+) -> TsonicResult<Option<String>> {
+    stringify_with_options(value, indent, limits, None, None)
 }
 
-pub fn stringify_with_space_number(value: &JsValue, space: f64) -> JsResult<Option<String>> {
+pub fn stringify_with_space_number(value: &JsValue, space: f64) -> TsonicResult<Option<String>> {
     stringify_with_indent(value, &number_indent(space))
 }
 
-pub fn stringify_with_space_string(value: &JsValue, space: &str) -> JsResult<Option<String>> {
+pub fn stringify_with_space_string(value: &JsValue, space: &str) -> TsonicResult<Option<String>> {
     let indent = string_indent(space)?;
     stringify_with_indent(value, &indent)
 }
@@ -110,24 +99,18 @@ pub fn stringify_with_space_string(value: &JsValue, space: &str) -> JsResult<Opt
 pub fn stringify_with_property_list(
     value: &JsValue,
     property_list: &JsValue,
-) -> JsResult<Option<String>> {
+) -> TsonicResult<Option<String>> {
     let properties = normalize_property_list(property_list)?;
-    stringify_with_options::<tsonic_rust_runtime::JsError>(
-        value,
-        "",
-        JsonLimits::default(),
-        None,
-        Some(&properties),
-    )
+    stringify_with_options(value, "", JsonLimits::default(), None, Some(&properties))
 }
 
 pub fn stringify_with_property_list_and_space_number(
     value: &JsValue,
     property_list: &JsValue,
     space: f64,
-) -> JsResult<Option<String>> {
+) -> TsonicResult<Option<String>> {
     let properties = normalize_property_list(property_list)?;
-    stringify_with_options::<tsonic_rust_runtime::JsError>(
+    stringify_with_options(
         value,
         &number_indent(space),
         JsonLimits::default(),
@@ -140,10 +123,10 @@ pub fn stringify_with_property_list_and_space_string(
     value: &JsValue,
     property_list: &JsValue,
     space: &str,
-) -> JsResult<Option<String>> {
+) -> TsonicResult<Option<String>> {
     let properties = normalize_property_list(property_list)?;
     let indent = string_indent(space)?;
-    stringify_with_options::<tsonic_rust_runtime::JsError>(
+    stringify_with_options(
         value,
         &indent,
         JsonLimits::default(),
@@ -155,7 +138,7 @@ pub fn stringify_with_property_list_and_space_string(
 pub fn stringify_with_replacer(
     value: &JsValue,
     mut replacer: impl FnMut(String, JsValue) -> JsValue,
-) -> JsResult<Option<String>> {
+) -> TsonicResult<Option<String>> {
     let mut replacer = |key: String, value: JsValue| Ok(replacer(key, value));
     stringify_with_options(value, "", JsonLimits::default(), Some(&mut replacer), None)
 }
@@ -164,7 +147,7 @@ pub fn stringify_with_replacer_and_space_number(
     value: &JsValue,
     mut replacer: impl FnMut(String, JsValue) -> JsValue,
     space: f64,
-) -> JsResult<Option<String>> {
+) -> TsonicResult<Option<String>> {
     let mut replacer = |key: String, value: JsValue| Ok(replacer(key, value));
     stringify_with_options(
         value,
@@ -179,7 +162,7 @@ pub fn stringify_with_replacer_and_space_string(
     value: &JsValue,
     mut replacer: impl FnMut(String, JsValue) -> JsValue,
     space: &str,
-) -> JsResult<Option<String>> {
+) -> TsonicResult<Option<String>> {
     let indent = string_indent(space)?;
     let mut replacer = |key: String, value: JsValue| Ok(replacer(key, value));
     stringify_with_options(
@@ -227,16 +210,13 @@ pub fn try_stringify_with_replacer_and_space_string(
     )
 }
 
-fn stringify_with_options<'a, E>(
+fn stringify_with_options<'a>(
     value: &JsValue,
     indent: &str,
     limits: JsonLimits,
-    replacer: Option<&'a mut dyn FnMut(String, JsValue) -> Result<JsValue, E>>,
+    replacer: Option<&'a mut dyn FnMut(String, JsValue) -> TsonicResult<JsValue>>,
     property_list: Option<&'a [PropertyKey]>,
-) -> Result<Option<String>, E>
-where
-    E: From<tsonic_rust_runtime::JsError>,
-{
+) -> TsonicResult<Option<String>> {
     if indent.len() > 10 {
         return Err(type_error(
             "JSON indentation must be pre-resolved to at most 10 native UTF-8 bytes",
@@ -301,7 +281,7 @@ enum ContainerId {
     Projection(usize),
 }
 
-struct Serializer<'a, E> {
+struct Serializer<'a> {
     indent: String,
     limits: JsonLimits,
     output: String,
@@ -309,18 +289,15 @@ struct Serializer<'a, E> {
     active: HashSet<ContainerId>,
     nodes: usize,
     members: usize,
-    replacer: Option<&'a mut dyn FnMut(String, JsValue) -> Result<JsValue, E>>,
+    replacer: Option<&'a mut dyn FnMut(String, JsValue) -> TsonicResult<JsValue>>,
     property_list: Option<&'a [PropertyKey]>,
 }
 
-impl<'a, E> Serializer<'a, E>
-where
-    E: From<tsonic_rust_runtime::JsError>,
-{
+impl<'a> Serializer<'a> {
     fn new(
         indent: String,
         limits: JsonLimits,
-        replacer: Option<&'a mut dyn FnMut(String, JsValue) -> Result<JsValue, E>>,
+        replacer: Option<&'a mut dyn FnMut(String, JsValue) -> TsonicResult<JsValue>>,
         property_list: Option<&'a [PropertyKey]>,
     ) -> Self {
         Self {
@@ -341,7 +318,7 @@ where
         key: &PropertyKey,
         value: &JsValue,
         depth: usize,
-    ) -> Result<bool, E> {
+    ) -> TsonicResult<bool> {
         let projection = match value {
             JsValue::Closed(value) => Some(ContainerId::Closed(value.identity_key())),
             JsValue::JsonProjection(projection) => {
@@ -367,23 +344,23 @@ where
         &mut self,
         key: &PropertyKey,
         value: &'value JsValue,
-    ) -> Result<Cow<'value, JsValue>, E> {
+    ) -> TsonicResult<Cow<'value, JsValue>> {
         let value = match value {
-            JsValue::Closed(value) => Cow::Owned(value.project_json().map_err(E::from)?),
+            JsValue::Closed(value) => Cow::Owned(value.project_json()?),
             JsValue::JsonProjection(projection) => {
                 let key = key.to_native().map_err(|_| {
-                    E::from(type_error(
+                    TsonicError::from(type_error(
                         "JSON projection key cannot be represented by the native Rust string carrier",
                     ))
                 })?;
-                Cow::Owned(projection.project(key).map_err(E::from)?)
+                Cow::Owned(projection.project(key)?)
             }
             _ => Cow::Borrowed(value),
         };
         Ok(match self.replacer.as_mut() {
             Some(replacer) => {
                 let key = key.to_native().map_err(|_| {
-                    E::from(type_error(
+                    TsonicError::from(type_error(
                         "JSON replacer key cannot be represented by the native Rust string carrier",
                     ))
                 })?;
@@ -393,7 +370,7 @@ where
         })
     }
 
-    fn serialize_value(&mut self, value: &JsValue, depth: usize) -> Result<bool, E> {
+    fn serialize_value(&mut self, value: &JsValue, depth: usize) -> TsonicResult<bool> {
         self.count_node(depth)?;
         match value {
             JsValue::Symbol(_) => Ok(false),
@@ -471,7 +448,7 @@ where
                         serializer.member_prefix(depth, &mut first)?;
                         let mut pending = Ok(None);
                         values.visit_element(index, &mut |element| {
-                            pending = (|| -> Result<_, E> {
+                            pending = (|| -> TsonicResult<_> {
                                 match element {
                                     JsArrayElement::String(value) if serializer.replacer.is_none() => {
                                         serializer.push_quoted_native(value)?;
@@ -522,7 +499,7 @@ where
                 self.with_container(identity, |serializer| {
                     serializer.push_char('{')?;
                     let mut first = true;
-                    let pending = record.with_entries(|entries| -> Result<_, E> {
+                    let pending = record.with_entries(|entries| -> TsonicResult<_> {
                         let mut entries = entries.iter();
                         while let Some((key, value)) = entries.next() {
                             if !serializer.includes_native_property(key) {
@@ -569,8 +546,8 @@ where
     fn with_container(
         &mut self,
         id: ContainerId,
-        serialize: impl FnOnce(&mut Self) -> Result<bool, E>,
-    ) -> Result<bool, E> {
+        serialize: impl FnOnce(&mut Self) -> TsonicResult<bool>,
+    ) -> TsonicResult<bool> {
         if !self.active.insert(id) {
             return Err(type_error("Converting circular structure to JSON").into());
         }
@@ -583,8 +560,8 @@ where
         &mut self,
         keys: impl IntoIterator<Item = PropertyKey>,
         depth: usize,
-        read: impl FnMut(&PropertyKey, &mut Self, &mut bool) -> Result<Option<JsValue>, E>,
-    ) -> Result<bool, E> {
+        read: impl FnMut(&PropertyKey, &mut Self, &mut bool) -> TsonicResult<Option<JsValue>>,
+    ) -> TsonicResult<bool> {
         self.push_char('{')?;
         let mut first = true;
         self.serialize_object_members(keys, depth, &mut first, read)?;
@@ -597,8 +574,8 @@ where
         keys: impl IntoIterator<Item = PropertyKey>,
         depth: usize,
         first: &mut bool,
-        mut read: impl FnMut(&PropertyKey, &mut Self, &mut bool) -> Result<Option<JsValue>, E>,
-    ) -> Result<(), E> {
+        mut read: impl FnMut(&PropertyKey, &mut Self, &mut bool) -> TsonicResult<Option<JsValue>>,
+    ) -> TsonicResult<()> {
         for key in keys {
             if self
                 .property_list
@@ -619,7 +596,7 @@ where
         value: &JsValue,
         depth: usize,
         first: &mut bool,
-    ) -> Result<Option<JsValue>, E> {
+    ) -> TsonicResult<Option<JsValue>> {
         if self.can_borrow_leaf(value) {
             self.serialize_object_member(key, value, depth, first)?;
             Ok(None)
@@ -628,7 +605,7 @@ where
         }
     }
 
-    fn count_node(&mut self, depth: usize) -> Result<(), E> {
+    fn count_node(&mut self, depth: usize) -> TsonicResult<()> {
         if depth > self.limits.max_depth {
             return Err(range_error("JSON nesting exceeds the configured depth limit").into());
         }
@@ -642,7 +619,7 @@ where
         Ok(())
     }
 
-    fn count_member(&mut self) -> Result<(), E> {
+    fn count_member(&mut self) -> TsonicResult<()> {
         self.members = self
             .members
             .checked_add(1)
@@ -653,7 +630,7 @@ where
         Ok(())
     }
 
-    fn member_prefix(&mut self, depth: usize, first: &mut bool) -> Result<(), E> {
+    fn member_prefix(&mut self, depth: usize, first: &mut bool) -> TsonicResult<()> {
         if !*first {
             self.push_char(',')?;
         }
@@ -665,7 +642,7 @@ where
         Ok(())
     }
 
-    fn container_suffix(&mut self, close: char, depth: usize, empty: bool) -> Result<(), E> {
+    fn container_suffix(&mut self, close: char, depth: usize, empty: bool) -> TsonicResult<()> {
         if !empty && !self.indent.is_empty() {
             self.push_char('\n')?;
             self.push_indent(depth)?;
@@ -673,7 +650,7 @@ where
         self.push_char(close)
     }
 
-    fn push_indent(&mut self, depth: usize) -> Result<(), E> {
+    fn push_indent(&mut self, depth: usize) -> TsonicResult<()> {
         let indent = self.indent.clone();
         for _ in 0..depth {
             self.push_str(&indent)?;
@@ -681,7 +658,7 @@ where
         Ok(())
     }
 
-    fn push_quoted(&mut self, value: &JsString) -> Result<(), E> {
+    fn push_quoted(&mut self, value: &JsString) -> TsonicResult<()> {
         self.push_char('"')?;
         let units = value.units();
         let mut index = 0;
@@ -708,7 +685,7 @@ where
         self.push_char('"')
     }
 
-    fn push_quoted_native(&mut self, value: &str) -> Result<(), E> {
+    fn push_quoted_native(&mut self, value: &str) -> TsonicResult<()> {
         self.push_char('"')?;
         let mut start = 0;
         for (offset, byte) in value.bytes().enumerate() {
@@ -731,7 +708,7 @@ where
         self.push_char('"')
     }
 
-    fn push_char(&mut self, value: char) -> Result<(), E> {
+    fn push_char(&mut self, value: char) -> TsonicResult<()> {
         let mut bytes = [0; 4];
         self.push_str(value.encode_utf8(&mut bytes))
     }
@@ -754,7 +731,7 @@ where
         value: &JsValue,
         depth: usize,
         first: &mut bool,
-    ) -> Result<(), E> {
+    ) -> TsonicResult<()> {
         let value = self.replaced_value(key, value)?;
         self.serialize_object_field(&value, depth, first, |serializer| match key {
             PropertyKey::Native(value) => serializer.push_quoted_native(value),
@@ -775,8 +752,8 @@ where
         value: &JsValue,
         depth: usize,
         first: &mut bool,
-        write_key: impl FnOnce(&mut Self) -> Result<(), E>,
-    ) -> Result<(), E> {
+        write_key: impl FnOnce(&mut Self) -> TsonicResult<()>,
+    ) -> TsonicResult<()> {
         self.count_member()?;
         self.member_prefix(depth, first)?;
         write_key(self)?;
@@ -789,7 +766,7 @@ where
         Ok(())
     }
 
-    fn push_str(&mut self, value: &str) -> Result<(), E> {
+    fn push_str(&mut self, value: &str) -> TsonicResult<()> {
         let next_bytes = self
             .output_bytes
             .checked_add(value.len())
@@ -805,7 +782,7 @@ where
         Ok(())
     }
 
-    fn push_units(&mut self, value: &[u16]) -> Result<(), E> {
+    fn push_units(&mut self, value: &[u16]) -> TsonicResult<()> {
         for decoded in char::decode_utf16(value.iter().copied()) {
             let scalar = decoded.map_err(|_| {
                 type_error("JSON serialization attempted to publish invalid UTF-16")

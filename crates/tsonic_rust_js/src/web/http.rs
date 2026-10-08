@@ -141,17 +141,12 @@ impl Response {
         }
     }
 
-    pub fn json(value: &JsValue) -> JsResult<Self> {
+    pub fn json(value: &JsValue) -> tsonic_rust_runtime::TsonicResult<Self> {
         let mut headers = Headers::new();
         headers.set("content-type", "application/json");
         let text = json::stringify(value)?
             .ok_or_else(|| type_error("Response.json cannot serialize an undefined body"))?;
-        Ok(Self::with_init(
-            200,
-            "OK",
-            headers,
-            Body::Text(text),
-        ))
+        Ok(Self::with_init(200, "OK", headers, Body::Text(text)))
     }
 
     pub fn redirect(url: impl Into<String>, status: u16) -> Self {

@@ -15,7 +15,7 @@ use crate::object::JsObject;
 use crate::{JsString, JsSymbol};
 use tsonic_rust_runtime::{
     EmptyObject, ErrorObject, JsErrorKind, NativePayload, ObjectIdentityCarrier, Record,
-    RetainedError,
+    RetainedError, TsonicResult,
 };
 
 mod native;
@@ -133,7 +133,7 @@ impl JsClosedValue {
 pub struct JsonProjection(Rc<JsonProjectionInner>);
 
 struct JsonProjectionInner {
-    project: Box<dyn Fn(String) -> JsResult<JsValue>>,
+    project: Box<dyn Fn(String) -> TsonicResult<JsValue>>,
 }
 
 impl fmt::Debug for JsonProjection {
@@ -146,14 +146,14 @@ impl JsonProjection {
     pub fn new<T, F>(source: T, project: F) -> Self
     where
         T: 'static,
-        F: Fn(&T, String) -> JsResult<JsValue> + 'static,
+        F: Fn(&T, String) -> TsonicResult<JsValue> + 'static,
     {
         Self(Rc::new(JsonProjectionInner {
             project: Box::new(move |key| project(&source, key)),
         }))
     }
 
-    pub fn project(&self, key: String) -> JsResult<JsValue> {
+    pub fn project(&self, key: String) -> TsonicResult<JsValue> {
         (self.0.project)(key)
     }
 
@@ -380,7 +380,7 @@ where
 pub fn js_value_from_json_projection<T, F>(source: T, project: F) -> JsValue
 where
     T: 'static,
-    F: Fn(&T, String) -> JsResult<JsValue> + 'static,
+    F: Fn(&T, String) -> TsonicResult<JsValue> + 'static,
 {
     JsValue::JsonProjection(JsonProjection::new(source, project))
 }

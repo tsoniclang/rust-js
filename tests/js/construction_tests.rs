@@ -415,6 +415,9 @@ fn native_payload_keeps_closed_observations_and_rejects_unselected_projections()
         "Native value erasure does not expose string conversion"
     );
     let json_error = tsonic_rust_js::json::stringify(&value).unwrap_err();
+    let tsonic_rust_runtime::TsonicError::Js(json_error) = json_error else {
+        panic!("unsupported native JSON preserves the exact Js error variant");
+    };
     assert_eq!(json_error.kind(), JsErrorKind::Unsupported);
     assert_eq!(
         json_error.message(),

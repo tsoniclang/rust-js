@@ -1,5 +1,53 @@
 use crate::js;
 use tsonic_rust_js::{json, JsErrorKind, JsObject, JsString, JsValue};
+use tsonic_rust_runtime::{JsError, TsonicError};
+
+fn serializer_error_kind(error: TsonicError) -> JsErrorKind {
+    let TsonicError::Js(error) = error else {
+        panic!("built-in JSON errors retain the exact Js error variant");
+    };
+    error.kind()
+}
+
+#[test]
+fn json_projection_preserves_native_callback_errors_and_suppressed_identity() {
+    use std::cell::Cell;
+    use std::rc::Rc;
+    use tsonic_rust_js::value::js_value_from_json_projection;
+    let primary = JsError::new(JsErrorKind::TypeError, "primary");
+    let cleanup = JsError::new(JsErrorKind::RangeError, "cleanup");
+    let primary_identity = primary.identity_key();
+    let cleanup_identity = cleanup.identity_key();
+    let executions = Rc::new(Cell::new(0));
+    let failure = TsonicError::suppressed(primary.into(), cleanup.into());
+    let value = js_value_from_json_projection((executions.clone(), failure), |source, key| {
+        assert!(key.is_empty());
+        source.0.set(source.0.get() + 1);
+        Err(source.1.clone())
+    });
+    for failure in [
+        json::stringify(&value).unwrap_err(),
+        tsonic_rust_js::Response::json(&value).unwrap_err(),
+    ] {
+        let TsonicError::Suppressed {
+            error, suppressed, ..
+        } = failure
+        else {
+            panic!("JSON must not demote or stringify a native suppressed error");
+        };
+        let TsonicError::Js(primary) = *error else {
+            panic!("exact primary error");
+        };
+        let TsonicError::Js(cleanup) = *suppressed else {
+            panic!("exact cleanup error");
+        };
+        assert_eq!(primary.identity_key(), primary_identity);
+        assert_eq!(cleanup.identity_key(), cleanup_identity);
+        assert_eq!(primary.message(), "primary");
+        assert_eq!(cleanup.message(), "cleanup");
+    }
+    assert_eq!(executions.get(), 2);
+}
 
 fn stringify_text(value: &JsValue) -> String {
     json::stringify(value).unwrap().unwrap()
@@ -243,13 +291,13 @@ fn json_rejects_cycles_and_borrow_conflicts_but_allows_shared_aliases() {
         .borrow_mut()
         .set("self", cycle.clone());
     let error = json::stringify(&cycle).unwrap_err();
-    assert_eq!(error.kind(), JsErrorKind::TypeError);
+    assert_eq!(serializer_error_kind(error), JsErrorKind::TypeError);
     cycle.as_object().unwrap().borrow_mut().delete("self");
 
     let array_cycle = JsValue::from(Vec::<JsValue>::new());
     array_cycle.as_array().unwrap().set(0, array_cycle.clone());
     assert_eq!(
-        json::stringify(&array_cycle).unwrap_err().kind(),
+        serializer_error_kind(json::stringify(&array_cycle).unwrap_err()),
         JsErrorKind::TypeError
     );
     array_cycle.as_array().unwrap().set_len(0);
@@ -262,7 +310,7 @@ fn json_rejects_cycles_and_borrow_conflicts_but_allows_shared_aliases() {
     let handle = borrowed.as_object().unwrap().clone();
     let _guard = handle.borrow_mut();
     assert_eq!(
-        json::stringify(&borrowed).unwrap_err().kind(),
+        serializer_error_kind(json::stringify(&borrowed).unwrap_err()),
         JsErrorKind::TypeError
     );
 }
@@ -302,15 +350,16 @@ fn json_enforces_resource_limits() {
         "\"\\u0001\""
     );
     assert_eq!(
-        json::stringify_with_limits(
-            &JsValue::Utf16String(js("\u{1}")),
-            json::JsonLimits {
-                max_output_bytes: 7,
-                ..limits
-            },
-        )
-        .unwrap_err()
-        .kind(),
+        serializer_error_kind(
+            json::stringify_with_limits(
+                &JsValue::Utf16String(js("\u{1}")),
+                json::JsonLimits {
+                    max_output_bytes: 7,
+                    ..limits
+                },
+            )
+            .unwrap_err()
+        ),
         JsErrorKind::RangeError
     );
 }
