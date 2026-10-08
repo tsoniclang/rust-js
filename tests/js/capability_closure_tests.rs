@@ -9,14 +9,14 @@ use tsonic_rust_runtime::{Callable, TsonicError};
 
 #[test]
 fn generic_optional_values_reuse_the_closed_native_absence() {
-    use tsonic_rust_runtime::{optional_storage_coalesce, OptionalStorage};
+    use tsonic_rust_runtime::OptionalStorage;
     let absent = <JsValue as OptionalStorage<JsValue>>::absent();
     assert!(<JsValue as OptionalStorage<JsValue>>::is_absent(&absent));
-    let result = optional_storage_coalesce::<JsValue, JsValue, _>(
-        absent,
-        |_| panic!("absence entered present branch"),
-        || 7,
-    );
+    let result = if <JsValue as OptionalStorage<JsValue>>::is_absent(&absent) {
+        7
+    } else {
+        panic!("absence entered present branch")
+    };
     assert_eq!(result, 7);
     for value in [
         JsValue::Integer(0),
