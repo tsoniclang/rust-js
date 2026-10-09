@@ -6,37 +6,44 @@ fn exact(value: &str) -> JsString {
 
 #[test]
 fn native_number_boxing_preserves_full_ranges_and_float_bits() {
-    for (boxed, expected) in [
-        (JsValue::from(i8::MIN), i64::from(i8::MIN)),
-        (JsValue::from(i16::MIN), i64::from(i16::MIN)),
-        (JsValue::from(i32::MIN), i64::from(i32::MIN)),
-    ] {
-        assert!(matches!(boxed, JsValue::Integer(actual) if actual == expected));
-    }
-    for (boxed, expected) in [
-        (JsValue::from(u8::MAX), u64::from(u8::MAX)),
-        (JsValue::from(u16::MAX), u64::from(u16::MAX)),
-        (JsValue::from(u32::MAX), u64::from(u32::MAX)),
-    ] {
-        assert!(matches!(boxed, JsValue::UnsignedInteger(actual) if actual == expected));
-    }
-    for (boxed, expected) in [
-        (JsValue::from(f32::MAX), f64::from(f32::MAX)),
-        (
-            JsValue::from(f32::from_bits(1)),
-            f64::from(f32::from_bits(1)),
-        ),
-        (JsValue::from(-0.0_f32), -0.0_f64),
-        (JsValue::from(f32::INFINITY), f64::INFINITY),
-        (JsValue::from(f32::NEG_INFINITY), f64::NEG_INFINITY),
-        (JsValue::from(f64::MAX), f64::MAX),
-    ] {
-        let JsValue::Number(actual) = boxed else {
-            panic!("a native number must retain its number tag");
+    macro_rules! check_integer {
+        ($($variant:ident: $carrier:ty),+ $(,)?) => {
+            $(for value in [<$carrier>::MIN, 0, <$carrier>::MAX] {
+                assert!(matches!(JsValue::from(value), JsValue::$variant(actual) if actual == value));
+                assert_eq!(console::format_args(&[JsValue::from(value)]), value.to_string());
+            })+
         };
-        assert_eq!(actual.to_bits(), expected.to_bits());
     }
-    assert!(matches!(JsValue::from(f32::NAN), JsValue::Number(value) if value.is_nan()));
+    check_integer!(
+        Int8: i8, Uint8: u8, Int16: i16, Uint16: u16, Int32: i32, Uint32: u32,
+        Integer: i64, UnsignedInteger: u64, NativeInt: isize, NativeUint: usize,
+    );
+    for value in [
+        f32::MAX,
+        f32::from_bits(1),
+        -0.0_f32,
+        f32::INFINITY,
+        f32::NEG_INFINITY,
+        f32::from_bits(0x7fc0_1234),
+    ] {
+        let JsValue::Float32(actual) = JsValue::from(value) else {
+            panic!("a native float32 must retain its selected carrier");
+        };
+        assert_eq!(actual.to_bits(), value.to_bits());
+    }
+    for value in [
+        f64::MAX,
+        f64::from_bits(1),
+        -0.0_f64,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        f64::from_bits(0x7ff8_0000_0000_1234),
+    ] {
+        let JsValue::Number(actual) = JsValue::from(value) else {
+            panic!("a native float64 must retain its selected carrier");
+        };
+        assert_eq!(actual.to_bits(), value.to_bits());
+    }
     assert_eq!(
         console::format_args(&[JsValue::from(u32::MAX)]),
         "4294967295"
