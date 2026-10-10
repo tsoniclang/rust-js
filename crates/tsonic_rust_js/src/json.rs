@@ -387,43 +387,43 @@ impl<'a> Serializer<'a> {
                 Ok(true)
             }
             JsValue::Integer(value) => {
-                self.push_str(&value.to_string())?;
+                self.push_formatted(format_args!("{value}"))?;
                 Ok(true)
             }
             JsValue::UnsignedInteger(value) => {
-                self.push_str(&value.to_string())?;
+                self.push_formatted(format_args!("{value}"))?;
                 Ok(true)
             }
             JsValue::Int8(value) => {
-                self.push_str(&value.to_string())?;
+                self.push_formatted(format_args!("{value}"))?;
                 Ok(true)
             }
             JsValue::Uint8(value) => {
-                self.push_str(&value.to_string())?;
+                self.push_formatted(format_args!("{value}"))?;
                 Ok(true)
             }
             JsValue::Int16(value) => {
-                self.push_str(&value.to_string())?;
+                self.push_formatted(format_args!("{value}"))?;
                 Ok(true)
             }
             JsValue::Uint16(value) => {
-                self.push_str(&value.to_string())?;
+                self.push_formatted(format_args!("{value}"))?;
                 Ok(true)
             }
             JsValue::Int32(value) => {
-                self.push_str(&value.to_string())?;
+                self.push_formatted(format_args!("{value}"))?;
                 Ok(true)
             }
             JsValue::Uint32(value) => {
-                self.push_str(&value.to_string())?;
+                self.push_formatted(format_args!("{value}"))?;
                 Ok(true)
             }
             JsValue::NativeInt(value) => {
-                self.push_str(&value.to_string())?;
+                self.push_formatted(format_args!("{value}"))?;
                 Ok(true)
             }
             JsValue::NativeUint(value) => {
-                self.push_str(&value.to_string())?;
+                self.push_formatted(format_args!("{value}"))?;
                 Ok(true)
             }
             JsValue::Float32(value) => {
@@ -672,12 +672,12 @@ impl<'a> Serializer<'a> {
                 0x000a => self.push_str("\\n")?,
                 0x000d => self.push_str("\\r")?,
                 0x0009 => self.push_str("\\t")?,
-                0x0000..=0x001f => self.push_str(&format!("\\u{unit:04x}"))?,
+                0x0000..=0x001f => self.push_formatted(format_args!("\\u{unit:04x}"))?,
                 0xd800..=0xdbff if matches!(units.get(index + 1), Some(0xdc00..=0xdfff)) => {
                     self.push_units(&units[index..index + 2])?;
                     index += 1;
                 }
-                0xd800..=0xdfff => self.push_str(&format!("\\u{unit:04x}"))?,
+                0xd800..=0xdfff => self.push_formatted(format_args!("\\u{unit:04x}"))?,
                 _ => self.push_units(&[unit])?,
             }
             index += 1;
@@ -699,7 +699,7 @@ impl<'a> Serializer<'a> {
                     b'\t' => self.push_str("\\t")?,
                     8 => self.push_str("\\b")?,
                     12 => self.push_str("\\f")?,
-                    _ => self.push_str(&format!("\\u{byte:04x}"))?,
+                    _ => self.push_formatted(format_args!("\\u{byte:04x}"))?,
                 }
                 start = offset + 1;
             }
@@ -766,6 +766,19 @@ impl<'a> Serializer<'a> {
         Ok(())
     }
 
+    fn push_formatted(&mut self, arguments: std::fmt::Arguments<'_>) -> TsonicResult<()> {
+        let mut writer = JsonFormatWriter {
+            serializer: self,
+            failure: None,
+        };
+        let result = std::fmt::write(&mut writer, arguments);
+        match (writer.failure, result) {
+            (Some(error), _) => Err(error),
+            (None, Ok(())) => Ok(()),
+            (None, Err(_)) => Err(type_error("Native JSON value formatting failed").into()),
+        }
+    }
+
     fn push_str(&mut self, value: &str) -> TsonicResult<()> {
         let next_bytes = self
             .output_bytes
@@ -790,6 +803,23 @@ impl<'a> Serializer<'a> {
             self.push_char(scalar)?;
         }
         Ok(())
+    }
+}
+
+struct JsonFormatWriter<'output, 'options> {
+    serializer: &'output mut Serializer<'options>,
+    failure: Option<TsonicError>,
+}
+
+impl std::fmt::Write for JsonFormatWriter<'_, '_> {
+    fn write_str(&mut self, value: &str) -> std::fmt::Result {
+        match self.serializer.push_str(value) {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                self.failure = Some(error);
+                Err(std::fmt::Error)
+            }
+        }
     }
 }
 

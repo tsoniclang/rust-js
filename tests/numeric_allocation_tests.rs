@@ -613,6 +613,47 @@ fn numeric_formatting_allocates_only_the_result_string() {
 }
 
 #[test]
+fn json_native_integer_formatting_matches_direct_native_output_cost() {
+    use std::fmt::{Display, Write};
+    use tsonic_rust_js::{json, JsValue};
+    fn check<Value: Display>(value: Value, carrier: JsValue) {
+        let (expected, native_count, native_bytes, native_alignment) = measured_allocation(|| {
+            let mut result = String::new();
+            write!(&mut result, "{value}").unwrap();
+            result
+        });
+        let (actual, count, bytes, alignment) =
+            measured_allocation(|| json::stringify(&carrier).unwrap().unwrap());
+        assert_eq!(actual, expected);
+        assert_eq!(count, native_count, "{expected}");
+        assert_eq!(bytes, native_bytes, "{expected}");
+        assert_eq!(alignment, native_alignment, "{expected}");
+    }
+    macro_rules! check_carrier {
+        ($variant:ident, $($value:expr),+ $(,)?) => { $(
+            let value = $value;
+            check(value, JsValue::$variant(value));
+        )+ };
+    }
+    check_carrier!(
+        Integer,
+        i64::MIN,
+        i64::MAX,
+        9_007_199_254_740_993_i64,
+        0_i64
+    );
+    check_carrier!(UnsignedInteger, u64::MAX, 9_007_199_254_740_993_u64, 0_u64);
+    check_carrier!(Int8, i8::MIN, i8::MAX, 0_i8);
+    check_carrier!(Uint8, u8::MAX, 0_u8);
+    check_carrier!(Int16, i16::MIN, i16::MAX, 0_i16);
+    check_carrier!(Uint16, u16::MAX, 0_u16);
+    check_carrier!(Int32, i32::MIN, i32::MAX, 0_i32);
+    check_carrier!(Uint32, u32::MAX, 0_u32);
+    check_carrier!(NativeInt, isize::MIN, isize::MAX, 0_isize);
+    check_carrier!(NativeUint, usize::MAX, 0_usize);
+}
+
+#[test]
 fn native_numeric_conversion_and_borrowed_comparison_do_not_allocate() {
     let explicit_bigint = BigInt::from_decimal_literal("9007199254740993");
     let enormous = BigInt::from_decimal_literal("340282366920938463463374607431768211456");

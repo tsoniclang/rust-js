@@ -394,6 +394,68 @@ fn json_number_grammar_and_output_match_ecmascript() {
 }
 
 #[test]
+fn json_native_integer_output_retains_exact_byte_limits_and_error_kind() {
+    fn check(value: JsValue, expected: String) {
+        let limits = json::JsonLimits {
+            max_output_bytes: expected.len(),
+            ..json::JsonLimits::default()
+        };
+        assert_eq!(
+            json::stringify_with_limits(&value, limits)
+                .unwrap()
+                .unwrap(),
+            expected
+        );
+        let error = json::stringify_with_limits(
+            &value,
+            json::JsonLimits {
+                max_output_bytes: expected.len() - 1,
+                ..limits
+            },
+        )
+        .unwrap_err();
+        let TsonicError::Js(error) = error else {
+            panic!("native formatted output retains its exact JSON error carrier");
+        };
+        assert_eq!(error.kind(), JsErrorKind::RangeError);
+        assert_eq!(
+            error.message(),
+            "JSON output exceeds the configured byte limit"
+        );
+    }
+    macro_rules! check_carrier {
+        ($variant:ident, $($value:expr),+ $(,)?) => { $(
+            let value = $value;
+            check(JsValue::$variant(value), value.to_string());
+        )+ };
+    }
+    check_carrier!(
+        Integer,
+        i64::MIN,
+        i64::MAX,
+        9_007_199_254_740_993_i64,
+        0_i64
+    );
+    check_carrier!(UnsignedInteger, u64::MAX, 9_007_199_254_740_993_u64, 0_u64);
+    check_carrier!(Int8, i8::MIN, i8::MAX, 0_i8);
+    check_carrier!(Uint8, u8::MAX, 0_u8);
+    check_carrier!(Int16, i16::MIN, i16::MAX, 0_i16);
+    check_carrier!(Uint16, u16::MAX, 0_u16);
+    check_carrier!(Int32, i32::MIN, i32::MAX, 0_i32);
+    check_carrier!(Uint32, u32::MAX, 0_u32);
+    check_carrier!(NativeInt, isize::MIN, isize::MAX, 0_isize);
+    check_carrier!(NativeUint, usize::MAX, 0_usize);
+}
+
+#[test]
+fn json_native_float32_tie_text_is_not_changed_by_output_writer() {
+    assert_eq!(
+        stringify_text(&JsValue::Float32(f32::from_bits(0xca48_d5f5))),
+        "-3290493.3"
+    );
+}
+
+#[test]
 fn json_utf16_escape_policy_is_explicit() {
     assert_eq!(
         json::parse(r#""\uD83D\uDE00""#).unwrap(),
