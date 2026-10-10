@@ -61,6 +61,20 @@ pub trait JsToString {
     }
 }
 
+impl<Value: JsToString + ?Sized> JsToString for &Value {
+    fn to_js_string(&self) -> String {
+        Value::to_js_string(*self)
+    }
+
+    fn write_js_string(&self, output: &mut String) {
+        Value::write_js_string(*self, output);
+    }
+
+    fn write_js_join_value(&self, output: &mut String) {
+        Value::write_js_join_value(*self, output);
+    }
+}
+
 macro_rules! impl_js_to_string {
     ($($type:ty),+ $(,)?) => {
         $(impl JsToString for $type {

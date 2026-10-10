@@ -4,6 +4,13 @@ pub trait NumberInput {
     fn to_number(&self) -> f64;
 }
 
+impl<Value: NumberInput + ?Sized> NumberInput for &Value {
+    #[inline]
+    fn to_number(&self) -> f64 {
+        Value::to_number(*self)
+    }
+}
+
 #[inline]
 pub fn number_from_value<Value: NumberInput + ?Sized>(value: &Value) -> f64 {
     value.to_number()
