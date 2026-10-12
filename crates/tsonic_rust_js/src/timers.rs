@@ -7,38 +7,39 @@ use tsonic_rust_runtime::dispatch::{DispatchContexts, DispatchPhase};
 use tsonic_rust_runtime::timer_queue::{TimerContext, TimerQueueError};
 use tsonic_rust_runtime::{Callable, TsonicResult};
 
-pub const fn new<TError>() -> TimerContext<Callable<(), Result<(), TError>>> {
+pub const fn new<'environment, TError>(
+) -> TimerContext<Callable<'environment, (), Result<(), TError>>> {
     TimerContext::new(DispatchPhase::JsTimers)
 }
 
 thread_local! {
-    static DEFAULT_TIMERS: TimerContext<Callable<(), TsonicResult<()>>> = const { new() };
+    static DEFAULT_TIMERS: TimerContext<Callable<'static, (), TsonicResult<()>>> = const { new() };
 }
 
 pub fn with_default<TOutput>(
-    operation: impl FnOnce(&TimerContext<Callable<(), TsonicResult<()>>>) -> TOutput,
+    operation: impl FnOnce(&TimerContext<Callable<'static, (), TsonicResult<()>>>) -> TOutput,
 ) -> TOutput {
     DEFAULT_TIMERS.with(operation)
 }
 
-pub fn set_timeout_callable<TError>(
-    timers: &TimerContext<Callable<(), Result<(), TError>>>,
-    callback: Callable<(), Result<(), TError>>,
+pub fn set_timeout_callable<'environment, TError>(
+    timers: &TimerContext<Callable<'environment, (), Result<(), TError>>>,
+    callback: Callable<'environment, (), Result<(), TError>>,
     delay_ms: f64,
 ) -> JsResult<u64> {
     schedule_callback(timers, callback, normalized_delay(delay_ms), false)
 }
 
-pub fn set_interval_callable<TError>(
-    timers: &TimerContext<Callable<(), Result<(), TError>>>,
-    callback: Callable<(), Result<(), TError>>,
+pub fn set_interval_callable<'environment, TError>(
+    timers: &TimerContext<Callable<'environment, (), Result<(), TError>>>,
+    callback: Callable<'environment, (), Result<(), TError>>,
     delay_ms: f64,
 ) -> JsResult<u64> {
     schedule_callback(timers, callback, normalized_delay(delay_ms).max(1), true)
 }
 
 pub fn clear_timeout<TError, Value: Copy + NativeNumberPredicate + ToPrimitive>(
-    timers: &TimerContext<Callable<(), Result<(), TError>>>,
+    timers: &TimerContext<Callable<'_, (), Result<(), TError>>>,
     value: Value,
 ) {
     if let Some(id) = timer_id(value) {
@@ -47,7 +48,7 @@ pub fn clear_timeout<TError, Value: Copy + NativeNumberPredicate + ToPrimitive>(
 }
 
 pub fn clear_interval<TError, Value: Copy + NativeNumberPredicate + ToPrimitive>(
-    timers: &TimerContext<Callable<(), Result<(), TError>>>,
+    timers: &TimerContext<Callable<'_, (), Result<(), TError>>>,
     id: Value,
 ) {
     clear_timeout(timers, id);
@@ -65,9 +66,9 @@ pub fn next_timer_delay() -> Option<Duration> {
     with_default(DispatchContexts::next_delay)
 }
 
-fn schedule_callback<TError>(
-    timers: &TimerContext<Callable<(), Result<(), TError>>>,
-    callback: Callable<(), Result<(), TError>>,
+fn schedule_callback<'environment, TError>(
+    timers: &TimerContext<Callable<'environment, (), Result<(), TError>>>,
+    callback: Callable<'environment, (), Result<(), TError>>,
     delay_ms: u64,
     interval: bool,
 ) -> JsResult<u64> {

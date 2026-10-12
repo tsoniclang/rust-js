@@ -21,18 +21,18 @@ impl<T: Clone, Error> Clone for PromiseResolution<T, Error> {
 }
 
 pub type PromiseResolve<T, Error = TsonicError> =
-    Callable<(PromiseResolution<T, Error>,), Result<(), Error>>;
-pub type PromiseReject<Error = TsonicError> = Callable<(Error,), Result<(), Error>>;
-pub type PromiseExecutor<T, Error = TsonicError> =
-    Callable<(PromiseResolve<T, Error>, PromiseReject<Error>), Result<(), Error>>;
+    Callable<'static, (PromiseResolution<T, Error>,), Result<(), Error>>;
+pub type PromiseReject<Error = TsonicError> = Callable<'static, (Error,), Result<(), Error>>;
+pub type PromiseExecutor<'environment, T, Error = TsonicError> =
+    Callable<'environment, (PromiseResolve<T, Error>, PromiseReject<Error>), Result<(), Error>>;
 
 type PromiseThenCallback<Input, Output, Error> =
-    Callable<(Input,), Result<JsPromise<'static, Output, Error>, Error>>;
+    Callable<'static, (Input,), Result<JsPromise<'static, Output, Error>, Error>>;
 
 impl<T: Clone + 'static, Error: Clone + From<tsonic_rust_runtime::JsError> + 'static>
     JsPromise<'static, T, Error>
 {
-    pub fn create(executor: PromiseExecutor<T, Error>) -> Self {
+    pub fn create(executor: PromiseExecutor<'_, T, Error>) -> Self {
         let promise = Self::deferred();
         let resolve_target = promise.clone();
         let reject_target = promise.clone();
@@ -103,8 +103,8 @@ impl<T: Clone + 'static, Error: Clone + From<tsonic_rust_runtime::JsError> + 'st
 
     pub fn then<Output: Clone + 'static>(
         &self,
-        fulfilled: Callable<(T,), Result<Output, Error>>,
-        rejected: Option<Callable<(Error,), Result<Output, Error>>>,
+        fulfilled: Callable<'static, (T,), Result<Output, Error>>,
+        rejected: Option<Callable<'static, (Error,), Result<Output, Error>>>,
     ) -> JsPromise<'static, Output, Error> {
         let source = self.clone();
         JsPromise::schedule(async move {
@@ -136,7 +136,7 @@ impl<T: Clone + 'static, Error: Clone + From<tsonic_rust_runtime::JsError> + 'st
         })
     }
 
-    pub fn catch(&self, rejected: Callable<(Error,), Result<T, Error>>) -> Self {
+    pub fn catch(&self, rejected: Callable<'static, (Error,), Result<T, Error>>) -> Self {
         let source = self.clone();
         Self::schedule(async move {
             match source.into_result().await {
@@ -150,11 +150,11 @@ impl<T: Clone + 'static, Error: Clone + From<tsonic_rust_runtime::JsError> + 'st
         self.finally_callback(None)
     }
 
-    pub fn finally(&self, callback: Callable<(), Result<(), Error>>) -> Self {
+    pub fn finally(&self, callback: Callable<'static, (), Result<(), Error>>) -> Self {
         self.finally_callback(Some(callback))
     }
 
-    fn finally_callback(&self, callback: Option<Callable<(), Result<(), Error>>>) -> Self {
+    fn finally_callback(&self, callback: Option<Callable<'static, (), Result<(), Error>>>) -> Self {
         let source = self.clone();
         Self::schedule(async move {
             let result = source.into_result().await;

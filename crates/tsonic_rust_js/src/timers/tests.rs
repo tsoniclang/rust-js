@@ -1,6 +1,39 @@
 use super::timer_id;
 
 #[test]
+fn local_timer_context_retains_borrowed_callback_environment() {
+    let calls = std::cell::Cell::new(0);
+    let timers = super::new::<std::convert::Infallible>();
+    super::set_timeout_callable(
+        &timers,
+        tsonic_rust_runtime::Callable::new(|()| {
+            calls.set(calls.get() + 1);
+            Ok(())
+        }),
+        0.0,
+    )
+    .unwrap();
+    assert_eq!(calls.get(), 0);
+    assert!(timers.poll().unwrap());
+    assert_eq!(calls.get(), 1);
+    assert!(!timers.has_pending_work());
+}
+
+#[test]
+fn local_timer_context_preserves_borrowed_failure_identity() {
+    let failure = String::from("scoped timer failure");
+    let timers = super::new::<&String>();
+    super::set_timeout_callable(
+        &timers,
+        tsonic_rust_runtime::Callable::new(|()| Err(&failure)),
+        0.0,
+    )
+    .unwrap();
+    assert!(std::ptr::eq(timers.poll().unwrap_err(), &failure));
+    assert!(!timers.has_pending_work());
+}
+
+#[test]
 fn timer_identifiers_retain_native_precision() {
     assert_eq!(
         timer_id(9_007_199_254_740_993_u64),

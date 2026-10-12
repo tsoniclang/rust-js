@@ -1,6 +1,6 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::{Cell, OnceCell, RefCell};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::hint::black_box;
 use std::num::NonZeroUsize;
 use std::rc::Rc;
@@ -63,7 +63,7 @@ use tsonic_rust_runtime::dispatch_queue::{TaskBudget, TaskReservation};
 use tsonic_rust_runtime::{Callable, TsonicError, TsonicResult};
 
 struct NativeTimer {
-    _callback: Callable<(), TsonicResult<()>>,
+    _callback: Callable<'static, (), TsonicResult<()>>,
     _delay: Duration,
     _due: Instant,
     _interval: bool,
@@ -71,7 +71,13 @@ struct NativeTimer {
     _reservation: TaskReservation,
 }
 
-fn callbacks(count: usize) -> Vec<Callable<(), TsonicResult<()>>> {
+struct NativeTimers {
+    entries: BTreeMap<u64, NativeTimer>,
+    deadlines: BTreeSet<(Instant, u64)>,
+    referenced: usize,
+}
+
+fn callbacks(count: usize) -> Vec<Callable<'static, (), TsonicResult<()>>> {
     (0..count)
         .map(|value| {
             Callable::new(move |()| {
@@ -108,20 +114,29 @@ fn retained_timer_allocations_match_one_native_callback_owner() {
                     .get_or_init(|| TaskBudget::new(NonZeroUsize::new(1 << 20).unwrap()))
                     .reserve()
                     .unwrap();
-                native
-                    .get_or_init(|| Rc::new(RefCell::new(BTreeMap::new())))
-                    .borrow_mut()
-                    .insert(
-                        index as u64,
-                        NativeTimer {
-                            _callback: callback,
-                            _delay: delay,
-                            _due: Instant::now() + delay,
-                            _interval: false,
-                            _refed: true,
-                            _reservation: reservation,
-                        },
-                    );
+                let due = Instant::now() + delay;
+                let mut state = native
+                    .get_or_init(|| {
+                        Rc::new(RefCell::new(NativeTimers {
+                            entries: BTreeMap::new(),
+                            deadlines: BTreeSet::new(),
+                            referenced: 0,
+                        }))
+                    })
+                    .borrow_mut();
+                state.deadlines.insert((due, index as u64));
+                state.referenced += 1;
+                state.entries.insert(
+                    index as u64,
+                    NativeTimer {
+                        _callback: callback,
+                        _delay: delay,
+                        _due: due,
+                        _interval: false,
+                        _refed: true,
+                        _reservation: reservation,
+                    },
+                );
             }
         });
         black_box(&native);
@@ -129,7 +144,16 @@ fn retained_timer_allocations_match_one_native_callback_owner() {
             timers::with_default(|timers| timers::clear_timeout(timers, handle));
         }
         for index in 0..count {
-            native.get().unwrap().borrow_mut().remove(&(index as u64));
+            let mut state = native.get().unwrap().borrow_mut();
+            let entry = state.entries.remove(&(index as u64)).unwrap();
+            assert!(state.deadlines.remove(&(entry._due, index as u64)));
+            state.referenced -= 1;
+        }
+        if let Some(state) = native.get() {
+            let state = state.borrow();
+            assert!(state.entries.is_empty());
+            assert!(state.deadlines.is_empty());
+            assert_eq!(state.referenced, 0);
         }
         assert!(!timers::has_timers());
         assert_eq!(actual, expected, "registrations={count}");

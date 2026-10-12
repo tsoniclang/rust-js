@@ -9,6 +9,23 @@ use tsonic_rust_js::promise::{JsPromise, PromiseReject, PromiseResolution, Promi
 use tsonic_rust_runtime::{Callable, JsError, TsonicError};
 
 #[test]
+fn synchronous_executor_borrows_an_environment_not_retained_by_the_promise() {
+    let promise = {
+        let value = String::from("scoped executor");
+        let calls = Cell::new(0);
+        let promise = JsPromise::create(Callable::new(
+            |(resolve, _): (PromiseResolve<usize>, PromiseReject)| {
+                calls.set(calls.get() + 1);
+                resolve.call((PromiseResolution::Value(value.len()),))
+            },
+        ));
+        assert_eq!(calls.get(), 1);
+        promise
+    };
+    assert_eq!(block_on(promise.into_result()).unwrap().unwrap(), 15);
+}
+
+#[test]
 fn executor_runs_eagerly_and_preserves_first_resolution_during_adoption() {
     let calls = Rc::new(Cell::new(0));
     let executor_calls = Rc::clone(&calls);
