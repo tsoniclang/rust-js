@@ -11,7 +11,7 @@ use crate::numeric::IndexInput;
 
 mod bytes;
 mod shared;
-pub use bytes::{BufferBytes, BufferBytesMut};
+pub use bytes::{BufferBytes, BufferBytesMut, OwnedBufferBytes};
 use bytes::{ByteReadGuard, ByteWriteGuard};
 pub use shared::SharedBufferStorage;
 
@@ -66,6 +66,19 @@ impl ArrayBuffer {
         Self {
             storage: BufferStorage::Ordinary(Rc::new(RefCell::new(bytes))),
             identity: ObjectIdentity::new(),
+        }
+    }
+
+    pub(crate) fn into_owned_byte_range(self, range: std::ops::Range<usize>) -> OwnedBufferBytes {
+        match self.storage {
+            BufferStorage::Ordinary(storage) => match Rc::try_unwrap(storage) {
+                Ok(storage) => OwnedBufferBytes::from_range(storage.into_inner(), range),
+                Err(storage) => OwnedBufferBytes::copy(&storage.borrow()[range]),
+            },
+            BufferStorage::Shared(storage) => match Arc::try_unwrap(storage) {
+                Ok(storage) => OwnedBufferBytes::from_range(storage.into_bytes(), range),
+                Err(storage) => OwnedBufferBytes::copy(&storage.lock().bytes[range]),
+            },
         }
     }
 

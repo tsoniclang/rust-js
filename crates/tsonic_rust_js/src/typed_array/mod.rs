@@ -7,7 +7,7 @@ use std::rc::Rc;
 use tsonic_rust_runtime::{ObjectIdentity, ObjectIdentityCarrier};
 
 use crate::array::JsArray;
-use crate::array_buffer::{normalize_index, to_index, ArrayBuffer};
+use crate::array_buffer::{normalize_index, to_index, ArrayBuffer, OwnedBufferBytes};
 use crate::equality::{hash_identity, JsHash, JsSameValueZero, JsStrictEqual};
 use crate::errors::{range_error, JsResult};
 use crate::numeric::IndexInput;
@@ -45,6 +45,17 @@ impl TypedArray<u8> {
     pub fn from_bytes(bytes: Vec<u8>) -> Self {
         let length = bytes.len();
         Self::from_view(ArrayBuffer::from_bytes(bytes), 0, length)
+    }
+
+    pub fn into_owned_bytes(self) -> OwnedBufferBytes {
+        match Rc::try_unwrap(self.view) {
+            Ok(view) => view
+                .buffer
+                .into_owned_byte_range(view.byte_offset..view.byte_offset + view.length),
+            Err(view) => OwnedBufferBytes::copy(
+                &view.buffer.as_bytes()[view.byte_offset..view.byte_offset + view.length],
+            ),
+        }
     }
 }
 

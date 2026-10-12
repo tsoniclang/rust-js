@@ -40,6 +40,13 @@ impl SharedBufferStorage {
         self.state.lock().expect("shared buffer lock poisoned")
     }
 
+    pub(crate) fn into_bytes(self) -> Vec<u8> {
+        self.state
+            .into_inner()
+            .expect("shared buffer lock poisoned")
+            .bytes
+    }
+
     pub(crate) fn wait_i32(
         &self,
         offset: usize,
