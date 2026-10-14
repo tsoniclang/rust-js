@@ -1,12 +1,29 @@
+use futures_util::future::{join_all, try_join_all};
 use futures_util::stream::{FuturesUnordered, StreamExt};
 
 use super::{JsPromise, PromiseFulfilledResult, PromiseRejectedResult, PromiseSettledResult};
 use crate::array::JsArray;
+use crate::JsValue;
 
-pub fn promise_race<'a, T: Clone + 'a, Error: Clone + 'a>(
-    values: &JsArray<JsPromise<'a, T, Error>>,
-) -> JsPromise<'a, T, Error> {
+pub fn promise_all<'a, T: Clone + 'a>(
+    values: &JsArray<JsPromise<'a, T>>,
+) -> JsPromise<'a, JsArray<T>> {
     let values = values.values();
+    if values.is_empty() {
+        return JsPromise::resolved(JsArray::from_dense(Vec::new()));
+    }
+    JsPromise::from_fallible_factory(move || async move {
+        try_join_all(values.into_iter().map(JsPromise::into_result))
+            .await
+            .map(JsArray::from_dense)
+    })
+}
+
+pub fn promise_race<'a, T: Clone + 'a>(values: &JsArray<JsPromise<'a, T>>) -> JsPromise<'a, T> {
+    let values = values.values();
+    if values.is_empty() {
+        return JsPromise::deferred();
+    }
     JsPromise::from_fallible_factory(move || async move {
         let mut pending: FuturesUnordered<_> =
             values.into_iter().map(JsPromise::into_result).collect();
@@ -17,10 +34,13 @@ pub fn promise_race<'a, T: Clone + 'a, Error: Clone + 'a>(
     })
 }
 
-pub fn promise_any<'a, T: Clone + 'a, Error: Clone + From<tsonic_rust_runtime::JsError> + 'a>(
-    values: &JsArray<JsPromise<'a, T, Error>>,
-) -> JsPromise<'a, T, Error> {
+pub fn promise_any<'a, T: Clone + 'a>(values: &JsArray<JsPromise<'a, T>>) -> JsPromise<'a, T> {
     let values = values.values();
+    if values.is_empty() {
+        return JsPromise::rejected(JsValue::from_error(crate::aggregate_error(
+            "All promises were rejected",
+        )));
+    }
     JsPromise::from_fallible_factory(move || async move {
         let mut pending: FuturesUnordered<_> =
             values.into_iter().map(JsPromise::into_result).collect();
@@ -29,23 +49,22 @@ pub fn promise_any<'a, T: Clone + 'a, Error: Clone + From<tsonic_rust_runtime::J
                 return Ok(value);
             }
         }
-        Err(crate::aggregate_error("All promises were rejected").into())
+        Err(JsValue::from_error(crate::aggregate_error(
+            "All promises were rejected",
+        )))
     })
 }
 
-pub fn promise_all_settled<'a, T: Clone + 'a, Error: Clone + 'a>(
-    values: &JsArray<JsPromise<'a, T, Error>>,
-) -> JsPromise<'a, JsArray<PromiseSettledResult<T, Error>>, Error> {
+pub fn promise_all_settled<'a, T: Clone + 'a>(
+    values: &JsArray<JsPromise<'a, T>>,
+) -> JsPromise<'a, JsArray<PromiseSettledResult<T>>> {
     let values = values.values();
+    if values.is_empty() {
+        return JsPromise::resolved(JsArray::from_dense(Vec::new()));
+    }
     JsPromise::from_infallible_factory(move || async move {
-        let mut settled = vec![None; values.len()];
-        let mut pending: FuturesUnordered<_> = values
-            .into_iter()
-            .enumerate()
-            .map(|(index, value)| async move { (index, value.into_result().await) })
-            .collect();
-        while let Some((index, result)) = pending.next().await {
-            settled[index] = Some(match result {
+        let settled = join_all(values.into_iter().map(|value| async move {
+            match value.into_result().await {
                 Ok(value) => PromiseSettledResult::Fulfilled(PromiseFulfilledResult {
                     status: "fulfilled".to_string(),
                     value,
@@ -54,13 +73,9 @@ pub fn promise_all_settled<'a, T: Clone + 'a, Error: Clone + 'a>(
                     status: "rejected".to_string(),
                     reason,
                 }),
-            });
-        }
-        JsArray::from_dense(
-            settled
-                .into_iter()
-                .map(|value| value.expect("completed Promise settlement"))
-                .collect(),
-        )
+            }
+        }))
+        .await;
+        JsArray::from_dense(settled)
     })
 }

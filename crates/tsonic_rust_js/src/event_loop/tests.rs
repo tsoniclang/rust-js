@@ -97,6 +97,8 @@ fn a_referenced_timer_can_finish_a_job_after_the_root_is_ready() {
                         timers,
                         Callable::new(move |()| {
                             resolve.call((crate::promise::PromiseResolution::Value(9),))
+                                .expect("native Promise resolution is infallible");
+                            Ok(())
                         }),
                         1.0,
                     )

@@ -410,6 +410,14 @@ pub fn dispatch_owner() -> Result<DispatchOwner, JsError> {
 }
 
 pub(crate) fn enqueue(job: impl Future<Output = ()> + 'static) -> Result<(), JsError> {
+    admit(job, false)
+}
+
+pub(crate) fn start(job: impl Future<Output = ()> + 'static) -> Result<(), JsError> {
+    admit(job, true)
+}
+
+fn admit(job: impl Future<Output = ()> + 'static, eager: bool) -> Result<(), JsError> {
     JOBS.with(|owner| {
         let jobs = owner
             .get()
@@ -441,7 +449,11 @@ pub(crate) fn enqueue(job: impl Future<Output = ()> + 'static) -> Result<(), JsE
             move |runnable| handle.schedule(runnable),
         );
         assert_eq!(jobs.tasks.borrow_mut().insert(task), key);
-        jobs.ready.borrow_mut().push_back(runnable);
+        if eager {
+            jobs.run(runnable);
+        } else {
+            jobs.ready.borrow_mut().push_back(runnable);
+        }
         Ok(())
     })
 }

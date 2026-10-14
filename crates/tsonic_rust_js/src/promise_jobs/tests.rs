@@ -64,7 +64,14 @@ fn no_loop_reaction_returns_the_exact_error_without_running_the_callback() {
         None,
     );
     let failure = tsonic_rust_runtime::async_runtime::block_on(pending.into_result()).unwrap_err();
-    assert_eq!(failure.source_error().message(), NO_LOOP);
+    assert_eq!(
+        failure
+            .error_value()
+            .native_error_value()
+            .unwrap()
+            .message(),
+        NO_LOOP
+    );
     assert_eq!(calls.get(), 0);
     assert_eq!(Rc::strong_count(&calls), 1);
     assert!(!active());
@@ -86,6 +93,81 @@ fn admission_reuses_one_owner_and_queries_preserve_its_identity() {
         assert_eq!(current.live.get(), 0);
         assert!(current.tasks.borrow().is_empty());
     });
+}
+
+#[test]
+fn eager_admission_runs_the_prefix_before_returning_and_retires_ready_tasks() {
+    let _owner = owner();
+    let calls = Rc::new(Cell::new(0));
+    let observed = Rc::clone(&calls);
+    start(async move { observed.set(7) }).unwrap();
+    assert_eq!(calls.get(), 7);
+    assert_eq!(Rc::strong_count(&calls), 1);
+    assert!(!has_ready());
+    JOBS.with(|owner| {
+        let jobs = owner.get().unwrap();
+        assert_eq!(jobs.live.get(), 0);
+        assert!(jobs.tasks.borrow().is_empty());
+    });
+}
+
+#[test]
+fn eager_pending_work_is_retained_until_the_owner_cancels_it() {
+    let drops = Rc::new(Cell::new(0));
+    let calls = Rc::new(Cell::new(0));
+    {
+        let _owner = owner();
+        let capture = DropProbe::new(&drops);
+        let observed = Rc::clone(&calls);
+        start(async move {
+            observed.set(1);
+            pending::<()>().await;
+            observed.set(2);
+            drop(capture);
+        })
+        .unwrap();
+        assert_eq!(calls.get(), 1);
+        assert_eq!(drops.get(), 0);
+        assert!(!has_ready());
+    }
+    assert_eq!(calls.get(), 1);
+    assert_eq!(drops.get(), 1);
+    assert_eq!(Rc::strong_count(&calls), 1);
+    assert_eq!(Rc::strong_count(&drops), 1);
+}
+
+#[test]
+fn eager_reentrant_admission_keeps_native_task_slots_distinct() {
+    let _owner = owner();
+    let order = Rc::new(RefCell::new(Vec::new()));
+    let first = Rc::clone(&order);
+    start(async move {
+        first.borrow_mut().push(1);
+        let nested = Rc::clone(&first);
+        start(async move { nested.borrow_mut().push(2) }).unwrap();
+        let deferred = Rc::clone(&first);
+        enqueue(async move { deferred.borrow_mut().push(4) }).unwrap();
+        first.borrow_mut().push(3);
+    })
+    .unwrap();
+    assert_eq!(*order.borrow(), [1, 2, 3]);
+    assert!(poll());
+    assert_eq!(*order.borrow(), [1, 2, 3, 4]);
+    assert_eq!(Rc::strong_count(&order), 1);
+    JOBS.with(|owner| assert!(owner.get().unwrap().tasks.borrow().is_empty()));
+}
+
+#[test]
+fn eager_admission_overflow_releases_the_body_without_running_its_prefix() {
+    let _owner = owner();
+    JOBS.with(|owner| owner.get().unwrap().maximum.set(1));
+    start(pending()).unwrap();
+    let calls = Rc::new(Cell::new(0));
+    let observed = Rc::clone(&calls);
+    let error = start(async move { observed.set(1) }).unwrap_err();
+    assert_eq!(error.kind(), tsonic_rust_runtime::JsErrorKind::RangeError);
+    assert_eq!(calls.get(), 0);
+    assert_eq!(Rc::strong_count(&calls), 1);
 }
 
 #[test]
@@ -127,7 +209,7 @@ fn rejected_admission_settles_the_returned_promise_and_releases_captures() {
     );
     let failure = tsonic_rust_runtime::async_runtime::block_on(result.into_result()).unwrap_err();
     assert_eq!(
-        failure.source_error().kind(),
+        failure.error_value().native_error_value().unwrap().kind(),
         tsonic_rust_runtime::JsErrorKind::RangeError
     );
     assert!(!ran.get());
