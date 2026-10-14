@@ -3,14 +3,17 @@ use std::time::Duration;
 use crate::number::NativeNumberPredicate;
 use crate::{JsError, JsResult};
 use num_traits::ToPrimitive;
-use tsonic_rust_runtime::dispatch::{DispatchContexts, DispatchPhase};
+use tsonic_rust_runtime::dispatch::{DispatchContexts, DispatchPhase, PhaseRegistration};
 use tsonic_rust_runtime::timer_queue::{TimerContext, TimerQueueError};
 use tsonic_rust_runtime::{Callable, TsonicResult};
 
 pub const fn new<'environment, TError>(
 ) -> TimerContext<Callable<'environment, (), Result<(), TError>>> {
-    TimerContext::new(DispatchPhase::JsTimers)
+    TimerContext::new(PHASE)
 }
+
+static REGISTRATION: PhaseRegistration = PhaseRegistration::new();
+pub const PHASE: DispatchPhase = REGISTRATION.phase();
 
 thread_local! {
     static DEFAULT_TIMERS: TimerContext<Callable<'static, (), TsonicResult<()>>> = const { new() };
@@ -72,6 +75,12 @@ fn schedule_callback<'environment, TError>(
     delay_ms: u64,
     interval: bool,
 ) -> JsResult<u64> {
+    let owner = crate::event_loop::dispatch_owner()?;
+    if !timers.belongs_to(owner) {
+        return Err(JsError::error(
+            "native timer context is not registered with this event loop",
+        ));
+    }
     timers
         .schedule_with(
             Duration::from_millis(delay_ms),

@@ -26,6 +26,17 @@ impl Driver {
 impl EventLoopDriver for Driver {
     type Error = Failure;
 
+    fn admission_error(_error: tsonic_rust_runtime::JsError) -> Failure {
+        Failure(Rc::new(Cell::new(-1)))
+    }
+
+    fn lifecycle(
+        &mut self,
+        _transition: tsonic_rust_js::event_loop::LoopLifecycle,
+    ) -> Result<(), Failure> {
+        Ok(())
+    }
+
     fn poll(&mut self) -> Result<bool, Failure> {
         self.tasks.poll_ready()
     }

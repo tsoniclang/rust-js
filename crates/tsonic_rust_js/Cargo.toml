@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+async-task = "=4.7.1"
 futures-util = { version = "=0.3.34", default-features = false, features = ["std"] }
 slab = "=0.4.12"
 hashbrown = "=0.17.1"
