@@ -1,230 +1,496 @@
-use std::cell::{OnceCell, RefCell};
+use std::cell::{Cell, OnceCell, RefCell};
+use std::collections::VecDeque;
 use std::future::Future;
-use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::task::Waker;
+use std::thread::{self, ThreadId};
 
-use futures_util::stream::{FuturesUnordered, Stream};
+use async_task::{Runnable, Task};
+use slab::Slab;
+use tsonic_rust_runtime::dispatch::DispatchOwner;
 use tsonic_rust_runtime::JsError;
 
 const MAX_PENDING_JOBS: usize = 1 << 20;
-const MAX_COMPLETIONS_PER_TURN: usize = 1024;
+const MAX_JOBS_PER_TURN: usize = 1024;
+const NO_LOOP: &str = "No JavaScript event loop is running on this thread.";
+const CLOSING: usize = 1 << (usize::BITS - 1);
 
-type Job = Pin<Box<dyn Future<Output = ()>>>;
+type ReadyJob = Runnable<usize>;
+
+struct IngressState {
+    ready: VecDeque<ReadyJob>,
+    closing: bool,
+    closed: bool,
+}
+
+struct Ingress {
+    owner: DispatchOwner,
+    thread: ThreadId,
+    wake: Waker,
+    changed: Condvar,
+    pending: AtomicBool,
+    notifications: AtomicUsize,
+    state: Mutex<IngressState>,
+    #[cfg(test)]
+    locks: std::sync::atomic::AtomicUsize,
+    #[cfg(test)]
+    wakes: std::sync::atomic::AtomicUsize,
+    #[cfg(test)]
+    handle_clones: std::sync::atomic::AtomicUsize,
+    #[cfg(test)]
+    handle_drops: std::sync::atomic::AtomicUsize,
+}
+
+impl Ingress {
+    fn lock(&self) -> MutexGuard<'_, IngressState> {
+        #[cfg(test)]
+        self.locks.fetch_add(1, Ordering::Relaxed);
+        self.state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn notify(&self) {
+        #[cfg(test)]
+        self.wakes.fetch_add(1, Ordering::Relaxed);
+        self.wake.wake_by_ref();
+    }
+
+    fn notify_if_open(&self) -> bool {
+        if self
+            .notifications
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |state| {
+                state.checked_add(1).filter(|next| *next < CLOSING)
+            })
+            .is_err()
+        {
+            return false;
+        }
+        let _notification = Notification(self);
+        self.notify();
+        true
+    }
+}
+
+struct Notification<'owner>(&'owner Ingress);
+
+impl Drop for Notification<'_> {
+    fn drop(&mut self) {
+        if self.0.notifications.fetch_sub(1, Ordering::AcqRel) & CLOSING != 0 {
+            let _state = self.0.lock();
+            self.0.changed.notify_one();
+        }
+    }
+}
+
+pub struct DispatchHandle(Arc<Ingress>);
+
+impl Clone for DispatchHandle {
+    #[inline]
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        self.0.handle_clones.fetch_add(1, Ordering::Relaxed);
+        Self(Arc::clone(&self.0))
+    }
+}
+
+#[cfg(test)]
+impl Drop for DispatchHandle {
+    fn drop(&mut self) {
+        self.0.handle_drops.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+impl DispatchHandle {
+    pub(crate) fn owner(&self) -> DispatchOwner {
+        self.0.owner
+    }
+    pub(crate) fn notify(&self) {
+        let _ = self.0.notify_if_open();
+    }
+
+    pub fn wake(&self) -> Result<(), JsError> {
+        if self.0.notify_if_open() {
+            Ok(())
+        } else {
+            Err(JsError::error(NO_LOOP))
+        }
+    }
+
+    fn schedule(&self, runnable: ReadyJob) {
+        if thread::current().id() == self.0.thread {
+            JOBS.with(|owner| {
+                let jobs = owner
+                    .get()
+                    .expect("an admitted local task has a loop owner");
+                let matches = jobs
+                    .handle
+                    .borrow()
+                    .as_ref()
+                    .is_some_and(|current| Arc::ptr_eq(&current.0, &self.0));
+                if matches {
+                    jobs.ready.borrow_mut().push_back(runnable);
+                } else {
+                    drop(runnable);
+                }
+            });
+            return;
+        }
+        let mut state = self.0.lock();
+        if state.closed {
+            drop(state);
+            drop(runnable);
+            return;
+        }
+        state.ready.push_back(runnable);
+        self.0.pending.store(true, Ordering::Release);
+        let closing = state.closing;
+        drop(state);
+        if closing || !self.0.notify_if_open() {
+            self.0.changed.notify_one();
+        }
+    }
+}
 
 struct Jobs {
-    active: Option<FuturesUnordered<Job>>,
-    incoming: Vec<Job>,
-    count: usize,
+    accepting: Cell<bool>,
+    polling: Cell<bool>,
+    live: Cell<usize>,
+    maximum: Cell<usize>,
+    capacity: Cell<usize>,
+    handle: RefCell<Option<DispatchHandle>>,
+    ready: RefCell<VecDeque<ReadyJob>>,
+    tasks: RefCell<Slab<Task<(), usize>>>,
 }
 
-pub(crate) fn has_jobs() -> bool {
-    JOBS.with(|owner| owner.get().is_some_and(|jobs| jobs.borrow().count != 0))
-}
-
-impl Default for Jobs {
-    fn default() -> Self {
+impl Jobs {
+    fn new() -> Self {
         Self {
-            active: Some(FuturesUnordered::new()),
-            incoming: Vec::new(),
-            count: 0,
+            accepting: Cell::new(false),
+            polling: Cell::new(false),
+            live: Cell::new(0),
+            maximum: Cell::new(MAX_PENDING_JOBS),
+            capacity: Cell::new(0),
+            handle: RefCell::new(None),
+            ready: RefCell::new(VecDeque::new()),
+            tasks: RefCell::new(Slab::new()),
+        }
+    }
+
+    fn grow(&self, required: usize, handle: &DispatchHandle) {
+        if required <= self.capacity.get() {
+            return;
+        }
+        let capacity = required.next_power_of_two().min(self.maximum.get());
+        {
+            let mut tasks = self.tasks.borrow_mut();
+            let additional = capacity.saturating_sub(tasks.len());
+            tasks.reserve(additional);
+        }
+        {
+            let mut ready = self.ready.borrow_mut();
+            let additional = capacity.saturating_sub(ready.len());
+            ready.reserve(additional);
+        }
+        let mut state = handle.0.lock();
+        let additional = capacity.saturating_sub(state.ready.len());
+        state.ready.reserve(additional);
+        self.capacity.set(capacity);
+    }
+
+    fn drain_ingress(&self) {
+        let handle = self.handle.borrow();
+        let Some(handle) = handle.as_ref() else {
+            return;
+        };
+        if !handle.0.pending.load(Ordering::Acquire)
+            || !handle.0.pending.swap(false, Ordering::AcqRel)
+        {
+            return;
+        }
+        let mut state = handle.0.lock();
+        self.ready.borrow_mut().append(&mut state.ready);
+    }
+
+    fn run(&self, runnable: ReadyJob) {
+        let _running = RunningJob {
+            owner: self,
+            key: *runnable.metadata(),
+        };
+        runnable.run();
+    }
+
+    fn shutdown(&self) {
+        self.accepting.set(false);
+        let Some(handle) = self.handle.borrow().as_ref().cloned() else {
+            return;
+        };
+        self.stop_admission();
+        let mut tasks = std::mem::take(&mut *self.tasks.borrow_mut());
+        for task in tasks.drain() {
+            drop(task);
+        }
+        while self.live.get() != 0 {
+            self.drain_ingress();
+            let runnable = self.ready.borrow_mut().pop_front();
+            if let Some(runnable) = runnable {
+                runnable.run();
+                continue;
+            }
+            let mut state = handle.0.lock();
+            while state.ready.is_empty() && self.live.get() != 0 {
+                state = handle
+                    .0
+                    .changed
+                    .wait(state)
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+            }
+        }
+        let late = {
+            let mut state = handle.0.lock();
+            while handle.0.notifications.load(Ordering::Acquire) != CLOSING {
+                state = handle
+                    .0
+                    .changed
+                    .wait(state)
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+            }
+            state.closed = true;
+            std::mem::take(&mut state.ready)
+        };
+        let mut local = std::mem::take(&mut *self.ready.borrow_mut());
+        drop(late);
+        local.clear();
+        *self.ready.borrow_mut() = local;
+        *self.tasks.borrow_mut() = tasks;
+        self.handle.borrow_mut().take();
+        self.polling.set(false);
+        self.capacity.set(0);
+    }
+
+    fn stop_admission(&self) {
+        self.accepting.set(false);
+        if let Some(handle) = self.handle.borrow().as_ref() {
+            handle.0.notifications.fetch_or(CLOSING, Ordering::AcqRel);
+            handle.0.lock().closing = true;
+        }
+    }
+}
+
+struct RunningJob<'owner> {
+    owner: &'owner Jobs,
+    key: usize,
+}
+
+impl Drop for RunningJob<'_> {
+    fn drop(&mut self) {
+        let finished = self
+            .owner
+            .tasks
+            .borrow()
+            .get(self.key)
+            .is_some_and(Task::is_finished);
+        if finished {
+            let task = self.owner.tasks.borrow_mut().remove(self.key);
+            drop(task);
         }
     }
 }
 
 thread_local! {
-    static JOBS: OnceCell<RefCell<Jobs>> = const { OnceCell::new() };
+    static JOBS: OnceCell<Jobs> = const { OnceCell::new() };
+}
+
+pub(crate) struct Owner;
+
+impl Owner {
+    pub(crate) fn enter(wake: Waker) -> Result<Self, JsError> {
+        JOBS.with(|owner| {
+            let jobs = owner.get_or_init(Jobs::new);
+            if jobs.handle.borrow().is_some() {
+                return Err(JsError::error(
+                    "A JavaScript event loop is already running on this thread.",
+                ));
+            }
+            let identity = DispatchOwner::new().ok_or_else(|| {
+                crate::range_error("native event-loop owner identity range is exhausted")
+            })?;
+            *jobs.handle.borrow_mut() = Some(DispatchHandle(Arc::new(Ingress {
+                owner: identity,
+                thread: thread::current().id(),
+                wake,
+                changed: Condvar::new(),
+                pending: AtomicBool::new(false),
+                notifications: AtomicUsize::new(0),
+                state: Mutex::new(IngressState {
+                    ready: VecDeque::new(),
+                    closing: false,
+                    closed: false,
+                }),
+                #[cfg(test)]
+                locks: std::sync::atomic::AtomicUsize::new(0),
+                #[cfg(test)]
+                wakes: std::sync::atomic::AtomicUsize::new(0),
+                #[cfg(test)]
+                handle_clones: std::sync::atomic::AtomicUsize::new(0),
+                #[cfg(test)]
+                handle_drops: std::sync::atomic::AtomicUsize::new(0),
+            })));
+            jobs.accepting.set(true);
+            Ok(Self)
+        })
+    }
+
+    pub(crate) fn stop_admission(&self) {
+        JOBS.with(|owner| {
+            owner
+                .get()
+                .expect("an active loop owns admission")
+                .stop_admission()
+        });
+    }
+}
+
+impl Drop for Owner {
+    fn drop(&mut self) {
+        JOBS.with(|owner| owner.get().expect("a live loop owns its jobs").shutdown());
+    }
+}
+
+struct JobLifetime;
+
+impl Drop for JobLifetime {
+    fn drop(&mut self) {
+        JOBS.with(|owner| {
+            let jobs = owner
+                .get()
+                .expect("a local task releases on its owning thread");
+            jobs.live.set(jobs.live.get() - 1);
+        });
+    }
+}
+
+pub(crate) fn active() -> bool {
+    JOBS.with(|owner| {
+        owner
+            .get()
+            .is_some_and(|jobs| jobs.handle.borrow().is_some())
+    })
+}
+
+pub fn ensure_running() -> Result<(), JsError> {
+    JOBS.with(|owner| {
+        if owner.get().is_some_and(|jobs| jobs.accepting.get()) {
+            Ok(())
+        } else {
+            Err(JsError::error(NO_LOOP))
+        }
+    })
+}
+
+pub fn dispatch_handle() -> Result<DispatchHandle, JsError> {
+    JOBS.with(|owner| {
+        owner
+            .get()
+            .filter(|jobs| jobs.accepting.get())
+            .and_then(|jobs| jobs.handle.borrow().clone())
+            .ok_or_else(|| JsError::error(NO_LOOP))
+    })
+}
+
+pub fn dispatch_owner() -> Result<DispatchOwner, JsError> {
+    JOBS.with(|owner| {
+        owner
+            .get()
+            .filter(|jobs| jobs.accepting.get())
+            .and_then(|jobs| jobs.handle.borrow().as_ref().map(DispatchHandle::owner))
+            .ok_or_else(|| JsError::error(NO_LOOP))
+    })
 }
 
 pub(crate) fn enqueue(job: impl Future<Output = ()> + 'static) -> Result<(), JsError> {
     JOBS.with(|owner| {
-        let mut jobs = owner.get_or_init(RefCell::default).borrow_mut();
-        if jobs.count == MAX_PENDING_JOBS {
+        let jobs = owner
+            .get()
+            .filter(|jobs| jobs.accepting.get())
+            .ok_or_else(|| JsError::error(NO_LOOP))?;
+        let (key, count) = {
+            let tasks = jobs.tasks.borrow();
+            (tasks.vacant_key(), tasks.len())
+        };
+        if count >= jobs.maximum.get() {
             return Err(crate::range_error(
                 "pending Promise jobs exceed the finite queue limit",
             ));
         }
-        jobs.count += 1;
-        let job: Job = Box::pin(job);
-        match &jobs.active {
-            Some(active) => active.push(job),
-            None => jobs.incoming.push(job),
-        }
+        let handle = jobs
+            .handle
+            .borrow()
+            .as_ref()
+            .expect("active job owner")
+            .clone();
+        jobs.grow(count + 1, &handle);
+        jobs.live.set(jobs.live.get() + 1);
+        let lifetime = JobLifetime;
+        let (runnable, task) = async_task::Builder::new().metadata(key).spawn_local(
+            move |_| async move {
+                let _lifetime = lifetime;
+                job.await;
+            },
+            move |runnable| handle.schedule(runnable),
+        );
+        assert_eq!(jobs.tasks.borrow_mut().insert(task), key);
+        jobs.ready.borrow_mut().push_back(runnable);
         Ok(())
     })
 }
 
-struct ActiveJobs(Option<FuturesUnordered<Job>>);
-
-impl Drop for ActiveJobs {
-    fn drop(&mut self) {
-        JOBS.with(|owner| {
-            let mut jobs = owner.get().expect("active Promise job owner").borrow_mut();
-            let active = self.0.take().expect("active Promise job owner");
-            for job in jobs.incoming.drain(..) {
-                active.push(job);
-            }
-            jobs.count = active.len();
-            jobs.active = Some(active);
-        });
-    }
-}
-
-pub(crate) fn poll(context: &mut Context<'_>) -> bool {
+pub(crate) fn has_ready() -> bool {
     JOBS.with(|owner| {
         let Some(jobs) = owner.get() else {
             return false;
         };
-        let mut active = ActiveJobs(Some(
-            jobs.borrow_mut()
-                .active
-                .take()
-                .expect("Promise job polling cannot reenter"),
-        ));
-        let queue = active.0.as_mut().expect("active Promise job owner");
-        let mut completed = 0;
-        while completed < MAX_COMPLETIONS_PER_TURN {
-            match Pin::new(&mut *queue).poll_next(context) {
-                Poll::Ready(Some(())) => {
-                    completed += 1;
-                    jobs.borrow_mut().count -= 1;
-                }
-                Poll::Ready(None) | Poll::Pending => break,
-            }
+        if !jobs.ready.borrow().is_empty() {
+            return true;
         }
-        if completed == MAX_COMPLETIONS_PER_TURN || !jobs.borrow().incoming.is_empty() {
-            context.waker().wake_by_ref();
+        jobs.handle
+            .borrow()
+            .as_ref()
+            .is_some_and(|handle| handle.0.pending.load(Ordering::Acquire))
+    })
+}
+
+struct Polling<'owner>(&'owner Cell<bool>);
+
+impl Drop for Polling<'_> {
+    fn drop(&mut self) {
+        self.0.set(false);
+    }
+}
+
+pub(crate) fn poll() -> bool {
+    JOBS.with(|owner| {
+        let Some(jobs) = owner.get() else {
+            return false;
+        };
+        if jobs.polling.replace(true) {
+            panic!("Promise job polling cannot reenter");
         }
-        completed > 0
+        let _polling = Polling(&jobs.polling);
+        jobs.drain_ingress();
+        let count = jobs.ready.borrow().len().min(MAX_JOBS_PER_TURN);
+        for _ in 0..count {
+            let runnable = jobs
+                .ready
+                .borrow_mut()
+                .pop_front()
+                .expect("captured ready frontier");
+            jobs.run(runnable);
+        }
+        count != 0
     })
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{enqueue, has_jobs, poll, JOBS, MAX_PENDING_JOBS};
-    use std::cell::Cell;
-    use std::panic::{catch_unwind, AssertUnwindSafe};
-    use std::rc::Rc;
-    use std::task::{Context, Waker};
-
-    #[test]
-    fn a_full_queue_rejects_before_polling_or_retaining_the_job() {
-        JOBS.with(|owner| {
-            let mut jobs = owner.get_or_init(std::cell::RefCell::default).borrow_mut();
-            assert_eq!(jobs.count, 0);
-            jobs.count = MAX_PENDING_JOBS;
-        });
-        let ran = Rc::new(Cell::new(false));
-        let captured = Rc::clone(&ran);
-        let rejected = enqueue(async move { captured.set(true) });
-        JOBS.with(|owner| owner.get().unwrap().borrow_mut().count = 0);
-        assert!(rejected.is_err());
-        assert!(!ran.get());
-        assert_eq!(Rc::strong_count(&ran), 1);
-    }
-
-    #[test]
-    fn rejected_admission_settles_the_returned_promise_and_releases_captures() {
-        use crate::promise::JsPromise;
-        use tsonic_rust_runtime::{Callable, JsErrorKind};
-
-        let ran = Rc::new(Cell::new(false));
-        let captured = Rc::clone(&ran);
-        JOBS.with(|owner| {
-            let mut jobs = owner.get_or_init(std::cell::RefCell::default).borrow_mut();
-            assert_eq!(jobs.count, 0);
-            jobs.count = MAX_PENDING_JOBS;
-        });
-        let result = JsPromise::<i32>::resolved(1).then(
-            Callable::new(move |(value,)| {
-                captured.set(true);
-                Ok(value)
-            }),
-            None,
-        );
-        JOBS.with(|owner| owner.get().unwrap().borrow_mut().count = 0);
-        let error = crate::event_loop::block_on(result.into_result())
-            .unwrap()
-            .unwrap_err();
-        assert_eq!(error.source_error().kind(), JsErrorKind::RangeError);
-        assert!(!ran.get());
-        assert_eq!(Rc::strong_count(&ran), 1);
-    }
-
-    #[test]
-    fn cold_queries_and_polling_do_not_initialize_the_job_queue() {
-        JOBS.with(|owner| assert!(owner.get().is_none()));
-        assert!(!has_jobs());
-        assert!(!poll(&mut Context::from_waker(Waker::noop())));
-        JOBS.with(|owner| assert!(owner.get().is_none()));
-    }
-
-    #[test]
-    fn admission_initializes_one_owner_and_queries_retain_its_identity() {
-        enqueue(async {}).unwrap();
-        let first = JOBS.with(|owner| std::ptr::from_ref(owner.get().unwrap()));
-        assert!(has_jobs());
-        enqueue(async {}).unwrap();
-        assert!(poll(&mut Context::from_waker(Waker::noop())));
-        assert!(!has_jobs());
-        JOBS.with(|owner| {
-            let current = owner.get().unwrap();
-            assert_eq!(first, std::ptr::from_ref(current));
-            assert_eq!(current.borrow().count, 0);
-        });
-    }
-
-    #[test]
-    fn reentrant_admission_keeps_exact_order_and_releases_captures() {
-        let order = Rc::new(std::cell::RefCell::new(Vec::new()));
-        let outer = Rc::clone(&order);
-        enqueue(async move {
-            outer.borrow_mut().push(1);
-            let inner = Rc::clone(&outer);
-            enqueue(async move { inner.borrow_mut().push(3) }).unwrap();
-            outer.borrow_mut().push(2);
-        })
-        .unwrap();
-        let mut context = Context::from_waker(Waker::noop());
-        assert!(poll(&mut context));
-        assert_eq!(*order.borrow(), [1, 2]);
-        assert!(has_jobs());
-        assert_eq!(Rc::strong_count(&order), 2);
-        assert!(poll(&mut context));
-        assert_eq!(*order.borrow(), [1, 2, 3]);
-        assert!(!has_jobs());
-        assert_eq!(Rc::strong_count(&order), 1);
-    }
-
-    #[test]
-    fn panicking_jobs_restore_the_live_queue_and_preserve_uninvoked_work() {
-        let ran = Rc::new(Cell::new(false));
-        let captured = Rc::clone(&ran);
-        enqueue(async { panic!("original Promise job failure") }).unwrap();
-        enqueue(async move { captured.set(true) }).unwrap();
-        let mut context = Context::from_waker(Waker::noop());
-        let failure = catch_unwind(AssertUnwindSafe(|| poll(&mut context)));
-        assert!(failure.is_err());
-        assert!(!ran.get());
-        assert!(has_jobs());
-        assert_eq!(Rc::strong_count(&ran), 2);
-        assert!(poll(&mut context));
-        assert!(ran.get());
-        assert!(!has_jobs());
-        assert_eq!(Rc::strong_count(&ran), 1);
-    }
-
-    #[test]
-    fn recursive_polling_is_rejected_without_losing_the_outer_queue() {
-        let rejected = Rc::new(Cell::new(false));
-        let captured = Rc::clone(&rejected);
-        enqueue(async move {
-            let mut context = Context::from_waker(Waker::noop());
-            captured.set(catch_unwind(AssertUnwindSafe(|| poll(&mut context))).is_err());
-        })
-        .unwrap();
-        assert!(poll(&mut Context::from_waker(Waker::noop())));
-        assert!(rejected.get());
-        assert!(!has_jobs());
-        assert_eq!(Rc::strong_count(&rejected), 1);
-    }
-}
+mod tests;

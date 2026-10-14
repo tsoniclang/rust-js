@@ -3,14 +3,25 @@ use std::pin::{pin, Pin};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll, Wake, Waker};
-use std::thread::{self, Thread};
+use std::thread::{self, Thread, ThreadId};
 
-use tsonic_rust_runtime::dispatch::{DispatchContexts, DispatchEnd, DispatchPhase};
+use tsonic_rust_runtime::dispatch::DispatchOwner;
+use tsonic_rust_runtime::dispatch::{DispatchContexts, DispatchEnd};
 use tsonic_rust_runtime::TsonicResult;
+
+pub use crate::promise_jobs::{dispatch_handle, dispatch_owner, ensure_running, DispatchHandle};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LoopLifecycle {
+    Enter(DispatchOwner),
+    Shutdown(DispatchOwner),
+}
 
 pub trait EventLoopDriver {
     type Error;
 
+    fn admission_error(error: tsonic_rust_runtime::JsError) -> Self::Error;
+    fn lifecycle(&mut self, transition: LoopLifecycle) -> Result<(), Self::Error>;
     fn poll(&mut self) -> Result<bool, Self::Error>;
     fn has_work(&self) -> bool;
     fn wait(&mut self) -> Result<(), Self::Error>;
@@ -19,7 +30,8 @@ pub trait EventLoopDriver {
 
 struct LoopWake {
     ready: AtomicBool,
-    driver: Waker,
+    driver: DispatchHandle,
+    thread: ThreadId,
 }
 
 impl Wake for LoopWake {
@@ -29,7 +41,9 @@ impl Wake for LoopWake {
 
     fn wake_by_ref(self: &Arc<Self>) {
         self.ready.store(true, Ordering::Release);
-        self.driver.wake_by_ref();
+        if thread::current().id() != self.thread {
+            self.driver.notify();
+        }
     }
 }
 
@@ -55,11 +69,32 @@ where
 {
     type Error = TContexts::Error;
 
+    fn admission_error(error: tsonic_rust_runtime::JsError) -> Self::Error {
+        tsonic_rust_runtime::TsonicError::from(error).into()
+    }
+
+    fn lifecycle(&mut self, transition: LoopLifecycle) -> Result<(), Self::Error> {
+        match transition {
+            LoopLifecycle::Enter(owner) => {
+                if !self.contexts.enter(owner)
+                    || !crate::timers::with_default(|timers| timers.enter(owner))
+                {
+                    return Err(Self::admission_error(tsonic_rust_runtime::JsError::error("native dispatch context belongs to another event loop or has exhausted its generations")));
+                }
+            }
+            LoopLifecycle::Shutdown(owner) => {
+                self.contexts.close(owner);
+                crate::timers::with_default(|timers| timers.close(owner));
+            }
+        }
+        Ok(())
+    }
+
     fn poll(&mut self) -> Result<bool, Self::Error> {
         crate::timers::with_default(|native| {
             tsonic_rust_runtime::dispatch::poll_phase(
                 &tsonic_rust_runtime::dispatch::prepend(native, &self.contexts),
-                DispatchPhase::JsTimers,
+                crate::timers::PHASE,
             )
         })
     }
@@ -134,31 +169,95 @@ fn drive<Root: Future, Driver: EventLoopDriver>(
     mut root: Option<Pin<&mut Root>>,
     driver: &mut Driver,
 ) -> Result<Option<Root::Output>, Driver::Error> {
-    if root.is_none() && !driver.has_work() && !crate::promise_jobs::has_jobs() {
+    if crate::promise_jobs::active() {
+        return Err(Driver::admission_error(
+            tsonic_rust_runtime::JsError::error(
+                "A JavaScript event loop is already running on this thread.",
+            ),
+        ));
+    }
+    if root.is_none() && !driver.has_work() {
         return Ok(None);
     }
-    let wake = Arc::new(LoopWake {
-        ready: AtomicBool::new(true),
-        driver: driver.waker()?,
-    });
-    let waker = Waker::from(Arc::clone(&wake));
-    let mut context = Context::from_waker(&waker);
+    let driver_waker = driver.waker()?;
+    let owner = crate::promise_jobs::Owner::enter(driver_waker).map_err(Driver::admission_error)?;
+    let identity = dispatch_owner().map_err(Driver::admission_error)?;
+    let mut scope = LoopScope {
+        driver,
+        owner,
+        identity,
+        closed: false,
+    };
+    scope.driver.lifecycle(LoopLifecycle::Enter(identity))?;
+    let wake = if root.is_some() {
+        Some(Arc::new(LoopWake {
+            ready: AtomicBool::new(true),
+            driver: dispatch_handle().map_err(Driver::admission_error)?,
+            thread: thread::current().id(),
+        }))
+    } else {
+        None
+    };
+    let waker = wake.as_ref().map(|wake| Waker::from(Arc::clone(wake)));
+    let mut context = Context::from_waker(waker.as_ref().unwrap_or(Waker::noop()));
+    let mut output = None;
     loop {
-        let driver_work = driver.poll()?;
-        let mut job_work = false;
-        if wake.ready.swap(false, Ordering::AcqRel) {
+        let driver_work = scope.driver.poll()?;
+        let root_polled = wake
+            .as_ref()
+            .is_some_and(|wake| wake.ready.swap(false, Ordering::AcqRel))
+            && root.is_some();
+        if root_polled {
             if let Some(future) = &mut root {
-                if let Poll::Ready(output) = future.as_mut().poll(&mut context) {
-                    return Ok(Some(output));
+                if let Poll::Ready(value) = future.as_mut().poll(&mut context) {
+                    output = Some(value);
+                    root = None;
                 }
             }
-            job_work = crate::promise_jobs::poll(&mut context);
         }
-        if root.is_none() && !driver.has_work() && !wake.ready.load(Ordering::Acquire) {
-            return Ok(None);
+        let job_work = crate::promise_jobs::poll();
+        let ready = crate::promise_jobs::has_ready();
+        if root.is_none() && !scope.driver.has_work() && !ready {
+            scope.close()?;
+            return Ok(output);
         }
-        if !driver_work && !job_work && !wake.ready.load(Ordering::Acquire) {
-            driver.wait()?;
+        if !driver_work
+            && !root_polled
+            && !job_work
+            && !ready
+            && !wake
+                .as_ref()
+                .is_some_and(|wake| wake.ready.load(Ordering::Acquire))
+        {
+            scope.driver.wait()?;
         }
     }
 }
+
+struct LoopScope<'driver, Driver: EventLoopDriver> {
+    driver: &'driver mut Driver,
+    owner: crate::promise_jobs::Owner,
+    identity: DispatchOwner,
+    closed: bool,
+}
+
+impl<Driver: EventLoopDriver> LoopScope<'_, Driver> {
+    fn close(&mut self) -> Result<(), Driver::Error> {
+        if self.closed {
+            return Ok(());
+        }
+        self.closed = true;
+        self.owner.stop_admission();
+        self.driver
+            .lifecycle(LoopLifecycle::Shutdown(self.identity))
+    }
+}
+
+impl<Driver: EventLoopDriver> Drop for LoopScope<'_, Driver> {
+    fn drop(&mut self) {
+        let _ = self.close();
+    }
+}
+
+#[cfg(test)]
+mod tests;
