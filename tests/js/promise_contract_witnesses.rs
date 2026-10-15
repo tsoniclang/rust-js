@@ -186,3 +186,50 @@ fn reactions_on_one_promise_run_in_registration_order_after_a_race_drops_its_wai
         "reactions ran as {order:?}; they were registered as A, C"
     );
 }
+
+#[test]
+fn a_reaction_on_a_promise_settled_by_a_host_callback_runs_before_the_awaiting_root() {
+    let order = Rc::new(RefCell::new(Vec::new()));
+    let log = Rc::clone(&order);
+    block_on(async move {
+        let slot = Rc::new(RefCell::new(None));
+        let captured = Rc::clone(&slot);
+        let p: JsPromise<i32> = JsPromise::create(Callable::new(
+            move |(resolve, _): (PromiseResolve<i32>, PromiseReject)| {
+                captured.replace(Some(resolve));
+                Ok(())
+            },
+        ));
+        let resolve = slot.borrow_mut().take().expect("p's executor ran");
+        let source = p.clone();
+        let reaction_log = Rc::clone(&log);
+        tsonic_rust_js::timers::with_default(|timers| {
+            tsonic_rust_js::timers::set_timeout_callable(
+                timers,
+                Callable::new(move |()| {
+                    let reaction_log = Rc::clone(&reaction_log);
+                    let reaction: JsPromise<i32> = source.then(
+                        Callable::new(move |(value,): (i32,)| {
+                            reaction_log.borrow_mut().push("reaction");
+                            Ok(value)
+                        }),
+                        None,
+                    );
+                    drop(reaction);
+                    let _ = resolve.call((PromiseResolution::Value(1),));
+                    Ok(())
+                }),
+                0.0,
+            )
+        })
+        .expect("timer registration under the owner");
+        let _ = p.await_result().await;
+        log.borrow_mut().push("root");
+    })
+    .unwrap();
+    let order = order.borrow();
+    assert!(
+        *order == ["reaction", "root"],
+        "ran as {order:?}; the reaction runs in the callback's job checkpoint, before the root resumes"
+    );
+}

@@ -131,11 +131,11 @@ pub fn poll_phase_with_jobs<TContexts: DispatchContexts>(
     contexts: &TContexts,
     phase: DispatchPhase,
 ) -> Result<bool, TContexts::Error> {
+    let mut did_work = crate::promise_jobs::checkpoint();
     if crate::promise_jobs::exit_requested() {
-        return Ok(false);
+        return Ok(did_work);
     }
     let frontier = contexts.prepare(phase)?;
-    let mut did_work = false;
     while contexts.next_ready(&frontier).is_some() {
         did_work |= contexts.poll_next(&frontier)?;
         did_work |= crate::promise_jobs::checkpoint();
@@ -287,7 +287,7 @@ fn run_turns<Root: Future, Driver: EventLoopDriver>(
         .lifecycle(LoopLifecycle::Enter(scope.identity))?;
     if let Some(entry) = entry {
         entry();
-        crate::promise_jobs::poll();
+        crate::promise_jobs::checkpoint();
     }
     let wake = if root.is_some() {
         Some(Arc::new(LoopWake {

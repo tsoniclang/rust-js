@@ -545,7 +545,14 @@ pub(crate) fn poll() -> bool {
 
 pub(crate) fn checkpoint() -> bool {
     let idle = JOBS.with(|owner| owner.get().is_some_and(|jobs| !jobs.polling.get()));
-    idle && poll()
+    if !idle {
+        return false;
+    }
+    let mut did_work = false;
+    while has_ready() && !exit_requested() {
+        did_work |= poll();
+    }
+    did_work
 }
 
 #[cfg(test)]

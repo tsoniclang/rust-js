@@ -22,7 +22,17 @@ fn discard_rejection(message: &'static str) {
     .observe_discarded();
 }
 
-fn two_due_timers(first_requests_exit: bool) -> (bool, bool) {
+fn discard_after_a_settled_reaction() {
+    drop(JsPromise::resolved(0).then(
+        Callable::new(|(value,): (i32,)| {
+            discard_rejection("chained");
+            Ok(value)
+        }),
+        None,
+    ));
+}
+
+fn two_due_timers(first: fn()) -> (bool, bool) {
     let second = Rc::new(Cell::new(false));
     let observed = Rc::clone(&second);
     let ((), status) = run_entry_with_contexts(
@@ -31,9 +41,7 @@ fn two_due_timers(first_requests_exit: bool) -> (bool, bool) {
                 tsonic_rust_js::timers::set_timeout_callable(
                     timers,
                     Callable::new(move |()| {
-                        if first_requests_exit {
-                            discard_rejection("first timer");
-                        }
+                        first();
                         Ok(())
                     }),
                     0.0,
@@ -60,7 +68,7 @@ fn two_due_timers(first_requests_exit: bool) -> (bool, bool) {
 
 #[test]
 fn a_requested_exit_stops_the_loop_before_a_second_due_timer() {
-    let (exit_requested, second_ran) = two_due_timers(true);
+    let (exit_requested, second_ran) = two_due_timers(|| discard_rejection("first timer"));
     assert!(exit_requested, "the first timer's report requested exit");
     assert!(
         !second_ran,
@@ -69,8 +77,47 @@ fn a_requested_exit_stops_the_loop_before_a_second_due_timer() {
 }
 
 #[test]
+fn a_report_queued_by_a_reaction_stops_the_loop_before_a_second_due_timer() {
+    let (exit_requested, second_ran) = two_due_timers(discard_after_a_settled_reaction);
+    assert!(exit_requested, "the chained report requested exit");
+    assert!(
+        !second_ran,
+        "the second due timer ran before the chained report"
+    );
+}
+
+#[test]
+fn a_report_queued_by_a_reaction_in_the_entry_stops_the_loop_before_a_zero_delay_timer() {
+    let timer_ran = Rc::new(Cell::new(false));
+    let observed = Rc::clone(&timer_ran);
+    let ((), status) = run_entry_with_contexts(
+        move || {
+            tsonic_rust_js::timers::with_default(|timers| {
+                tsonic_rust_js::timers::set_timeout_callable(
+                    timers,
+                    Callable::new(move |()| {
+                        observed.set(true);
+                        Ok(())
+                    }),
+                    0.0,
+                )
+            })
+            .expect("timer under the owner");
+            discard_after_a_settled_reaction();
+        },
+        no_contexts(),
+    )
+    .unwrap();
+    assert!(status.exit_requested(), "the chained report requested exit");
+    assert!(
+        !timer_ran.get(),
+        "the zero-delay timer ran before the chained report"
+    );
+}
+
+#[test]
 fn without_a_requested_exit_both_due_timers_run() {
-    let (exit_requested, second_ran) = two_due_timers(false);
+    let (exit_requested, second_ran) = two_due_timers(|| {});
     assert!(!exit_requested);
     assert!(second_ran);
 }
