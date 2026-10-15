@@ -181,7 +181,7 @@ fn a_pending_body_keeps_running_after_its_handle_is_dropped() {
 }
 
 #[test]
-fn canceling_the_first_waiter_keeps_later_waiters_and_reuses_the_inline_slot() {
+fn canceling_the_first_waiter_keeps_later_waiters() {
     block_on(async {
         let promise = JsPromise::<i32>::pending();
         let first_wakes = Arc::new(WakeCount::default());
@@ -251,6 +251,79 @@ fn canceling_a_non_first_waiter_wakes_only_the_remaining_waiters() {
         assert_eq!(woken, [1, 1, 0, 1, 1, 0]);
     })
     .unwrap();
+}
+
+struct OrderedWake {
+    id: usize,
+    log: Arc<Mutex<Vec<usize>>>,
+}
+
+impl std::task::Wake for OrderedWake {
+    fn wake(self: Arc<Self>) {
+        self.wake_by_ref();
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        self.log.lock().unwrap().push(self.id);
+    }
+}
+
+fn wake_order(registered: usize, cancelled: &[usize], later: usize) -> Vec<usize> {
+    let promise = JsPromise::<i32>::pending();
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let register = |id: usize| {
+        let waker = Waker::from(Arc::new(OrderedWake {
+            id,
+            log: Arc::clone(&log),
+        }));
+        let mut future = Box::pin(promise.await_result());
+        assert!(future
+            .as_mut()
+            .poll(&mut Context::from_waker(&waker))
+            .is_pending());
+        future
+    };
+    let mut waiting: Vec<_> = (1..=registered).map(|id| Some(register(id))).collect();
+    for &id in cancelled {
+        waiting[id - 1] = None;
+    }
+    waiting.extend((registered + 1..=registered + later).map(|id| Some(register(id))));
+    promise.settle(Ok(1));
+    drop(waiting);
+    let order = log.lock().unwrap().clone();
+    order
+}
+
+fn assert_wake_order(actual: Vec<usize>, expected: &[usize]) {
+    assert!(
+        actual == expected,
+        "woke {actual:?}; the live waiters registered as {expected:?}"
+    );
+}
+
+#[test]
+fn waiters_wake_in_registration_order_after_the_first_waiter_is_cancelled() {
+    assert_wake_order(wake_order(2, &[1], 1), &[2, 3]);
+}
+
+#[test]
+fn waiters_wake_in_registration_order_after_an_inline_waiter_is_cancelled() {
+    assert_wake_order(wake_order(4, &[3], 2), &[1, 2, 4, 5, 6]);
+}
+
+#[test]
+fn waiters_wake_in_registration_order_after_a_spilled_waiter_is_cancelled() {
+    assert_wake_order(wake_order(7, &[6], 3), &[1, 2, 3, 4, 5, 7, 8, 9, 10]);
+}
+
+#[test]
+fn waiters_wake_in_registration_order_after_several_cancellations() {
+    assert_wake_order(wake_order(6, &[1, 3, 5], 3), &[2, 4, 6, 7, 8, 9]);
+}
+
+#[test]
+fn a_waiter_registered_after_every_earlier_waiter_left_wakes_first() {
+    assert_wake_order(wake_order(3, &[1, 2, 3], 2), &[4, 5]);
 }
 
 #[test]
@@ -364,6 +437,46 @@ fn a_discarded_rejection_reports_after_the_current_job_and_requests_exit_one() {
         std::process::ExitCode::from(1)
     );
     assert!(!later.get(), "the loop stops after the reporting job");
+    assert_eq!(take_reports(), "discarded\n");
+}
+
+struct DiscardOnDrop(&'static str);
+
+impl Drop for DiscardOnDrop {
+    fn drop(&mut self) {
+        JsPromise::<i32>::rejected(JsValue::String(String::from(self.0))).observe_discarded();
+    }
+}
+
+#[test]
+fn a_rejection_observed_while_the_owner_closes_is_written_and_requests_exit_one() {
+    let ((), status) = run_entry_with_contexts(
+        || {
+            drop(JsPromise::<()>::from_infallible_factory(|| async {
+                let _guard = DiscardOnDrop("closing");
+                std::future::pending::<()>().await;
+            }));
+        },
+        no_contexts(),
+    )
+    .unwrap();
+    assert!(status.exit_requested());
+    assert_eq!(
+        std::process::ExitCode::from(status),
+        std::process::ExitCode::from(1)
+    );
+    assert_eq!(take_reports(), "closing\n");
+}
+
+#[test]
+fn the_completion_state_of_an_i32_promise_is_forty_eight_bytes() {
+    println!(
+        "promise-allocation row=state size_of_promise_state_i32={} size_of_refcell_state_i32={}",
+        std::mem::size_of::<PromiseState<i32>>(),
+        std::mem::size_of::<RefCell<PromiseState<i32>>>()
+    );
+    assert_eq!(std::mem::size_of::<PromiseState<i32>>(), 48);
+    assert_eq!(std::mem::size_of::<RefCell<PromiseState<i32>>>(), 56);
 }
 
 #[test]
@@ -819,7 +932,7 @@ fn a_reaction_without_an_owner_rejects_and_does_not_become_lazy() {
 
 use std::cell::RefCell;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 #[derive(Default)]
 struct WakeCount(AtomicUsize);

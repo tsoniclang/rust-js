@@ -112,6 +112,22 @@ fn a_full_owner_rejects_before_polling_and_releases_the_rejected_capture() {
 }
 
 #[test]
+fn a_report_a_full_owner_cannot_admit_is_written_and_requests_exit_one() {
+    let _owner = owner();
+    JOBS.with(|owner| owner.get().unwrap().maximum.set(1));
+    enqueue(pending()).unwrap();
+    crate::promise::JsPromise::<i32>::rejected(crate::JsValue::String(String::from("full queue")))
+        .observe_discarded();
+    assert_eq!(crate::promise::take_reports(), "full queue\n");
+    assert!(exit_requested());
+    JOBS.with(|owner| {
+        let jobs = owner.get().unwrap();
+        assert_eq!(jobs.exit.get(), Some(1));
+        assert_eq!(jobs.tasks.borrow().len(), 1);
+    });
+}
+
+#[test]
 fn rejected_admission_settles_the_returned_promise_and_releases_captures() {
     use crate::promise::JsPromise;
     use tsonic_rust_runtime::Callable;

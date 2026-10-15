@@ -65,6 +65,8 @@ mod promise_contract_witnesses;
 mod promise_execution_tests;
 #[path = "js/regexp_tests.rs"]
 mod regexp_tests;
+#[path = "js/requested_exit_witnesses.rs"]
+mod requested_exit_witnesses;
 #[path = "js/set_tests.rs"]
 mod set_tests;
 #[path = "js/string_number_tests.rs"]

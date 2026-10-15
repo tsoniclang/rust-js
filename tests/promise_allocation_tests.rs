@@ -385,14 +385,14 @@ fn a_second_waiter_adds_one_out_of_line_allocation_and_later_waiters_follow_slab
     ));
     let expected = [
         counts(0, 0, 0, 0),
-        counts(1, 0, 0, 88),
+        counts(1, 0, 0, 152),
         counts(0, 0, 0, 0),
         counts(0, 0, 0, 0),
-        counts(1, 0, 0, 64),
+        counts(1, 0, 0, 128),
         counts(0, 0, 0, 0),
         counts(0, 0, 0, 0),
         counts(0, 0, 0, 0),
-        counts(0, 0, 1, 128),
+        counts(0, 0, 1, 256),
     ];
     let mut waiting: Vec<_> = expected
         .iter()
@@ -543,25 +543,37 @@ fn observing_a_discarded_fulfilled_promise_allocates_nothing() {
     .unwrap();
 }
 
-#[test]
-fn observing_a_discarded_rejection_admits_one_reporting_job() {
+fn observed_discard(reason: JsValue) -> Counts {
     let (observed, status) = block_on_with_contexts(
-        async {
+        async move {
             warm_owner().await;
-            let promise = JsPromise::<i32>::rejected(JsValue::Bool(false));
+            let promise = JsPromise::<i32>::rejected(reason);
             let ((), observed) = measured(|| promise.observe_discarded());
             observed
         },
         no_contexts(),
     )
     .unwrap();
-    let observed = observed.expect("the root completes before the report job runs");
+    assert!(status.exit_requested());
+    observed.expect("the root completes before the report job runs")
+}
+
+#[test]
+fn observing_a_discarded_rejection_admits_one_reporting_job() {
     assert_row(
-        "observe_discarded, rejected",
-        observed,
+        "observe_discarded, rejected (Bool reason)",
+        observed_discard(JsValue::Bool(false)),
         counts(1, 1, 0, 120),
     );
-    assert!(status.exit_requested());
+}
+
+#[test]
+fn observing_a_discarded_string_rejection_also_copies_the_reason() {
+    assert_row(
+        "observe_discarded, rejected (String reason, 15 bytes)",
+        observed_discard(JsValue::String(String::from("an owned reason"))),
+        counts(2, 2, 0, 135),
+    );
 }
 
 #[test]

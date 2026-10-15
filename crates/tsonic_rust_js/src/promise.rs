@@ -232,25 +232,45 @@ fn report_discarded_rejection(reason: JsValue) {
             crate::promise_jobs::request_exit(1);
         })
         .expect("report admission was checked on the owning thread");
-    } else {
-        write_discarded_rejection(&reason);
+        return;
+    }
+    write_discarded_rejection(&reason);
+    if !crate::promise_jobs::request_exit(1) {
+        std::process::exit(1);
     }
 }
 
 fn write_discarded_rejection(reason: &JsValue) {
-    let mut stderr = std::io::stderr().lock();
-    let _ = match reason.as_error() {
-        Some(error) => writeln!(stderr, "{}", error.error_message()),
+    #[cfg(test)]
+    REPORTS.with(|reports| {
+        let _ = write_report(&mut *reports.borrow_mut(), reason);
+    });
+    let _ = write_report(&mut std::io::stderr().lock(), reason);
+}
+
+fn write_report(output: &mut impl Write, reason: &JsValue) -> std::io::Result<()> {
+    match reason.as_error() {
+        Some(error) => writeln!(output, "{}", error.error_message()),
         None => match reason {
-            JsValue::Null => writeln!(stderr, "null"),
-            JsValue::String(text) => writeln!(stderr, "{text}"),
+            JsValue::Null => writeln!(output, "null"),
+            JsValue::String(text) => writeln!(output, "{text}"),
             JsValue::Utf16String(text) => match text.to_utf8() {
-                Ok(text) => writeln!(stderr, "{text}"),
-                Err(_) => writeln!(stderr, "{reason}"),
+                Ok(text) => writeln!(output, "{text}"),
+                Err(_) => writeln!(output, "{reason}"),
             },
-            other => writeln!(stderr, "{other}"),
+            other => writeln!(output, "{other}"),
         },
-    };
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static REPORTS: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+}
+
+#[cfg(test)]
+pub(crate) fn take_reports() -> String {
+    REPORTS.with(|reports| String::from_utf8(reports.take()).expect("reports are UTF-8 text"))
 }
 
 #[derive(Clone, Debug)]

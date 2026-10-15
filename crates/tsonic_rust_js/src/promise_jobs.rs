@@ -428,14 +428,16 @@ pub(crate) fn can_admit() -> Result<(), JsError> {
     })
 }
 
-pub(crate) fn request_exit(code: u8) {
+pub(crate) fn request_exit(code: u8) -> bool {
     JOBS.with(|owner| {
-        if let Some(jobs) = owner.get().filter(|jobs| jobs.handle.borrow().is_some()) {
-            if jobs.exit.get().is_none() {
-                jobs.exit.set(Some(code));
-            }
+        let Some(jobs) = owner.get().filter(|jobs| jobs.handle.borrow().is_some()) else {
+            return false;
+        };
+        if jobs.exit.get().is_none() {
+            jobs.exit.set(Some(code));
         }
-    });
+        true
+    })
 }
 
 pub(crate) fn exit_requested() -> bool {
@@ -539,6 +541,11 @@ pub(crate) fn poll() -> bool {
         }
         count != 0
     })
+}
+
+pub(crate) fn checkpoint() -> bool {
+    let idle = JOBS.with(|owner| owner.get().is_some_and(|jobs| !jobs.polling.get()));
+    idle && poll()
 }
 
 #[cfg(test)]

@@ -2,56 +2,53 @@ use std::task::Waker;
 
 use slab::Slab;
 
-const INLINE_FAN_OUT: usize = 3;
+const INLINE_LINKS: usize = 3;
+const END: usize = usize::MAX;
 
 #[derive(Default)]
 pub(super) struct Waiters {
     first: Option<Waker>,
-    more: Option<Box<FanOut>>,
+    more: Option<Box<Queue>>,
 }
 
-struct FanOut {
-    inline: [Option<Waker>; INLINE_FAN_OUT],
-    spill: Slab<Waker>,
+struct Queue {
+    inline: [Option<Link>; INLINE_LINKS],
+    spill: Slab<Link>,
+    head: usize,
+    tail: usize,
+}
+
+struct Link {
+    waker: Waker,
+    previous: usize,
+    next: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum WaiterKey {
     First,
-    Inline(usize),
-    Spill(usize),
+    Queued(usize),
 }
 
 impl Waiters {
     pub(super) fn register(&mut self, waker: &Waker) -> WaiterKey {
-        if self.first.is_none() {
+        let queued = self.more.as_ref().is_some_and(|more| !more.is_empty());
+        if self.first.is_none() && !queued {
             self.first = Some(waker.clone());
             return WaiterKey::First;
         }
-        let more = self.more.get_or_insert_with(|| {
-            Box::new(FanOut {
-                inline: Default::default(),
-                spill: Slab::new(),
-            })
-        });
-        if let Some(index) = more.inline.iter().position(Option::is_none) {
-            more.inline[index] = Some(waker.clone());
-            return WaiterKey::Inline(index);
-        }
-        WaiterKey::Spill(more.spill.insert(waker.clone()))
+        let more = self.more.get_or_insert_with(|| Box::new(Queue::new()));
+        WaiterKey::Queued(more.push(waker.clone()))
     }
 
     pub(super) fn update(&mut self, key: WaiterKey, waker: &Waker) {
         let slot = match key {
             WaiterKey::First => self.first.as_mut(),
-            WaiterKey::Inline(index) => self
+            WaiterKey::Queued(index) => self
                 .more
                 .as_mut()
-                .and_then(|more| more.inline[index].as_mut()),
-            WaiterKey::Spill(index) => self
-                .more
-                .as_mut()
-                .and_then(|more| more.spill.get_mut(index)),
+                .and_then(|more| more.link_mut(index))
+                .map(|link| &mut link.waker),
         };
         slot.expect("a registered Promise waiter keeps its slot until removal")
             .clone_from(waker);
@@ -62,14 +59,9 @@ impl Waiters {
             WaiterKey::First => {
                 self.first = None;
             }
-            WaiterKey::Inline(index) => {
+            WaiterKey::Queued(index) => {
                 if let Some(more) = self.more.as_mut() {
-                    more.inline[index] = None;
-                }
-            }
-            WaiterKey::Spill(index) => {
-                if let Some(more) = self.more.as_mut() {
-                    more.spill.try_remove(index);
+                    more.remove(index);
                 }
             }
         }
@@ -80,13 +72,81 @@ impl Waiters {
             waker.wake();
         }
         if let Some(more) = self.more {
-            let FanOut { inline, spill } = *more;
-            for waker in inline.into_iter().flatten() {
-                waker.wake();
+            (*more).wake_all();
+        }
+    }
+}
+
+impl Queue {
+    fn new() -> Self {
+        Self {
+            inline: Default::default(),
+            spill: Slab::new(),
+            head: END,
+            tail: END,
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.head == END
+    }
+
+    fn link_mut(&mut self, index: usize) -> Option<&mut Link> {
+        if index < INLINE_LINKS {
+            self.inline[index].as_mut()
+        } else {
+            self.spill.get_mut(index - INLINE_LINKS)
+        }
+    }
+
+    fn take(&mut self, index: usize) -> Option<Link> {
+        if index < INLINE_LINKS {
+            self.inline[index].take()
+        } else {
+            self.spill.try_remove(index - INLINE_LINKS)
+        }
+    }
+
+    fn push(&mut self, waker: Waker) -> usize {
+        let link = Link {
+            waker,
+            previous: self.tail,
+            next: END,
+        };
+        let index = match self.inline.iter().position(Option::is_none) {
+            Some(index) => {
+                self.inline[index] = Some(link);
+                index
             }
-            for (_, waker) in spill {
-                waker.wake();
-            }
+            None => INLINE_LINKS + self.spill.insert(link),
+        };
+        match self.link_mut(self.tail) {
+            Some(tail) => tail.next = index,
+            None => self.head = index,
+        }
+        self.tail = index;
+        index
+    }
+
+    fn remove(&mut self, index: usize) {
+        let Some(link) = self.take(index) else {
+            return;
+        };
+        match self.link_mut(link.previous) {
+            Some(previous) => previous.next = link.next,
+            None => self.head = link.next,
+        }
+        match self.link_mut(link.next) {
+            Some(next) => next.previous = link.previous,
+            None => self.tail = link.previous,
+        }
+    }
+
+    fn wake_all(mut self) {
+        let mut index = self.head;
+        while let Some(link) = self.take(index) {
+            index = link.next;
+            link.waker.wake();
         }
     }
 }

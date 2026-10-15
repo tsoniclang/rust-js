@@ -6,7 +6,7 @@ use std::task::{Context, Poll, Wake, Waker};
 use std::thread::{self, Thread, ThreadId};
 
 use tsonic_rust_runtime::dispatch::DispatchOwner;
-use tsonic_rust_runtime::dispatch::{DispatchContexts, DispatchEnd};
+use tsonic_rust_runtime::dispatch::{DispatchContexts, DispatchEnd, DispatchPhase};
 use tsonic_rust_runtime::TsonicResult;
 
 pub use crate::promise_jobs::{dispatch_handle, dispatch_owner, ensure_running, DispatchHandle};
@@ -92,7 +92,7 @@ where
 
     fn poll(&mut self) -> Result<bool, Self::Error> {
         crate::timers::with_default(|native| {
-            tsonic_rust_runtime::dispatch::poll_phase(
+            poll_phase_with_jobs(
                 &tsonic_rust_runtime::dispatch::prepend(native, &self.contexts),
                 crate::timers::PHASE,
             )
@@ -123,8 +123,28 @@ where
     }
 }
 
-const STOPPED_BEFORE_COMPLETION: &str =
+pub const STOPPED_BEFORE_COMPLETION: &str =
     "The event loop stopped on a requested exit before the awaited future completed.";
+pub const STOPPED_ON_REQUESTED_EXIT: &str = "The event loop stopped on a requested exit.";
+
+pub fn poll_phase_with_jobs<TContexts: DispatchContexts>(
+    contexts: &TContexts,
+    phase: DispatchPhase,
+) -> Result<bool, TContexts::Error> {
+    if crate::promise_jobs::exit_requested() {
+        return Ok(false);
+    }
+    let frontier = contexts.prepare(phase)?;
+    let mut did_work = false;
+    while contexts.next_ready(&frontier).is_some() {
+        did_work |= contexts.poll_next(&frontier)?;
+        did_work |= crate::promise_jobs::checkpoint();
+        if crate::promise_jobs::exit_requested() {
+            break;
+        }
+    }
+    Ok(did_work)
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct LoopExitStatus {
@@ -147,15 +167,25 @@ impl From<LoopExitStatus> for std::process::ExitCode {
 }
 
 pub fn block_on<Output>(future: impl Future<Output = Output>) -> TsonicResult<Output> {
-    let (output, _) = block_on_with_contexts(
+    let (output, status) = block_on_with_contexts(
         future,
         DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
     )?;
-    output.ok_or_else(|| tsonic_rust_runtime::JsError::error(STOPPED_BEFORE_COMPLETION).into())
+    match output {
+        Some(_) if status.exit_requested() => {
+            Err(tsonic_rust_runtime::JsError::error(STOPPED_ON_REQUESTED_EXIT).into())
+        }
+        Some(output) => Ok(output),
+        None => Err(tsonic_rust_runtime::JsError::error(STOPPED_BEFORE_COMPLETION).into()),
+    }
 }
 
 pub fn run_event_loop() -> TsonicResult<()> {
-    run_with_contexts(DispatchEnd::<tsonic_rust_runtime::TsonicError>::new()).map(|_| ())
+    let status = run_with_contexts(DispatchEnd::<tsonic_rust_runtime::TsonicError>::new())?;
+    if status.exit_requested() {
+        return Err(tsonic_rust_runtime::JsError::error(STOPPED_ON_REQUESTED_EXIT).into());
+    }
+    Ok(())
 }
 
 pub fn block_on_with_contexts<TOutput, TContexts: DispatchContexts>(
@@ -277,6 +307,10 @@ fn run_turns<Root: Future, Driver: EventLoopDriver>(
             return Ok(output);
         }
         let driver_work = scope.driver.poll()?;
+        if crate::promise_jobs::exit_requested() {
+            scope.close()?;
+            return Ok(output);
+        }
         let root_polled = wake
             .as_ref()
             .is_some_and(|wake| wake.ready.swap(false, Ordering::AcqRel))

@@ -1,11 +1,13 @@
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::future::{poll_fn, Future};
 use std::pin::pin;
 use std::rc::Rc;
 use std::task::{Context, Poll, Waker};
 
+use tsonic_rust_js::abi::promise_race;
 use tsonic_rust_js::event_loop::block_on;
 use tsonic_rust_js::promise::{JsPromise, PromiseReject, PromiseResolution, PromiseResolve};
+use tsonic_rust_js::JsArray;
 use tsonic_rust_runtime::Callable;
 
 const NO_LOOP: &str = "No JavaScript event loop is running on this thread.";
@@ -107,4 +109,80 @@ fn a_factory_without_an_owner_rejects_with_the_exact_message() {
         Err(error) => assert!(error.to_string().contains(NO_LOOP), "{error}"),
     }
     assert!(!created.get(), "no Create body runs without an owner");
+}
+
+async fn yield_once() {
+    let mut yielded = false;
+    poll_fn(|context| {
+        if yielded {
+            Poll::Ready(())
+        } else {
+            yielded = true;
+            context.waker().wake_by_ref();
+            Poll::Pending
+        }
+    })
+    .await;
+}
+
+#[test]
+fn reactions_on_one_promise_run_in_registration_order_after_a_race_drops_its_wait() {
+    let order = Rc::new(RefCell::new(Vec::new()));
+    let log = Rc::clone(&order);
+    block_on(async move {
+        let p_slot = Rc::new(RefCell::new(None));
+        let p_captured = Rc::clone(&p_slot);
+        let p: JsPromise<i32> = JsPromise::create(Callable::new(
+            move |(resolve, _): (PromiseResolve<i32>, PromiseReject)| {
+                p_captured.replace(Some(resolve));
+                Ok(())
+            },
+        ));
+        let q_slot = Rc::new(RefCell::new(None));
+        let q_captured = Rc::clone(&q_slot);
+        let q: JsPromise<i32> = JsPromise::create(Callable::new(
+            move |(resolve, _): (PromiseResolve<i32>, PromiseReject)| {
+                q_captured.replace(Some(resolve));
+                Ok(())
+            },
+        ));
+        let resolve_p = p_slot.borrow_mut().take().expect("p's executor ran");
+        let resolve_q = q_slot.borrow_mut().take().expect("q's executor ran");
+        let raced: JsPromise<i32> = promise_race(&JsArray::from_dense(vec![p.clone(), q.clone()]));
+        let mut race_wait = Box::pin(raced.into_result());
+        assert!(race_wait
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending());
+        let first = Rc::clone(&log);
+        let a: JsPromise<i32> = p.then(
+            Callable::new(move |(value,): (i32,)| {
+                first.borrow_mut().push("A");
+                Ok(value)
+            }),
+            None,
+        );
+        yield_once().await;
+        let _ = resolve_q.call((PromiseResolution::Value(0),));
+        yield_once().await;
+        let _ = race_wait.await;
+        let second = Rc::clone(&log);
+        let c: JsPromise<i32> = p.then(
+            Callable::new(move |(value,): (i32,)| {
+                second.borrow_mut().push("C");
+                Ok(value)
+            }),
+            None,
+        );
+        yield_once().await;
+        let _ = resolve_p.call((PromiseResolution::Value(1),));
+        let _ = a.into_result().await;
+        let _ = c.into_result().await;
+    })
+    .unwrap();
+    let order = order.borrow();
+    assert!(
+        *order == ["A", "C"],
+        "reactions ran as {order:?}; they were registered as A, C"
+    );
 }
