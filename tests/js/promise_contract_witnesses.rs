@@ -1,7 +1,8 @@
 use std::cell::Cell;
-use std::future::poll_fn;
+use std::future::{poll_fn, Future};
+use std::pin::pin;
 use std::rc::Rc;
-use std::task::Poll;
+use std::task::{Context, Poll, Waker};
 
 use tsonic_rust_js::event_loop::block_on;
 use tsonic_rust_js::promise::{JsPromise, PromiseReject, PromiseResolution, PromiseResolve};
@@ -78,6 +79,18 @@ fn a_pending_body_keeps_running_under_a_real_timer_after_its_handle_is_dropped()
         41,
         "the dropped handle did not cancel its body"
     );
+}
+
+#[test]
+fn a_settled_promise_continues_inline_on_its_first_poll() {
+    let promise: JsPromise<i32> = JsPromise::resolved(5);
+    let mut result = pin!(promise.into_result());
+    assert!(matches!(
+        result
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop())),
+        Poll::Ready(Ok(5))
+    ));
 }
 
 #[test]
