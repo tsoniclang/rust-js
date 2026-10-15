@@ -59,6 +59,8 @@ mod number_tests;
 mod numeric_union_tests;
 #[path = "js/object_tests.rs"]
 mod object_tests;
+#[path = "js/promise_contract_witnesses.rs"]
+mod promise_contract_witnesses;
 #[path = "js/promise_execution_tests.rs"]
 mod promise_execution_tests;
 #[path = "js/regexp_tests.rs"]

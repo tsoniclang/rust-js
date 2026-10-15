@@ -1,17 +1,18 @@
-use std::cell::RefCell;
 use std::future::Future;
 use std::rc::Rc;
 
-use tsonic_rust_runtime::{Callable, TsonicError};
+use futures_util::FutureExt;
+use tsonic_rust_runtime::Callable;
 
 use super::{JsPromise, PromiseState};
+use crate::JsValue;
 
-pub enum PromiseResolution<T, Error = TsonicError> {
+pub enum PromiseResolution<T> {
     Value(T),
-    Promise(JsPromise<'static, T, Error>),
+    Promise(JsPromise<T>),
 }
 
-impl<T: Clone, Error> Clone for PromiseResolution<T, Error> {
+impl<T: Clone> Clone for PromiseResolution<T> {
     fn clone(&self) -> Self {
         match self {
             Self::Value(value) => Self::Value(value.clone()),
@@ -20,20 +21,17 @@ impl<T: Clone, Error> Clone for PromiseResolution<T, Error> {
     }
 }
 
-pub type PromiseResolve<T, Error = TsonicError> =
-    Callable<'static, (PromiseResolution<T, Error>,), Result<(), Error>>;
-pub type PromiseReject<Error = TsonicError> = Callable<'static, (Error,), Result<(), Error>>;
-pub type PromiseExecutor<'environment, T, Error = TsonicError> =
-    Callable<'environment, (PromiseResolve<T, Error>, PromiseReject<Error>), Result<(), Error>>;
+pub type PromiseResolve<T> = Callable<'static, (PromiseResolution<T>,), Result<(), JsValue>>;
+pub type PromiseReject = Callable<'static, (JsValue,), Result<(), JsValue>>;
+pub type PromiseExecutor<'environment, T> =
+    Callable<'environment, (PromiseResolve<T>, PromiseReject), Result<(), JsValue>>;
 
-type PromiseThenCallback<Input, Output, Error> =
-    Callable<'static, (Input,), Result<JsPromise<'static, Output, Error>, Error>>;
+type PromiseThenCallback<Input, Output> =
+    Callable<'static, (Input,), Result<JsPromise<Output>, JsValue>>;
 
-impl<T: Clone + 'static, Error: Clone + From<tsonic_rust_runtime::JsError> + 'static>
-    JsPromise<'static, T, Error>
-{
-    pub fn create(executor: PromiseExecutor<'_, T, Error>) -> Self {
-        let promise = Self::deferred();
+impl<T: Clone + 'static> JsPromise<T> {
+    pub fn create(executor: PromiseExecutor<'_, T>) -> Self {
+        let promise = Self::pending();
         let resolve_target = promise.clone();
         let reject_target = promise.clone();
         let resolve = Callable::new(move |(value,)| {
@@ -44,75 +42,56 @@ impl<T: Clone + 'static, Error: Clone + From<tsonic_rust_runtime::JsError> + 'st
             reject_target.settle(Err(reason));
             Ok(())
         });
-        if let Err(error) = executor.call((resolve, reject)) {
-            promise.settle(Err(error));
+        if let Err(reason) = executor.call((resolve, reject)) {
+            promise.settle(Err(reason));
         }
         promise
     }
 
-    pub(crate) fn deferred() -> Self {
-        Self {
-            state: Rc::new(RefCell::new(PromiseState::Deferred {
-                waiters: slab::Slab::new(),
-            })),
-        }
-    }
-
-    pub(crate) fn settle(&self, result: Result<T, Error>) {
-        let waiters = {
-            let mut state = self.state.borrow_mut();
-            let PromiseState::Deferred { waiters } = &mut *state else {
-                return;
-            };
-            let waiters = std::mem::take(waiters);
-            *state = PromiseState::Settled(result);
-            waiters
-        };
-        for (_, waiter) in waiters {
-            waiter.wake();
-        }
-    }
-
-    fn resolve(&self, resolution: PromiseResolution<T, Error>) {
+    fn resolve(&self, resolution: PromiseResolution<T>) {
         match resolution {
             PromiseResolution::Value(value) => self.settle(Ok(value)),
-            PromiseResolution::Promise(promise) => {
-                if Rc::ptr_eq(&self.state, &promise.state) {
-                    self.settle(Err(
-                        crate::type_error("Promise cannot resolve to itself").into()
-                    ));
-                    return;
-                }
-                let waiters = {
-                    let mut state = self.state.borrow_mut();
-                    let PromiseState::Deferred { waiters } = &mut *state else {
-                        return;
-                    };
-                    let waiters = std::mem::take(waiters);
-                    *state = PromiseState::Pending {
-                        future: Some(Box::pin(promise.into_result())),
-                    };
-                    waiters
-                };
-                for (_, waiter) in waiters {
-                    waiter.wake();
-                }
+            PromiseResolution::Promise(source) => self.adopt(source),
+        }
+    }
+
+    fn adopt(&self, source: JsPromise<T>) {
+        if Rc::ptr_eq(&self.state, &source.state) {
+            self.settle(Err(JsValue::from_error(crate::type_error(
+                "Promise cannot resolve to itself",
+            ))));
+            return;
+        }
+        let claimed = match &mut *self.state.borrow_mut() {
+            PromiseState::Pending { adopted, .. } if !*adopted => {
+                *adopted = true;
+                true
             }
+            _ => false,
+        };
+        if !claimed {
+            return;
+        }
+        let target = self.clone();
+        if let Err(error) = crate::promise_jobs::enqueue(async move {
+            target.complete(source.into_result().await, true);
+        }) {
+            self.complete(Err(JsValue::from_error(error)), true);
         }
     }
 
     pub fn then<Output: Clone + 'static>(
         &self,
-        fulfilled: Callable<'static, (T,), Result<Output, Error>>,
-        rejected: Option<Callable<'static, (Error,), Result<Output, Error>>>,
-    ) -> JsPromise<'static, Output, Error> {
+        fulfilled: Callable<'static, (T,), Result<Output, JsValue>>,
+        rejected: Option<Callable<'static, (JsValue,), Result<Output, JsValue>>>,
+    ) -> JsPromise<Output> {
         let source = self.clone();
         JsPromise::schedule(async move {
             match source.into_result().await {
                 Ok(value) => fulfilled.call((value,)),
-                Err(error) => match rejected {
-                    Some(callback) => callback.call((error,)),
-                    None => Err(error),
+                Err(reason) => match rejected {
+                    Some(callback) => callback.call((reason,)),
+                    None => Err(reason),
                 },
             }
         })
@@ -120,28 +99,28 @@ impl<T: Clone + 'static, Error: Clone + From<tsonic_rust_runtime::JsError> + 'st
 
     pub fn then_async<Output: Clone + 'static>(
         &self,
-        fulfilled: PromiseThenCallback<T, Output, Error>,
-        rejected: Option<PromiseThenCallback<Error, Output, Error>>,
-    ) -> JsPromise<'static, Output, Error> {
+        fulfilled: PromiseThenCallback<T, Output>,
+        rejected: Option<PromiseThenCallback<JsValue, Output>>,
+    ) -> JsPromise<Output> {
         let source = self.clone();
         JsPromise::schedule(async move {
             let selected = match source.into_result().await {
                 Ok(value) => fulfilled.call((value,)),
-                Err(error) => match rejected {
-                    Some(callback) => callback.call((error,)),
-                    None => Err(error),
+                Err(reason) => match rejected {
+                    Some(callback) => callback.call((reason,)),
+                    None => Err(reason),
                 },
             }?;
             selected.into_result().await
         })
     }
 
-    pub fn catch(&self, rejected: Callable<'static, (Error,), Result<T, Error>>) -> Self {
+    pub fn catch(&self, rejected: Callable<'static, (JsValue,), Result<T, JsValue>>) -> Self {
         let source = self.clone();
         Self::schedule(async move {
             match source.into_result().await {
                 Ok(value) => Ok(value),
-                Err(error) => rejected.call((error,)),
+                Err(reason) => rejected.call((reason,)),
             }
         })
     }
@@ -150,11 +129,14 @@ impl<T: Clone + 'static, Error: Clone + From<tsonic_rust_runtime::JsError> + 'st
         self.finally_callback(None)
     }
 
-    pub fn finally(&self, callback: Callable<'static, (), Result<(), Error>>) -> Self {
+    pub fn finally(&self, callback: Callable<'static, (), Result<(), JsValue>>) -> Self {
         self.finally_callback(Some(callback))
     }
 
-    fn finally_callback(&self, callback: Option<Callable<'static, (), Result<(), Error>>>) -> Self {
+    fn finally_callback(
+        &self,
+        callback: Option<Callable<'static, (), Result<(), JsValue>>>,
+    ) -> Self {
         let source = self.clone();
         Self::schedule(async move {
             let result = source.into_result().await;
@@ -165,13 +147,13 @@ impl<T: Clone + 'static, Error: Clone + From<tsonic_rust_runtime::JsError> + 'st
         })
     }
 
-    fn schedule(future: impl Future<Output = Result<T, Error>> + 'static) -> Self {
-        let promise = Self::deferred();
+    fn schedule(future: impl Future<Output = Result<T, JsValue>> + 'static) -> Self {
+        let promise = Self::pending();
         let completion = promise.clone();
-        if let Err(error) = crate::promise_jobs::enqueue(async move {
-            completion.settle(future.await);
-        }) {
-            promise.settle(Err(error.into()));
+        if let Err(error) =
+            crate::promise_jobs::enqueue(future.map(move |result| completion.settle(result)))
+        {
+            promise.settle(Err(JsValue::from_error(error)));
         }
         promise
     }

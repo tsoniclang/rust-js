@@ -7,6 +7,7 @@ use std::task::Waker;
 use std::thread::{self, ThreadId};
 
 use async_task::{Runnable, Task};
+use futures_util::FutureExt;
 use slab::Slab;
 use tsonic_rust_runtime::dispatch::DispatchOwner;
 use tsonic_rust_runtime::JsError;
@@ -156,6 +157,7 @@ impl DispatchHandle {
 struct Jobs {
     accepting: Cell<bool>,
     polling: Cell<bool>,
+    exit: Cell<Option<u8>>,
     live: Cell<usize>,
     maximum: Cell<usize>,
     capacity: Cell<usize>,
@@ -169,6 +171,7 @@ impl Jobs {
         Self {
             accepting: Cell::new(false),
             polling: Cell::new(false),
+            exit: Cell::new(None),
             live: Cell::new(0),
             maximum: Cell::new(MAX_PENDING_JOBS),
             capacity: Cell::new(0),
@@ -337,6 +340,7 @@ impl Owner {
                 #[cfg(test)]
                 handle_drops: std::sync::atomic::AtomicUsize::new(0),
             })));
+            jobs.exit.set(None);
             jobs.accepting.set(true);
             Ok(Self)
         })
@@ -409,7 +413,48 @@ pub fn dispatch_owner() -> Result<DispatchOwner, JsError> {
     })
 }
 
+pub(crate) fn can_admit() -> Result<(), JsError> {
+    JOBS.with(|owner| {
+        let jobs = owner
+            .get()
+            .filter(|jobs| jobs.accepting.get())
+            .ok_or_else(|| JsError::error(NO_LOOP))?;
+        if jobs.tasks.borrow().len() >= jobs.maximum.get() {
+            return Err(crate::range_error(
+                "pending Promise jobs exceed the finite queue limit",
+            ));
+        }
+        Ok(())
+    })
+}
+
+pub(crate) fn request_exit(code: u8) {
+    JOBS.with(|owner| {
+        if let Some(jobs) = owner.get().filter(|jobs| jobs.handle.borrow().is_some()) {
+            if jobs.exit.get().is_none() {
+                jobs.exit.set(Some(code));
+            }
+        }
+    });
+}
+
+pub(crate) fn exit_requested() -> bool {
+    JOBS.with(|owner| owner.get().is_some_and(|jobs| jobs.exit.get().is_some()))
+}
+
+pub(crate) fn take_exit() -> Option<u8> {
+    JOBS.with(|owner| owner.get().and_then(|jobs| jobs.exit.take()))
+}
+
 pub(crate) fn enqueue(job: impl Future<Output = ()> + 'static) -> Result<(), JsError> {
+    admit(job, false)
+}
+
+pub(crate) fn start(job: impl Future<Output = ()> + 'static) -> Result<(), JsError> {
+    admit(job, true)
+}
+
+fn admit(job: impl Future<Output = ()> + 'static, eager: bool) -> Result<(), JsError> {
     JOBS.with(|owner| {
         let jobs = owner
             .get()
@@ -434,14 +479,15 @@ pub(crate) fn enqueue(job: impl Future<Output = ()> + 'static) -> Result<(), JsE
         jobs.live.set(jobs.live.get() + 1);
         let lifetime = JobLifetime;
         let (runnable, task) = async_task::Builder::new().metadata(key).spawn_local(
-            move |_| async move {
-                let _lifetime = lifetime;
-                job.await;
-            },
+            move |_| job.map(move |()| drop(lifetime)),
             move |runnable| handle.schedule(runnable),
         );
         assert_eq!(jobs.tasks.borrow_mut().insert(task), key);
-        jobs.ready.borrow_mut().push_back(runnable);
+        if eager {
+            jobs.run(runnable);
+        } else {
+            jobs.ready.borrow_mut().push_back(runnable);
+        }
         Ok(())
     })
 }
@@ -481,6 +527,9 @@ pub(crate) fn poll() -> bool {
         jobs.drain_ingress();
         let count = jobs.ready.borrow().len().min(MAX_JOBS_PER_TURN);
         for _ in 0..count {
+            if jobs.exit.get().is_some() {
+                break;
+            }
             let runnable = jobs
                 .ready
                 .borrow_mut()

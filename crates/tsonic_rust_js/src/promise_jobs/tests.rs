@@ -64,7 +64,10 @@ fn no_loop_reaction_returns_the_exact_error_without_running_the_callback() {
         None,
     );
     let failure = tsonic_rust_runtime::async_runtime::block_on(pending.into_result()).unwrap_err();
-    assert_eq!(failure.source_error().message(), NO_LOOP);
+    assert_eq!(
+        tsonic_rust_runtime::ErrorObject::error_message(&failure.error_value()),
+        NO_LOOP
+    );
     assert_eq!(calls.get(), 0);
     assert_eq!(Rc::strong_count(&calls), 1);
     assert!(!active());
@@ -126,10 +129,7 @@ fn rejected_admission_settles_the_returned_promise_and_releases_captures() {
         None,
     );
     let failure = tsonic_rust_runtime::async_runtime::block_on(result.into_result()).unwrap_err();
-    assert_eq!(
-        failure.source_error().kind(),
-        tsonic_rust_runtime::JsErrorKind::RangeError
-    );
+    assert!(failure.is_error_kind(tsonic_rust_runtime::JsErrorKind::RangeError));
     assert!(!ran.get());
     assert_eq!(Rc::strong_count(&ran), 1);
 }
