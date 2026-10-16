@@ -13,6 +13,8 @@ use tsonic_rust_runtime::{
 
 const NO_LOOP: &str = "No JavaScript event loop is running on this thread.";
 
+mod observation;
+
 fn no_contexts() -> DispatchEnd<TsonicError> {
     DispatchEnd::<TsonicError>::new()
 }
