@@ -562,6 +562,7 @@ struct RootPrefixDriver<'scope> {
     subscribed: &'scope Cell<bool>,
     delivered: &'scope Cell<bool>,
     pending: bool,
+    referenced: bool,
     polls: usize,
 }
 
@@ -582,7 +583,7 @@ impl EventLoopDriver for RootPrefixDriver<'_> {
         Ok(pending)
     }
     fn has_work(&self) -> bool {
-        self.pending
+        self.referenced && self.pending
     }
     fn wait(&mut self) -> Result<(), JsError> {
         Err(JsError::error("the completed root must never wait"))
@@ -601,6 +602,7 @@ fn the_async_root_subscribes_before_retained_native_work_is_dispatched() {
         subscribed: &subscribed,
         delivered: &delivered,
         pending: true,
+        referenced: true,
         polls: 0,
     };
     let (output, status) = block_on_with_driver(
@@ -617,6 +619,35 @@ fn the_async_root_subscribes_before_retained_native_work_is_dispatched() {
     assert!(delivered.get());
     assert_eq!(root_polls.get(), 1);
     assert_eq!(driver.polls, 1);
+}
+
+#[test]
+fn a_ready_root_retires_without_dispatching_unreferenced_native_work() {
+    let subscribed = Cell::new(false);
+    let delivered = Cell::new(false);
+    let root_polls = Cell::new(0);
+    let mut driver = RootPrefixDriver {
+        subscribed: &subscribed,
+        delivered: &delivered,
+        pending: true,
+        referenced: false,
+        polls: 0,
+    };
+    let (output, status) = block_on_with_driver(
+        poll_fn(|_| {
+            root_polls.set(root_polls.get() + 1);
+            subscribed.set(true);
+            Poll::Ready(17)
+        }),
+        &mut driver,
+    )
+    .unwrap();
+    assert_eq!(output, Some(17));
+    assert!(!status.exit_requested());
+    assert!(!delivered.get());
+    assert!(driver.pending);
+    assert_eq!(root_polls.get(), 1);
+    assert_eq!(driver.polls, 0);
 }
 
 #[test]
