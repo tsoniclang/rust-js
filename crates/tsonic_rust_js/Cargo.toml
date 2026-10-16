@@ -18,6 +18,10 @@ unicode-normalization = "=0.1.24"
 tz-rs = "=0.7.3"
 tzdb = { version = "=0.7.3", default-features = false, features = ["local"] }
 
+[dev-dependencies]
+syn = { version = "2.0.118", features = ["full", "visit"] }
+proc-macro2 = { version = "1.0.106", features = ["span-locations"] }
+
 [[test]]
 name = "numeric_allocation_tests"
 path = "../../tests/numeric_allocation_tests.rs"
