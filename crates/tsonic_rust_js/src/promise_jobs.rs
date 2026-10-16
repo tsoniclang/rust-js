@@ -376,11 +376,24 @@ impl Drop for JobLifetime {
 }
 
 pub(crate) fn active() -> bool {
+    current_owner().is_some()
+}
+
+fn owner_identity(require_admission: bool) -> Option<DispatchOwner> {
     JOBS.with(|owner| {
         owner
             .get()
-            .is_some_and(|jobs| jobs.handle.borrow().is_some())
+            .filter(|jobs| !require_admission || jobs.accepting.get())
+            .and_then(|jobs| jobs.handle.borrow().as_ref().map(DispatchHandle::owner))
     })
+}
+
+pub(crate) fn current_owner() -> Option<DispatchOwner> {
+    owner_identity(false)
+}
+
+pub fn require_dispatch_owner() -> DispatchOwner {
+    owner_identity(true).unwrap_or_else(|| panic!("{NO_LOOP}"))
 }
 
 pub fn ensure_running() -> Result<(), JsError> {
@@ -404,13 +417,7 @@ pub fn dispatch_handle() -> Result<DispatchHandle, JsError> {
 }
 
 pub fn dispatch_owner() -> Result<DispatchOwner, JsError> {
-    JOBS.with(|owner| {
-        owner
-            .get()
-            .filter(|jobs| jobs.accepting.get())
-            .and_then(|jobs| jobs.handle.borrow().as_ref().map(DispatchHandle::owner))
-            .ok_or_else(|| JsError::error(NO_LOOP))
-    })
+    owner_identity(true).ok_or_else(|| JsError::error(NO_LOOP))
 }
 
 pub(crate) fn can_admit() -> Result<(), JsError> {

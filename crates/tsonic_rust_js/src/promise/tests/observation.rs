@@ -23,7 +23,7 @@ fn pending_observation_without_an_owner_panics_before_mutating_the_state() {
         matches!(
             &*retained.state.borrow(),
             PromiseState::Pending {
-                observed: false,
+                observation_owner: None,
                 ..
             }
         ),
@@ -69,7 +69,8 @@ fn pending_observation_inside_its_owner_marks_once_without_enqueuing_work() {
             assert!(
                 matches!(
                     &*retained.state.borrow(),
-                    PromiseState::Pending { observed: true, .. }
+                    PromiseState::Pending { observation_owner: Some(owner), .. }
+                        if Some(*owner) == crate::promise_jobs::current_owner()
                 ),
                 "the owned pending Promise is observed"
             );
@@ -113,7 +114,8 @@ fn pending_observation_while_its_owner_closes_preserves_shutdown_status() {
     assert!(
         matches!(
             &*retained.state.borrow(),
-            PromiseState::Pending { observed: true, .. }
+            PromiseState::Pending { observation_owner: Some(owner), .. }
+                if Some(*owner) == crate::promise_jobs::current_owner()
         ),
         "the closing owner still owns the observation"
     );

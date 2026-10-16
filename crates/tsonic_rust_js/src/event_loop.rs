@@ -9,7 +9,9 @@ use tsonic_rust_runtime::dispatch::DispatchOwner;
 use tsonic_rust_runtime::dispatch::{DispatchContexts, DispatchEnd, DispatchPhase};
 use tsonic_rust_runtime::TsonicResult;
 
-pub use crate::promise_jobs::{dispatch_handle, dispatch_owner, ensure_running, DispatchHandle};
+pub use crate::promise_jobs::{
+    dispatch_handle, dispatch_owner, ensure_running, require_dispatch_owner, DispatchHandle,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LoopLifecycle {
