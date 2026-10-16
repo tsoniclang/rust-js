@@ -64,7 +64,10 @@ fn no_loop_reaction_returns_the_exact_error_without_running_the_callback() {
         None,
     );
     let failure = tsonic_rust_runtime::async_runtime::block_on(pending.into_result()).unwrap_err();
-    assert_eq!(failure.source_error().message(), NO_LOOP);
+    assert_eq!(
+        tsonic_rust_runtime::ErrorObject::error_message(&failure.error_value()),
+        NO_LOOP
+    );
     assert_eq!(calls.get(), 0);
     assert_eq!(Rc::strong_count(&calls), 1);
     assert!(!active());
@@ -109,6 +112,22 @@ fn a_full_owner_rejects_before_polling_and_releases_the_rejected_capture() {
 }
 
 #[test]
+fn a_report_a_full_owner_cannot_admit_is_written_and_requests_exit_one() {
+    let _owner = owner();
+    JOBS.with(|owner| owner.get().unwrap().maximum.set(1));
+    enqueue(pending()).unwrap();
+    crate::promise::JsPromise::<i32>::rejected(crate::JsValue::String(String::from("full queue")))
+        .observe_discarded();
+    assert_eq!(crate::promise::take_reports(), "full queue\n");
+    assert!(exit_requested());
+    JOBS.with(|owner| {
+        let jobs = owner.get().unwrap();
+        assert_eq!(jobs.exit.get(), Some(1));
+        assert_eq!(jobs.tasks.borrow().len(), 1);
+    });
+}
+
+#[test]
 fn rejected_admission_settles_the_returned_promise_and_releases_captures() {
     use crate::promise::JsPromise;
     use tsonic_rust_runtime::Callable;
@@ -126,10 +145,7 @@ fn rejected_admission_settles_the_returned_promise_and_releases_captures() {
         None,
     );
     let failure = tsonic_rust_runtime::async_runtime::block_on(result.into_result()).unwrap_err();
-    assert_eq!(
-        failure.source_error().kind(),
-        tsonic_rust_runtime::JsErrorKind::RangeError
-    );
+    assert!(failure.is_error_kind(tsonic_rust_runtime::JsErrorKind::RangeError));
     assert!(!ran.get());
     assert_eq!(Rc::strong_count(&ran), 1);
 }

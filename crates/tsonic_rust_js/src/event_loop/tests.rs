@@ -96,7 +96,10 @@ fn a_referenced_timer_can_finish_a_job_after_the_root_is_ready() {
                     crate::timers::set_timeout_callable(
                         timers,
                         Callable::new(move |()| {
-                            resolve.call((crate::promise::PromiseResolution::Value(9),))
+                            resolve
+                                .call((crate::promise::PromiseResolution::Value(9),))
+                                .expect("native Promise resolution is infallible");
+                            Ok(())
                         }),
                         1.0,
                     )
@@ -428,7 +431,7 @@ fn copied_owners_and_precaptured_native_handles_remain_generation_bound() {
         }
     }
     let first_handle = queue.handle();
-    let retired = block_on_with_contexts(
+    let (retired, status) = block_on_with_contexts(
         async { dispatch_owner().unwrap() },
         prepend(
             &QueueContext(&queue),
@@ -436,6 +439,8 @@ fn copied_owners_and_precaptured_native_handles_remain_generation_bound() {
         ),
     )
     .unwrap();
+    assert!(!status.exit_requested());
+    let retired = retired.expect("the root completes before the loop exits");
     for _ in 0..128 {
         let next = queue.handle();
         assert_eq!(next.enqueue(|| Ok(())).unwrap_err(), TaskQueueError::Closed);
@@ -508,7 +513,7 @@ fn newly_admitted_native_work_gets_a_dispatch_turn_before_waiting() {
         waits: 0,
         failure: JsError::error("premature wait"),
     };
-    let output = block_on_with_driver(
+    let (output, status) = block_on_with_driver(
         async {
             ready.set(true);
             7
@@ -516,7 +521,8 @@ fn newly_admitted_native_work_gets_a_dispatch_turn_before_waiting() {
         &mut driver,
     )
     .unwrap();
-    assert_eq!(output, 7);
+    assert_eq!(output, Some(7));
+    assert!(!status.exit_requested());
     assert_eq!(dispatched.get(), 1);
     assert_eq!(driver.polls, 2);
     assert_eq!(driver.waits, 0);

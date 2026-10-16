@@ -2,7 +2,9 @@ use std::cell::Cell;
 use std::num::NonZeroUsize;
 use std::rc::Rc;
 use std::task::Waker;
-use tsonic_rust_js::event_loop::{block_on_with_driver, run_with_driver, EventLoopDriver};
+use tsonic_rust_js::event_loop::{
+    block_on_with_driver, run_with_driver, EventLoopDriver, LoopExitStatus,
+};
 use tsonic_rust_runtime::dispatch_queue::{TaskBudget, TaskQueue};
 
 struct Failure(Rc<Cell<i64>>);
@@ -85,7 +87,10 @@ fn driven_callbacks_preserve_native_failure_identity_and_pending_work() {
     assert_eq!(failure.0.get(), 9_007_199_254_740_993);
     assert_eq!(observed.get(), 0);
     assert!(driver.has_work());
-    assert_eq!(run_with_driver(&mut driver).ok(), Some(()));
+    assert_eq!(
+        run_with_driver(&mut driver).ok(),
+        Some(LoopExitStatus::default())
+    );
     assert_eq!(observed.get(), 7);
     assert!(!driver.has_work());
 }
@@ -93,7 +98,10 @@ fn driven_callbacks_preserve_native_failure_identity_and_pending_work() {
 #[test]
 fn root_future_and_native_wake_errors_do_not_require_runtime_error_conversion() {
     let mut driver = Driver::new();
-    assert_eq!(block_on_with_driver(async { 7 }, &mut driver).ok(), Some(7));
+    assert_eq!(
+        block_on_with_driver(async { 7 }, &mut driver).ok(),
+        Some((Some(7), LoopExitStatus::default()))
+    );
     let payload = Rc::new(Cell::new(9_007_199_254_740_993));
     driver.wake_failure = Some(Failure(payload.clone()));
     let failure = block_on_with_driver(async { 8 }, &mut driver)
