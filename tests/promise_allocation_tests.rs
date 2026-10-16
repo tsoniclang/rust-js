@@ -1,4 +1,6 @@
-use std::alloc::{GlobalAlloc, Layout, System};
+#[path = "../../rust-runtime/tests/helpers/allocation_counts.rs"]
+mod allocation_counts;
+
 use std::cell::{Cell, RefCell};
 use std::future::{poll_fn, ready, Future};
 use std::hint::black_box;
@@ -11,8 +13,6 @@ use tsonic_rust_js::promise::{JsPromise, PromiseReject, PromiseResolution, Promi
 use tsonic_rust_js::JsValue;
 use tsonic_rust_runtime::dispatch::DispatchEnd;
 use tsonic_rust_runtime::{Callable, JsError, TsonicError};
-
-struct CountingAllocator;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct Counts {
@@ -36,57 +36,18 @@ const fn counts(
     }
 }
 
-thread_local! {
-    static TRACKED: Cell<Option<Counts>> = const { Cell::new(None) };
-}
-
-fn track(update: impl FnOnce(&mut Counts)) {
-    let _ = TRACKED.try_with(|tracked| {
-        if let Some(mut counts) = tracked.get() {
-            update(&mut counts);
-            tracked.set(Some(counts));
-        }
-    });
-}
-
-unsafe impl GlobalAlloc for CountingAllocator {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        track(|counts| {
-            counts.allocations += 1;
-            counts.bytes += layout.size();
-        });
-        unsafe { System.alloc(layout) }
-    }
-
-    unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
-        track(|counts| counts.deallocations += 1);
-        unsafe { System.dealloc(pointer, layout) }
-    }
-
-    unsafe fn realloc(&self, pointer: *mut u8, layout: Layout, size: usize) -> *mut u8 {
-        track(|counts| {
-            counts.reallocations += 1;
-            counts.bytes += size;
-        });
-        unsafe { System.realloc(pointer, layout, size) }
-    }
-}
-
-#[global_allocator]
-static ALLOCATOR: CountingAllocator = CountingAllocator;
-
-fn begin() {
-    TRACKED.with(|tracked| tracked.set(Some(Counts::default())));
-}
-
-fn end() -> Counts {
-    TRACKED.with(|tracked| tracked.replace(None).expect("an open measurement"))
+fn row_counts(observed: allocation_counts::AllocationCounts) -> Counts {
+    counts(
+        observed.allocations,
+        observed.deallocations,
+        observed.reallocations,
+        observed.requested_bytes(),
+    )
 }
 
 fn measured<Output>(operation: impl FnOnce() -> Output) -> (Output, Counts) {
-    begin();
-    let output = operation();
-    (output, end())
+    let (output, observed) = allocation_counts::measure(operation);
+    (output, row_counts(observed))
 }
 
 fn record(row: &str, counts: Counts) {
@@ -222,7 +183,7 @@ fn eager_factories_allocate_the_completion_and_one_task() {
         let source = Rc::new(RefCell::new(None::<Waker>));
         let body_gate = Rc::clone(&gate);
         let body_source = Rc::clone(&source);
-        begin();
+        let measurement = allocation_counts::Measurement::start();
         let promise = JsPromise::from_infallible_factory(move || {
             poll_fn(move |context| {
                 if body_gate.get() {
@@ -238,7 +199,7 @@ fn eager_factories_allocate_the_completion_and_one_task() {
             .as_mut()
             .poll(&mut Context::from_waker(Waker::noop()))
             .is_pending());
-        let pending = end();
+        let pending = row_counts(measurement.finish());
         assert_row(
             "eager factory, pending, one awaiter",
             pending,
@@ -447,14 +408,14 @@ async fn adoption_chain_counts(length: usize) -> Counts {
         resolvers.push(slot.borrow_mut().take().unwrap());
     }
     let adopted: Vec<_> = promises[..length].to_vec();
-    begin();
+    let measurement = allocation_counts::Measurement::start();
     for (resolve, source) in resolvers.iter().zip(&adopted) {
         resolve
             .call((PromiseResolution::Promise(source.clone()),))
             .unwrap();
     }
     yield_once().await;
-    let counts = end();
+    let counts = row_counts(measurement.finish());
     drop(adopted);
     let last = promises.pop().unwrap();
     assert_eq!(last.into_result().await.unwrap(), 21);
