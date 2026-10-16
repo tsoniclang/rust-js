@@ -75,7 +75,7 @@ fn schedule_callback<'environment, TError>(
     delay_ms: u64,
     interval: bool,
 ) -> JsResult<u64> {
-    let owner = crate::event_loop::dispatch_owner()?;
+    let owner = crate::event_loop::require_dispatch_owner();
     if !timers.belongs_to(owner) {
         return Err(JsError::error(
             "native timer context is not registered with this event loop",

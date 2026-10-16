@@ -4,7 +4,7 @@ use std::io::Write;
 use std::rc::Rc;
 
 use futures_util::FutureExt;
-use tsonic_rust_runtime::ErrorObject;
+use tsonic_rust_runtime::{dispatch::DispatchOwner, ErrorObject};
 
 use crate::JsValue;
 
@@ -22,7 +22,7 @@ enum PromiseState<T> {
     Pending {
         waiters: Waiters,
         adopted: bool,
-        observed: bool,
+        observation_owner: Option<DispatchOwner>,
     },
     Fulfilled(T),
     Rejected {
@@ -36,7 +36,7 @@ impl<T> PromiseState<T> {
         Self::Pending {
             waiters: Waiters::default(),
             adopted: false,
-            observed: false,
+            observation_owner: None,
         }
     }
 
@@ -49,16 +49,18 @@ impl<T> PromiseState<T> {
     }
 
     fn observe_discarded(&mut self) -> bool {
-        if !matches!(self, Self::Fulfilled(_)) && !crate::promise_jobs::active() {
-            panic!("{}", crate::promise_jobs::NO_LOOP);
+        if matches!(self, Self::Fulfilled(_)) {
+            return false;
         }
+        let owner = crate::promise_jobs::current_owner()
+            .unwrap_or_else(|| panic!("{}", crate::promise_jobs::NO_LOOP));
         match self {
             Self::Rejected { reported, .. } if !*reported => {
                 *reported = true;
                 true
             }
-            Self::Pending { observed, .. } => {
-                *observed = true;
+            Self::Pending { observation_owner, .. } => {
+                *observation_owner = Some(owner);
                 false
             }
             _ => false,
@@ -69,7 +71,7 @@ impl<T> PromiseState<T> {
         let Self::Pending {
             waiters,
             adopted,
-            observed,
+            observation_owner,
         } = self
         else {
             return None;
@@ -82,7 +84,8 @@ impl<T> PromiseState<T> {
             Ok(value) => Self::Fulfilled(value),
             Err(reason) => Self::Rejected {
                 reason,
-                reported: *observed,
+                reported: observation_owner
+                    .is_some_and(|owner| crate::promise_jobs::current_owner() == Some(owner)),
             },
         };
         Some(waiters)
@@ -241,9 +244,7 @@ impl<T: 'static> JsPromise<T> {
     where
         Body: Future<Output = Result<T, JsValue>> + 'static,
     {
-        if let Err(error) = crate::promise_jobs::ensure_running() {
-            return Self::rejected(JsValue::from_error(error));
-        }
+        crate::promise_jobs::require_dispatch_owner();
         let body = create();
         let promise = Self::pending();
         let completion = promise.clone();

@@ -64,6 +64,7 @@ impl<T: Clone + 'static> JsPromise<T> {
         }
         let claimed = match &mut *self.state.borrow_mut() {
             PromiseState::Pending { adopted, .. } if !*adopted => {
+                crate::promise_jobs::require_dispatch_owner();
                 *adopted = true;
                 true
             }
@@ -148,6 +149,7 @@ impl<T: Clone + 'static> JsPromise<T> {
     }
 
     fn schedule(future: impl Future<Output = Result<T, JsValue>> + 'static) -> Self {
+        crate::promise_jobs::require_dispatch_owner();
         let promise = Self::pending();
         let completion = promise.clone();
         if let Err(error) = crate::promise_jobs::enqueue(
