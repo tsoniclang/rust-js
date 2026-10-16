@@ -74,7 +74,7 @@ impl<T: Clone + 'static> JsPromise<T> {
         }
         let target = self.clone();
         if let Err(error) = crate::promise_jobs::enqueue(async move {
-            target.complete(source.into_result().await, true);
+            target.complete_owned(source.into_result().await, true);
         }) {
             self.complete(Err(JsValue::from_error(error)), true);
         }
@@ -150,9 +150,9 @@ impl<T: Clone + 'static> JsPromise<T> {
     fn schedule(future: impl Future<Output = Result<T, JsValue>> + 'static) -> Self {
         let promise = Self::pending();
         let completion = promise.clone();
-        if let Err(error) =
-            crate::promise_jobs::enqueue(future.map(move |result| completion.settle(result)))
-        {
+        if let Err(error) = crate::promise_jobs::enqueue(
+            future.map(move |result| completion.complete_owned(result, false)),
+        ) {
             promise.settle(Err(JsValue::from_error(error)));
         }
         promise

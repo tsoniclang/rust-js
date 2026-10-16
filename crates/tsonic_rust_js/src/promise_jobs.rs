@@ -14,7 +14,7 @@ use tsonic_rust_runtime::JsError;
 
 const MAX_PENDING_JOBS: usize = 1 << 20;
 const MAX_JOBS_PER_TURN: usize = 1024;
-const NO_LOOP: &str = "No JavaScript event loop is running on this thread.";
+pub(crate) const NO_LOOP: &str = "No JavaScript event loop is running on this thread.";
 const CLOSING: usize = 1 << (usize::BITS - 1);
 
 type ReadyJob = Runnable<usize>;
