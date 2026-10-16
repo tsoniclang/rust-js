@@ -651,6 +651,37 @@ fn a_ready_root_retires_without_dispatching_unreferenced_native_work() {
 }
 
 #[test]
+fn ready_jobs_do_not_reference_otherwise_unreferenced_native_work() {
+    let subscribed = Cell::new(false);
+    let delivered = Cell::new(false);
+    let reacted = Rc::new(Cell::new(false));
+    let observed = Rc::clone(&reacted);
+    let mut driver = RootPrefixDriver {
+        subscribed: &subscribed,
+        delivered: &delivered,
+        pending: true,
+        referenced: false,
+        polls: 0,
+    };
+    let (output, status) = block_on_with_driver(
+        async {
+            subscribed.set(true);
+            crate::promise_jobs::enqueue(async move { observed.set(true) }).unwrap();
+            19
+        },
+        &mut driver,
+    )
+    .unwrap();
+    assert_eq!(output, Some(19));
+    assert!(!status.exit_requested());
+    assert!(reacted.get());
+    assert_eq!(Rc::strong_count(&reacted), 1);
+    assert!(!delivered.get());
+    assert!(driver.pending);
+    assert_eq!(driver.polls, 0);
+}
+
+#[test]
 fn a_pending_non_self_waking_root_reaches_wait_without_repeated_polling() {
     let ready = Cell::new(false);
     let dispatched = Cell::new(0);

@@ -328,10 +328,11 @@ fn run_turns<Root: Future, Driver: EventLoopDriver>(
         if crate::promise_jobs::exit_requested() {
             return Ok(output);
         }
-        if root.is_none() && !driver.has_work() && !crate::promise_jobs::has_ready() {
+        let native_work = root.is_some() || driver.has_work();
+        if !native_work && !crate::promise_jobs::has_ready() {
             return Ok(output);
         }
-        let driver_work = driver.poll()?;
+        let driver_work = native_work && driver.poll()?;
         if crate::promise_jobs::exit_requested() {
             return Ok(output);
         }
