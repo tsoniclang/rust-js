@@ -1,6 +1,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+#[path = "../../../rust-runtime/tests/architecture/source_scope.rs"]
+mod source_scope;
+
 const FORBIDDEN_PATTERNS: &[&str] = &[
     "quickjs",
     "rquickjs",
@@ -24,15 +27,15 @@ fn no_forbidden_shortcuts_present_in_product_sources() {
     let workspace_root = locate_workspace_root()
         .unwrap_or_else(|| panic!("unable to locate workspace root from test manifest directory"));
     let mut violations = Vec::new();
-    let mut rust_files = Vec::new();
-    collect_workspace_product_sources(&workspace_root, &mut rust_files);
+    let sources = source_scope::collect_production_sources(&workspace_root.join("crates"))
+        .unwrap_or_else(|error| panic!("unable to classify native product sources: {error}"));
 
-    for file in rust_files {
-        let source = read_source_file(&file);
+    for source in sources {
+        let file = source.path;
         let relative = file
             .strip_prefix(&workspace_root)
             .expect("product source path");
-        for forbidden in product_source_violations(relative, &source) {
+        for forbidden in product_source_violations(relative, &source.source) {
             violations.push(format!("{}: contains `{}`", file.display(), forbidden));
         }
     }
@@ -267,47 +270,6 @@ fn locate_workspace_root() -> Option<PathBuf> {
             continue;
         }
         return None;
-    }
-}
-
-fn collect_workspace_product_sources(root: &Path, out: &mut Vec<PathBuf>) {
-    let crates_root = root.join("crates");
-    let Ok(crate_entries) = fs::read_dir(&crates_root) else {
-        return;
-    };
-
-    for entry in crate_entries.flatten() {
-        let entry_path = entry.path();
-        if !entry_path.is_dir() {
-            continue;
-        }
-
-        let src_root = entry_path.join("src");
-        if !src_root.is_dir() {
-            continue;
-        }
-        collect_rs_under_dir(&src_root, out);
-    }
-}
-
-fn collect_rs_under_dir(root: &Path, out: &mut Vec<PathBuf>) {
-    let mut stack = vec![root.to_path_buf()];
-    while let Some(path) = stack.pop() {
-        let Ok(entries) = fs::read_dir(&path) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let entry_path = entry.path();
-            if entry_path.is_dir() {
-                stack.push(entry_path);
-                continue;
-            }
-
-            if entry_path.extension().and_then(|ext| ext.to_str()) != Some("rs") {
-                continue;
-            }
-            out.push(entry_path);
-        }
     }
 }
 
