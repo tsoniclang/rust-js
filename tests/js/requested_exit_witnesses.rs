@@ -254,8 +254,8 @@ fn a_rejection_discarded_without_an_owner_reports_and_unwinds_without_exiting() 
         output.status
     );
     assert!(
-        stderr.lines().any(|line| line == "no owner"),
-        "stderr: {stderr}"
+        !stderr.lines().any(|line| line == "no owner"),
+        "a missing owner must reject observation before reporting its reason: {stderr}"
     );
     assert!(
         stdout.contains("the native caller caught the ownership panic and its destructor ran"),
