@@ -577,6 +577,81 @@ fn observing_a_unique_discarded_string_rejection_moves_the_reason() {
 }
 
 #[test]
+fn observing_a_shared_rejection_copies_only_for_the_retained_reader() {
+    let (observed, status) = block_on_with_contexts(
+        async {
+            warm_owner().await;
+            let text = String::from("an owned reason");
+            let original = text.as_ptr();
+            let promise = JsPromise::<i32>::rejected(JsValue::String(text));
+            let retained = promise.clone();
+            let ((), observed) = measured(|| promise.observe_discarded());
+            let ((), repeated) = measured(|| retained.clone().observe_discarded());
+            assert_row(
+                "already reported shared rejection",
+                repeated,
+                counts(0, 0, 0, 0),
+            );
+            let mut result = pin!(retained.into_result());
+            match result
+                .as_mut()
+                .poll(&mut Context::from_waker(Waker::noop()))
+            {
+                Poll::Ready(Err(JsValue::String(text))) => {
+                    assert_eq!(text, "an owned reason");
+                    assert!(
+                        text.as_ptr() == original,
+                        "the retained reader owns the original reason"
+                    );
+                }
+                _ => panic!("the shared original rejection must remain immediately readable"),
+            }
+            observed
+        },
+        no_contexts(),
+    )
+    .unwrap();
+    assert!(status.exit_requested());
+    assert_row(
+        "observe_discarded, shared rejected (String reason, 15 bytes)",
+        observed.expect("the root returns before the report job"),
+        counts(2, 0, 0, 135),
+    );
+}
+
+#[test]
+fn settling_a_unique_observed_pending_rejection_moves_the_reason() {
+    let (observed, status) = block_on_with_contexts(
+        async {
+            warm_owner().await;
+            let reason = JsValue::String(String::from("an owned reason"));
+            let promise = JsPromise::<i32>::from_fallible_factory(|| async move {
+                yield_once().await;
+                Err(reason)
+            });
+            promise.observe_discarded();
+            let (worked, observed) = measured(|| {
+                tsonic_rust_js::event_loop::poll_phase_with_jobs(
+                    &no_contexts(),
+                    tsonic_rust_js::timers::PHASE,
+                )
+                .unwrap()
+            });
+            assert!(worked);
+            observed
+        },
+        no_contexts(),
+    )
+    .unwrap();
+    assert!(status.exit_requested());
+    assert_row(
+        "unique pending String rejection settlement and report",
+        observed.expect("the root returns its settlement measurement"),
+        counts(1, 4, 0, 120),
+    );
+}
+
+#[test]
 fn a_cold_owner_has_a_fixed_entry_cost() {
     let ((_, first), cold) = measured(|| run_entry_with_contexts(|| (), no_contexts()).unwrap());
     let ((_, second), repeated) =
