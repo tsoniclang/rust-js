@@ -1,6 +1,7 @@
 use std::cell::{Cell, RefCell};
 use std::future::{poll_fn, Future};
 use std::pin::pin;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::rc::Rc;
 use std::task::{Context, Poll, Waker};
 
@@ -96,18 +97,20 @@ fn a_settled_promise_continues_inline_on_its_first_poll() {
 }
 
 #[test]
-fn a_factory_without_an_owner_rejects_with_the_exact_message() {
+fn a_factory_without_an_owner_panics_before_create_with_the_exact_message() {
     let created = Rc::new(Cell::new(false));
     let observed = Rc::clone(&created);
-    let promise: JsPromise<i32> = JsPromise::from_infallible_factory(move || {
-        observed.set(true);
-        async { 7 }
-    });
-    let result = tsonic_rust_runtime::block_on(promise.into_result());
-    match result {
-        Ok(value) => panic!("a factory without an owner resolved {value}"),
-        Err(error) => assert!(error.to_string().contains(NO_LOOP), "{error}"),
-    }
+    let failure = catch_unwind(AssertUnwindSafe(|| {
+        JsPromise::from_infallible_factory(move || {
+            observed.set(true);
+            async { 7 }
+        })
+    }))
+    .err()
+    .expect("owned factory admission must panic synchronously");
+    let message = failure.downcast_ref::<String>().map(String::as_str)
+        .or_else(|| failure.downcast_ref::<&str>().copied());
+    assert_eq!(message, Some(NO_LOOP));
     assert!(!created.get(), "no Create body runs without an owner");
 }
 

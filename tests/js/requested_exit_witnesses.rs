@@ -235,7 +235,7 @@ fn a_rejection_discarded_without_an_owner_child() {
 }
 
 #[test]
-fn a_rejection_discarded_without_an_owner_reports_and_unwinds_without_exiting() {
+fn a_rejection_discarded_without_an_owner_rejects_observation_and_unwinds_without_exiting() {
     let output = Command::new(std::env::current_exe().expect("the test binary"))
         .args([
             "--exact",

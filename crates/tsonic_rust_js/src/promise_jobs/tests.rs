@@ -53,20 +53,24 @@ fn cold_queries_and_polling_do_not_initialize_jobs() {
 }
 
 #[test]
-fn no_loop_reaction_returns_the_exact_error_without_running_the_callback() {
+fn no_loop_reaction_panics_without_running_or_retaining_the_callback() {
     let calls = Rc::new(Cell::new(0));
     let captured = Rc::clone(&calls);
-    let pending = crate::promise::JsPromise::<i32>::resolved(1).then(
-        tsonic_rust_runtime::Callable::new(move |(value,)| {
-            captured.set(1);
-            Ok(value)
-        }),
-        None,
-    );
-    let failure = tsonic_rust_runtime::async_runtime::block_on(pending.into_result()).unwrap_err();
+    let failure = catch_unwind(AssertUnwindSafe(|| {
+        crate::promise::JsPromise::<i32>::resolved(1).then(
+            tsonic_rust_runtime::Callable::new(move |(value,)| {
+                captured.set(1);
+                Ok(value)
+            }),
+            None,
+        )
+    }))
+    .err()
+    .expect("public reaction admission must panic synchronously");
     assert_eq!(
-        tsonic_rust_runtime::ErrorObject::error_message(&failure.error_value()),
-        NO_LOOP
+        failure.downcast_ref::<String>().map(String::as_str)
+            .or_else(|| failure.downcast_ref::<&str>().copied()),
+        Some(NO_LOOP)
     );
     assert_eq!(calls.get(), 0);
     assert_eq!(Rc::strong_count(&calls), 1);
