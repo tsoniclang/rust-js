@@ -62,6 +62,34 @@ fn a_pending_job_is_not_a_resource_reference_and_releases_its_capture() {
 }
 
 #[test]
+fn retirement_drops_the_reaction_without_settling_its_source_or_derived_promise() {
+    let source = JsPromise::<i32>::pending();
+    let invoked = Rc::new(Cell::new(false));
+    let observed = Rc::clone(&invoked);
+    let reaction = block_on(async {
+        source.clone().then(
+            Callable::new(move |(value,)| {
+                observed.set(true);
+                Ok(value)
+            }),
+            None,
+        )
+    })
+    .unwrap();
+    let mut source_pending = std::pin::pin!(source.clone().into_result());
+    let mut reaction_pending = std::pin::pin!(reaction.into_result());
+    let mut context = Context::from_waker(Waker::noop());
+    assert!(source_pending.as_mut().poll(&mut context).is_pending());
+    assert!(reaction_pending.as_mut().poll(&mut context).is_pending());
+    assert_eq!(Rc::strong_count(&invoked), 1);
+    source.settle(Ok(7));
+    block_on(async {}).unwrap();
+    assert!(!invoked.get());
+    assert!(reaction_pending.as_mut().poll(&mut context).is_pending());
+    assert!(!crate::promise_jobs::active());
+}
+
+#[test]
 fn drain_crosses_the_finite_per_turn_frontier_without_repolling_a_ready_root() {
     let completed = Rc::new(Cell::new(0));
     let observed = Rc::clone(&completed);

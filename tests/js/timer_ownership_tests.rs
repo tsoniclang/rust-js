@@ -361,3 +361,40 @@ fn fallible_interval_retains_its_owner_until_cancelled() {
     assert_eq!(drops.get(), 1);
     assert!(!timers.has_pending_work());
 }
+
+#[test]
+fn failed_due_timer_closes_its_generation_without_replaying_other_due_work() {
+    let original = tsonic_rust_runtime::JsError::error("original due timer failure");
+    let expected = original.clone();
+    let completed = Rc::new(Cell::new(false));
+    let observed = Rc::clone(&completed);
+    let failure = tsonic_rust_js::event_loop::block_on(async move {
+        timers::with_default(|timers| {
+            timers::set_timeout_callable(
+                timers,
+                Callable::new(move |()| Err(TsonicError::from(expected.clone()))),
+                0.0,
+            )
+        })
+        .unwrap();
+        timers::with_default(|timers| {
+            timers::set_timeout_callable(
+                timers,
+                Callable::new(move |()| {
+                    observed.set(true);
+                    Ok(())
+                }),
+                0.0,
+            )
+        })
+        .unwrap();
+    })
+    .unwrap_err();
+    assert!(failure.source_error().has_same_identity(&original));
+    assert!(!completed.get());
+    assert_eq!(Rc::strong_count(&completed), 1);
+    assert!(!timers::has_timers());
+    timers::run_timers().unwrap();
+    assert!(!completed.get());
+    assert!(!timers::has_timers());
+}
