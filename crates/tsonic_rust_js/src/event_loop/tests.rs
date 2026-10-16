@@ -554,8 +554,69 @@ fn newly_admitted_native_work_gets_a_dispatch_turn_before_waiting() {
     assert_eq!(output, Some(7));
     assert!(!status.exit_requested());
     assert_eq!(dispatched.get(), 1);
-    assert_eq!(driver.polls, 2);
+    assert_eq!(driver.polls, 1);
     assert_eq!(driver.waits, 0);
+}
+
+struct RootPrefixDriver<'scope> {
+    subscribed: &'scope Cell<bool>,
+    delivered: &'scope Cell<bool>,
+    pending: bool,
+    polls: usize,
+}
+
+impl EventLoopDriver for RootPrefixDriver<'_> {
+    type Error = JsError;
+    fn admission_error(error: JsError) -> JsError {
+        error
+    }
+    fn lifecycle(&mut self, _transition: LoopLifecycle) -> Result<(), JsError> {
+        Ok(())
+    }
+    fn poll(&mut self) -> Result<bool, JsError> {
+        self.polls += 1;
+        let pending = std::mem::replace(&mut self.pending, false);
+        if pending {
+            self.delivered.set(self.subscribed.get());
+        }
+        Ok(pending)
+    }
+    fn has_work(&self) -> bool {
+        self.pending
+    }
+    fn wait(&mut self) -> Result<(), JsError> {
+        Err(JsError::error("the completed root must never wait"))
+    }
+    fn waker(&mut self) -> Result<Waker, JsError> {
+        Ok(Waker::noop().clone())
+    }
+}
+
+#[test]
+fn the_async_root_subscribes_before_retained_native_work_is_dispatched() {
+    let subscribed = Cell::new(false);
+    let delivered = Cell::new(false);
+    let root_polls = Cell::new(0);
+    let mut driver = RootPrefixDriver {
+        subscribed: &subscribed,
+        delivered: &delivered,
+        pending: true,
+        polls: 0,
+    };
+    let (output, status) = block_on_with_driver(
+        poll_fn(|_| {
+            root_polls.set(root_polls.get() + 1);
+            subscribed.set(true);
+            Poll::Ready(11)
+        }),
+        &mut driver,
+    )
+    .unwrap();
+    assert_eq!(output, Some(11));
+    assert!(!status.exit_requested());
+    assert!(delivered.get());
+    assert_eq!(root_polls.get(), 1);
+    assert_eq!(driver.polls, 1);
 }
 
 #[test]

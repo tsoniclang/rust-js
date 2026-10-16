@@ -313,10 +313,6 @@ fn run_turns<Root: Future, Driver: EventLoopDriver>(
         if crate::promise_jobs::exit_requested() {
             return Ok(output);
         }
-        let driver_work = driver.poll()?;
-        if crate::promise_jobs::exit_requested() {
-            return Ok(output);
-        }
         let root_polled = wake
             .as_ref()
             .is_some_and(|wake| wake.ready.swap(false, Ordering::AcqRel))
@@ -328,6 +324,13 @@ fn run_turns<Root: Future, Driver: EventLoopDriver>(
                     root = None;
                 }
             }
+        }
+        if crate::promise_jobs::exit_requested() {
+            return Ok(output);
+        }
+        let driver_work = driver.poll()?;
+        if crate::promise_jobs::exit_requested() {
+            return Ok(output);
         }
         let job_work = crate::promise_jobs::poll();
         if crate::promise_jobs::exit_requested() {
