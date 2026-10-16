@@ -1,7 +1,7 @@
 use std::cell::{Cell, RefCell};
 use std::future::{poll_fn, Future};
-use std::pin::pin;
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::pin::pin;
 use std::rc::Rc;
 use std::task::{Context, Poll, Waker};
 
@@ -108,7 +108,9 @@ fn a_factory_without_an_owner_panics_before_create_with_the_exact_message() {
     }))
     .err()
     .expect("owned factory admission must panic synchronously");
-    let message = failure.downcast_ref::<String>().map(String::as_str)
+    let message = failure
+        .downcast_ref::<String>()
+        .map(String::as_str)
         .or_else(|| failure.downcast_ref::<&str>().copied());
     assert_eq!(message, Some(NO_LOOP));
     assert!(!created.get(), "no Create body runs without an owner");

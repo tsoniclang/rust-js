@@ -68,7 +68,9 @@ fn no_loop_reaction_panics_without_running_or_retaining_the_callback() {
     .err()
     .expect("public reaction admission must panic synchronously");
     assert_eq!(
-        failure.downcast_ref::<String>().map(String::as_str)
+        failure
+            .downcast_ref::<String>()
+            .map(String::as_str)
             .or_else(|| failure.downcast_ref::<&str>().copied()),
         Some(NO_LOOP)
     );

@@ -59,7 +59,9 @@ impl<T> PromiseState<T> {
                 *reported = true;
                 true
             }
-            Self::Pending { observation_owner, .. } => {
+            Self::Pending {
+                observation_owner, ..
+            } => {
                 *observation_owner = Some(owner);
                 false
             }

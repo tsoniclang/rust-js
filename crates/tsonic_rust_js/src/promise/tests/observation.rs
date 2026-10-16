@@ -215,7 +215,10 @@ fn a_closed_owner_observation_does_not_restrict_later_external_fulfillment() {
         run_entry_with_contexts(|| promise.observe_discarded(), no_contexts()).unwrap();
     assert!(!status.exit_requested());
     resolve.call((PromiseResolution::Value(31),)).unwrap();
-    assert_eq!(tsonic_rust_runtime::block_on(retained.into_result()).unwrap(), 31);
+    assert_eq!(
+        tsonic_rust_runtime::block_on(retained.into_result()).unwrap(),
+        31
+    );
     assert!(!crate::promise_jobs::active());
     assert!(take_reports().is_empty());
 }
