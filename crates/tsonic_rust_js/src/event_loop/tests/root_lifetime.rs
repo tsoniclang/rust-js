@@ -70,17 +70,29 @@ fn assert_root_lifetime(case: ExitCase) {
         ExitCase::Requested => {
             let (output, status) = result.unwrap().unwrap();
             assert!(output.is_none());
-            assert_eq!(std::process::ExitCode::from(status), std::process::ExitCode::from(7));
+            assert_eq!(
+                std::process::ExitCode::from(status),
+                std::process::ExitCode::from(7)
+            );
         }
         ExitCase::WaitError => {
-            assert_eq!(result.unwrap().unwrap_err().message(), "original wait error");
+            assert_eq!(
+                result.unwrap().unwrap_err().message(),
+                "original wait error"
+            );
         }
         ExitCase::EnterError => {
-            assert_eq!(result.unwrap().unwrap_err().message(), "original entry error");
+            assert_eq!(
+                result.unwrap().unwrap_err().message(),
+                "original entry error"
+            );
         }
         ExitCase::Unwind => {
             let error = result.unwrap_err();
-            assert_eq!(error.downcast_ref::<&str>().copied(), Some("original root failure"));
+            assert_eq!(
+                error.downcast_ref::<&str>().copied(),
+                Some("original root failure")
+            );
         }
     }
     assert_lifecycle(&transitions);

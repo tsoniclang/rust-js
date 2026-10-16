@@ -1,7 +1,7 @@
 use std::cell::Cell;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::process::Command;
 use std::rc::Rc;
-use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use tsonic_rust_js::event_loop::{block_on, run_entry_with_contexts};
 use tsonic_rust_js::promise::JsPromise;
@@ -181,8 +181,7 @@ fn a_rejection_discarded_without_an_owner_child() {
     let observed = Rc::clone(&unwound);
     let failure = catch_unwind(AssertUnwindSafe(|| {
         let _guard = UnwindWitness(observed);
-        JsPromise::<i32>::rejected(JsValue::String(String::from("no owner")))
-            .observe_discarded();
+        JsPromise::<i32>::rejected(JsValue::String(String::from("no owner"))).observe_discarded();
         panic!("the discarded rejection returned instead of panicking");
     }))
     .expect_err("missing loop ownership must panic");
@@ -190,8 +189,14 @@ fn a_rejection_discarded_without_an_owner_child() {
         .downcast_ref::<String>()
         .map(String::as_str)
         .or_else(|| failure.downcast_ref::<&str>().copied());
-    assert_eq!(message, Some("No JavaScript event loop is running on this thread."));
-    assert!(unwound.get(), "native destructors run during the ownership panic");
+    assert_eq!(
+        message,
+        Some("No JavaScript event loop is running on this thread.")
+    );
+    assert!(
+        unwound.get(),
+        "native destructors run during the ownership panic"
+    );
     assert!(tsonic_rust_js::event_loop::ensure_running().is_err());
     println!("the native caller caught the ownership panic and its destructor ran");
 }

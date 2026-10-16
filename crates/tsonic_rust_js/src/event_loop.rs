@@ -221,8 +221,7 @@ pub fn block_on_with_driver<Output, Driver: EventLoopDriver>(
     future: impl Future<Output = Output>,
     driver: &mut Driver,
 ) -> Result<(Option<Output>, LoopExitStatus), Driver::Error> {
-    let mut future = pin!(future);
-    drive(Some(future.as_mut()), None, driver)
+    drive(Some(future), None, driver)
 }
 
 pub fn run_with_driver<Driver: EventLoopDriver>(
@@ -246,7 +245,7 @@ pub fn run_entry_with_driver<TOutput, Driver: EventLoopDriver>(
 }
 
 fn drive<Root: Future, Driver: EventLoopDriver>(
-    root: Option<Pin<&mut Root>>,
+    root: Option<Root>,
     entry: Option<&mut dyn FnMut()>,
     driver: &mut Driver,
 ) -> Result<(Option<Root::Output>, LoopExitStatus), Driver::Error> {
@@ -269,7 +268,15 @@ fn drive<Root: Future, Driver: EventLoopDriver>(
         identity,
         closed: false,
     };
-    let output = run_turns(&mut scope, root, entry);
+    let output = {
+        let mut root = pin!(root);
+        let _admission = CloseRootAdmission(&scope.owner);
+        run_turns(scope.driver, identity, root.as_mut().as_pin_mut(), entry)
+    };
+    let output = match output {
+        Ok(output) => scope.close().map(|()| output),
+        Err(error) => Err(error),
+    };
     drop(scope);
     let status = LoopExitStatus {
         requested: crate::promise_jobs::take_exit(),
@@ -278,13 +285,12 @@ fn drive<Root: Future, Driver: EventLoopDriver>(
 }
 
 fn run_turns<Root: Future, Driver: EventLoopDriver>(
-    scope: &mut LoopScope<'_, Driver>,
+    driver: &mut Driver,
+    identity: DispatchOwner,
     mut root: Option<Pin<&mut Root>>,
     entry: Option<&mut dyn FnMut()>,
 ) -> Result<Option<Root::Output>, Driver::Error> {
-    scope
-        .driver
-        .lifecycle(LoopLifecycle::Enter(scope.identity))?;
+    driver.lifecycle(LoopLifecycle::Enter(identity))?;
     if let Some(entry) = entry {
         entry();
         crate::promise_jobs::checkpoint();
@@ -303,12 +309,10 @@ fn run_turns<Root: Future, Driver: EventLoopDriver>(
     let mut output = None;
     loop {
         if crate::promise_jobs::exit_requested() {
-            scope.close()?;
             return Ok(output);
         }
-        let driver_work = scope.driver.poll()?;
+        let driver_work = driver.poll()?;
         if crate::promise_jobs::exit_requested() {
-            scope.close()?;
             return Ok(output);
         }
         let root_polled = wake
@@ -325,12 +329,10 @@ fn run_turns<Root: Future, Driver: EventLoopDriver>(
         }
         let job_work = crate::promise_jobs::poll();
         if crate::promise_jobs::exit_requested() {
-            scope.close()?;
             return Ok(output);
         }
         let ready = crate::promise_jobs::has_ready();
-        if root.is_none() && !scope.driver.has_work() && !ready {
-            scope.close()?;
+        if root.is_none() && !driver.has_work() && !ready {
             return Ok(output);
         }
         if !driver_work
@@ -341,8 +343,16 @@ fn run_turns<Root: Future, Driver: EventLoopDriver>(
                 .as_ref()
                 .is_some_and(|wake| wake.ready.load(Ordering::Acquire))
         {
-            scope.driver.wait()?;
+            driver.wait()?;
         }
+    }
+}
+
+struct CloseRootAdmission<'owner>(&'owner crate::promise_jobs::Owner);
+
+impl Drop for CloseRootAdmission<'_> {
+    fn drop(&mut self) {
+        self.0.stop_admission();
     }
 }
 
@@ -359,7 +369,6 @@ impl<Driver: EventLoopDriver> LoopScope<'_, Driver> {
             return Ok(());
         }
         self.closed = true;
-        self.owner.stop_admission();
         self.driver
             .lifecycle(LoopLifecycle::Shutdown(self.identity))
     }

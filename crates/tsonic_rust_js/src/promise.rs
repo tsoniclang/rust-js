@@ -47,6 +47,43 @@ impl<T> PromiseState<T> {
             Self::Pending { .. } => unreachable!("a settled Promise is read only after settlement"),
         }
     }
+
+    fn observe_discarded(&mut self) -> bool {
+        match self {
+            Self::Rejected { reported, .. } if !*reported => {
+                *reported = true;
+                true
+            }
+            Self::Pending { observed, .. } => {
+                *observed = true;
+                false
+            }
+            _ => false,
+        }
+    }
+
+    fn complete(&mut self, result: Result<T, JsValue>, adoption: bool) -> Option<Waiters> {
+        let Self::Pending {
+            waiters,
+            adopted,
+            observed,
+        } = self
+        else {
+            return None;
+        };
+        if *adopted && !adoption {
+            return None;
+        }
+        let waiters = std::mem::take(waiters);
+        *self = match result {
+            Ok(value) => Self::Fulfilled(value),
+            Err(reason) => Self::Rejected {
+                reason,
+                reported: *observed,
+            },
+        };
+        Some(waiters)
+    }
 }
 
 impl<T: Clone> PromiseState<T> {
@@ -91,16 +128,26 @@ impl<T> JsPromise<T> {
     }
 
     pub fn observe_discarded(self) {
-        let report = {
-            let mut state = self.state.borrow_mut();
-            match &mut *state {
-                PromiseState::Fulfilled(_) | PromiseState::Rejected { reported: true, .. } => None,
-                PromiseState::Rejected { reason, reported } => {
-                    *reported = true;
-                    Some(reason.clone())
+        let report = match Rc::try_unwrap(self.state) {
+            Ok(state) => {
+                let mut state = state.into_inner();
+                if state.observe_discarded() {
+                    let PromiseState::Rejected { reason, .. } = state else {
+                        unreachable!("only a new discarded rejection reports")
+                    };
+                    Some(reason)
+                } else {
+                    None
                 }
-                PromiseState::Pending { observed, .. } => {
-                    *observed = true;
+            }
+            Err(state) => {
+                let mut state = state.borrow_mut();
+                if state.observe_discarded() {
+                    let PromiseState::Rejected { reason, .. } = &*state else {
+                        unreachable!("only a new discarded rejection reports")
+                    };
+                    Some(reason.clone())
+                } else {
                     None
                 }
             }
@@ -127,36 +174,46 @@ impl<T> JsPromise<T> {
     fn complete(&self, result: Result<T, JsValue>, adoption: bool) {
         let (waiters, report) = {
             let mut state = self.state.borrow_mut();
-            let PromiseState::Pending {
-                waiters,
-                adopted,
-                observed,
-            } = &mut *state
-            else {
+            let Some(waiters) = state.complete(result, adoption) else {
                 return;
             };
-            if *adopted && !adoption {
-                return;
-            }
-            let waiters = std::mem::take(waiters);
-            let observed = *observed;
-            let report = match &result {
-                Err(reason) if observed => Some(reason.clone()),
-                _ => None,
-            };
-            *state = match result {
-                Ok(value) => PromiseState::Fulfilled(value),
-                Err(reason) => PromiseState::Rejected {
+            let report = match &*state {
+                PromiseState::Rejected {
                     reason,
-                    reported: observed,
-                },
+                    reported: true,
+                } => Some(reason.clone()),
+                _ => None,
             };
             (waiters, report)
         };
-        waiters.wake_all();
-        if let Some(reason) = report {
-            report_discarded_rejection(reason);
+        finish_completion(waiters, report);
+    }
+
+    fn complete_owned(self, result: Result<T, JsValue>, adoption: bool) {
+        match Rc::try_unwrap(self.state) {
+            Ok(state) => {
+                let mut state = state.into_inner();
+                let Some(waiters) = state.complete(result, adoption) else {
+                    return;
+                };
+                let report = match state {
+                    PromiseState::Rejected {
+                        reason,
+                        reported: true,
+                    } => Some(reason),
+                    _ => None,
+                };
+                finish_completion(waiters, report);
+            }
+            Err(state) => Self { state }.complete(result, adoption),
         }
+    }
+}
+
+fn finish_completion(waiters: Waiters, report: Option<JsValue>) {
+    waiters.wake_all();
+    if let Some(reason) = report {
+        report_discarded_rejection(reason);
     }
 }
 
@@ -187,9 +244,9 @@ impl<T: 'static> JsPromise<T> {
         let body = create();
         let promise = Self::pending();
         let completion = promise.clone();
-        if let Err(error) =
-            crate::promise_jobs::start(body.map(move |result| completion.settle(result)))
-        {
+        if let Err(error) = crate::promise_jobs::start(
+            body.map(move |result| completion.complete_owned(result, false)),
+        ) {
             promise.settle(Err(JsValue::from_error(error)));
         }
         promise
@@ -236,7 +293,7 @@ fn report_discarded_rejection(reason: JsValue) {
     }
     write_discarded_rejection(&reason);
     if !crate::promise_jobs::request_exit(1) {
-        std::process::exit(1);
+        panic!("{}", crate::promise_jobs::NO_LOOP);
     }
 }
 
