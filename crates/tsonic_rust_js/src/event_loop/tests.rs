@@ -554,8 +554,191 @@ fn newly_admitted_native_work_gets_a_dispatch_turn_before_waiting() {
     assert_eq!(output, Some(7));
     assert!(!status.exit_requested());
     assert_eq!(dispatched.get(), 1);
-    assert_eq!(driver.polls, 2);
+    assert_eq!(driver.polls, 1);
     assert_eq!(driver.waits, 0);
+}
+
+struct RootPrefixDriver<'scope> {
+    subscribed: &'scope Cell<bool>,
+    delivered: &'scope Cell<bool>,
+    pending: bool,
+    referenced: bool,
+    polls: usize,
+}
+
+impl EventLoopDriver for RootPrefixDriver<'_> {
+    type Error = JsError;
+    fn admission_error(error: JsError) -> JsError {
+        error
+    }
+    fn lifecycle(&mut self, _transition: LoopLifecycle) -> Result<(), JsError> {
+        Ok(())
+    }
+    fn poll(&mut self) -> Result<bool, JsError> {
+        self.polls += 1;
+        let pending = std::mem::replace(&mut self.pending, false);
+        if pending {
+            self.delivered.set(self.subscribed.get());
+        }
+        Ok(pending)
+    }
+    fn has_work(&self) -> bool {
+        self.referenced && self.pending
+    }
+    fn wait(&mut self) -> Result<(), JsError> {
+        Err(JsError::error("the completed root must never wait"))
+    }
+    fn waker(&mut self) -> Result<Waker, JsError> {
+        Ok(Waker::noop().clone())
+    }
+}
+
+#[test]
+fn the_async_root_subscribes_before_retained_native_work_is_dispatched() {
+    let subscribed = Cell::new(false);
+    let delivered = Cell::new(false);
+    let root_polls = Cell::new(0);
+    let mut driver = RootPrefixDriver {
+        subscribed: &subscribed,
+        delivered: &delivered,
+        pending: true,
+        referenced: true,
+        polls: 0,
+    };
+    let (output, status) = block_on_with_driver(
+        poll_fn(|_| {
+            root_polls.set(root_polls.get() + 1);
+            subscribed.set(true);
+            Poll::Ready(11)
+        }),
+        &mut driver,
+    )
+    .unwrap();
+    assert_eq!(output, Some(11));
+    assert!(!status.exit_requested());
+    assert!(delivered.get());
+    assert_eq!(root_polls.get(), 1);
+    assert_eq!(driver.polls, 1);
+}
+
+#[test]
+fn a_ready_root_retires_without_dispatching_unreferenced_native_work() {
+    let subscribed = Cell::new(false);
+    let delivered = Cell::new(false);
+    let root_polls = Cell::new(0);
+    let mut driver = RootPrefixDriver {
+        subscribed: &subscribed,
+        delivered: &delivered,
+        pending: true,
+        referenced: false,
+        polls: 0,
+    };
+    let (output, status) = block_on_with_driver(
+        poll_fn(|_| {
+            root_polls.set(root_polls.get() + 1);
+            subscribed.set(true);
+            Poll::Ready(17)
+        }),
+        &mut driver,
+    )
+    .unwrap();
+    assert_eq!(output, Some(17));
+    assert!(!status.exit_requested());
+    assert!(!delivered.get());
+    assert!(driver.pending);
+    assert_eq!(root_polls.get(), 1);
+    assert_eq!(driver.polls, 0);
+}
+
+#[test]
+fn ready_jobs_do_not_reference_otherwise_unreferenced_native_work() {
+    let subscribed = Cell::new(false);
+    let delivered = Cell::new(false);
+    let reacted = Rc::new(Cell::new(false));
+    let observed = Rc::clone(&reacted);
+    let mut driver = RootPrefixDriver {
+        subscribed: &subscribed,
+        delivered: &delivered,
+        pending: true,
+        referenced: false,
+        polls: 0,
+    };
+    let (output, status) = block_on_with_driver(
+        async {
+            subscribed.set(true);
+            crate::promise_jobs::enqueue(async move { observed.set(true) }).unwrap();
+            19
+        },
+        &mut driver,
+    )
+    .unwrap();
+    assert_eq!(output, Some(19));
+    assert!(!status.exit_requested());
+    assert!(reacted.get());
+    assert_eq!(Rc::strong_count(&reacted), 1);
+    assert!(!delivered.get());
+    assert!(driver.pending);
+    assert_eq!(driver.polls, 0);
+}
+
+#[test]
+fn a_synchronous_entry_retires_without_dispatching_unreferenced_native_work() {
+    let subscribed = Cell::new(false);
+    let delivered = Cell::new(false);
+    let entries = Cell::new(0);
+    let mut driver = RootPrefixDriver {
+        subscribed: &subscribed,
+        delivered: &delivered,
+        pending: true,
+        referenced: false,
+        polls: 0,
+    };
+    let (output, status) = run_entry_with_driver(
+        || {
+            entries.set(entries.get() + 1);
+            subscribed.set(true);
+            23
+        },
+        &mut driver,
+    )
+    .unwrap();
+    assert_eq!(output, 23);
+    assert!(!status.exit_requested());
+    assert_eq!(entries.get(), 1);
+    assert!(!delivered.get());
+    assert!(driver.pending);
+    assert_eq!(driver.polls, 0);
+}
+
+#[test]
+fn synchronous_entry_ready_jobs_do_not_reference_unreferenced_native_work() {
+    let subscribed = Cell::new(false);
+    let delivered = Cell::new(false);
+    let reacted = Rc::new(Cell::new(false));
+    let observed = Rc::clone(&reacted);
+    let mut driver = RootPrefixDriver {
+        subscribed: &subscribed,
+        delivered: &delivered,
+        pending: true,
+        referenced: false,
+        polls: 0,
+    };
+    let (output, status) = run_entry_with_driver(
+        || {
+            subscribed.set(true);
+            crate::promise_jobs::enqueue(async move { observed.set(true) }).unwrap();
+            29
+        },
+        &mut driver,
+    )
+    .unwrap();
+    assert_eq!(output, 29);
+    assert!(!status.exit_requested());
+    assert!(reacted.get());
+    assert_eq!(Rc::strong_count(&reacted), 1);
+    assert!(!delivered.get());
+    assert!(driver.pending);
+    assert_eq!(driver.polls, 0);
 }
 
 #[test]

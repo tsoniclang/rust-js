@@ -313,10 +313,6 @@ fn run_turns<Root: Future, Driver: EventLoopDriver>(
         if crate::promise_jobs::exit_requested() {
             return Ok(output);
         }
-        let driver_work = driver.poll()?;
-        if crate::promise_jobs::exit_requested() {
-            return Ok(output);
-        }
         let root_polled = wake
             .as_ref()
             .is_some_and(|wake| wake.ready.swap(false, Ordering::AcqRel))
@@ -329,14 +325,22 @@ fn run_turns<Root: Future, Driver: EventLoopDriver>(
                 }
             }
         }
+        if crate::promise_jobs::exit_requested() {
+            return Ok(output);
+        }
+        let native_work = root.is_some() || driver.has_work();
+        if !native_work && !crate::promise_jobs::has_ready() {
+            return Ok(output);
+        }
+        let driver_work = native_work && driver.poll()?;
+        if crate::promise_jobs::exit_requested() {
+            return Ok(output);
+        }
         let job_work = crate::promise_jobs::poll();
         if crate::promise_jobs::exit_requested() {
             return Ok(output);
         }
         let ready = crate::promise_jobs::has_ready();
-        if root.is_none() && !driver.has_work() && !ready {
-            return Ok(output);
-        }
         if !driver_work
             && !root_polled
             && !job_work
@@ -344,6 +348,7 @@ fn run_turns<Root: Future, Driver: EventLoopDriver>(
             && !wake
                 .as_ref()
                 .is_some_and(|wake| wake.ready.load(Ordering::Acquire))
+            && (root.is_some() || driver.has_work())
         {
             driver.wait()?;
         }
