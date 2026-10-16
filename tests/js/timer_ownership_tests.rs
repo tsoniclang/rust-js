@@ -59,6 +59,7 @@ impl Drop for DropProbe {
 }
 
 use tsonic_rust_js::timers;
+use tsonic_rust_runtime::dispatch::DispatchContexts;
 use tsonic_rust_runtime::dispatch_queue::{TaskBudget, TaskReservation};
 use tsonic_rust_runtime::{Callable, TsonicError, TsonicResult};
 
@@ -90,74 +91,77 @@ fn callbacks(count: usize) -> Vec<Callable<'static, (), TsonicResult<()>>> {
 
 #[test]
 fn retained_timer_allocations_match_one_native_callback_owner() {
-    let native = OnceCell::new();
-    let budget = OnceCell::new();
-    for count in [0, 1, 64, 1024] {
-        assert!(!timers::has_timers());
-        let actual_callbacks = callbacks(count);
-        let expected_callbacks = callbacks(count);
-        let mut handles = Vec::with_capacity(count);
-        let delay = Duration::from_secs(60);
-        let actual = measure(|| {
-            for callback in actual_callbacks {
-                handles.push(
-                    timers::with_default(|timers| {
-                        timers::set_timeout_callable(timers, callback, 60_000.0)
-                    })
-                    .unwrap(),
-                );
+    tsonic_rust_js::event_loop::block_on(async {
+        let native = OnceCell::new();
+        let budget = OnceCell::new();
+        for count in [0, 1, 64, 1024] {
+            assert!(!timers::has_timers());
+            let actual_callbacks = callbacks(count);
+            let expected_callbacks = callbacks(count);
+            let mut handles = Vec::with_capacity(count);
+            let delay = Duration::from_secs(60);
+            let actual = measure(|| {
+                for callback in actual_callbacks {
+                    handles.push(
+                        timers::with_default(|timers| {
+                            timers::set_timeout_callable(timers, callback, 60_000.0)
+                        })
+                        .unwrap(),
+                    );
+                }
+            });
+            let expected = measure(|| {
+                for (index, callback) in expected_callbacks.into_iter().enumerate() {
+                    let reservation = budget
+                        .get_or_init(|| TaskBudget::new(NonZeroUsize::new(1 << 20).unwrap()))
+                        .reserve()
+                        .unwrap();
+                    let due = Instant::now() + delay;
+                    let mut state = native
+                        .get_or_init(|| {
+                            Rc::new(RefCell::new(NativeTimers {
+                                entries: BTreeMap::new(),
+                                deadlines: BTreeSet::new(),
+                                referenced: 0,
+                            }))
+                        })
+                        .borrow_mut();
+                    state.deadlines.insert((due, index as u64));
+                    state.referenced += 1;
+                    state.entries.insert(
+                        index as u64,
+                        NativeTimer {
+                            _callback: callback,
+                            _delay: delay,
+                            _due: due,
+                            _interval: false,
+                            _refed: true,
+                            _reservation: reservation,
+                        },
+                    );
+                }
+            });
+            black_box(&native);
+            for handle in handles {
+                timers::with_default(|timers| timers::clear_timeout(timers, handle));
             }
-        });
-        let expected = measure(|| {
-            for (index, callback) in expected_callbacks.into_iter().enumerate() {
-                let reservation = budget
-                    .get_or_init(|| TaskBudget::new(NonZeroUsize::new(1 << 20).unwrap()))
-                    .reserve()
-                    .unwrap();
-                let due = Instant::now() + delay;
-                let mut state = native
-                    .get_or_init(|| {
-                        Rc::new(RefCell::new(NativeTimers {
-                            entries: BTreeMap::new(),
-                            deadlines: BTreeSet::new(),
-                            referenced: 0,
-                        }))
-                    })
-                    .borrow_mut();
-                state.deadlines.insert((due, index as u64));
-                state.referenced += 1;
-                state.entries.insert(
-                    index as u64,
-                    NativeTimer {
-                        _callback: callback,
-                        _delay: delay,
-                        _due: due,
-                        _interval: false,
-                        _refed: true,
-                        _reservation: reservation,
-                    },
-                );
+            for index in 0..count {
+                let mut state = native.get().unwrap().borrow_mut();
+                let entry = state.entries.remove(&(index as u64)).unwrap();
+                assert!(state.deadlines.remove(&(entry._due, index as u64)));
+                state.referenced -= 1;
             }
-        });
-        black_box(&native);
-        for handle in handles {
-            timers::with_default(|timers| timers::clear_timeout(timers, handle));
+            if let Some(state) = native.get() {
+                let state = state.borrow();
+                assert!(state.entries.is_empty());
+                assert!(state.deadlines.is_empty());
+                assert_eq!(state.referenced, 0);
+            }
+            assert!(!timers::has_timers());
+            assert_eq!(actual, expected, "registrations={count}");
         }
-        for index in 0..count {
-            let mut state = native.get().unwrap().borrow_mut();
-            let entry = state.entries.remove(&(index as u64)).unwrap();
-            assert!(state.deadlines.remove(&(entry._due, index as u64)));
-            state.referenced -= 1;
-        }
-        if let Some(state) = native.get() {
-            let state = state.borrow();
-            assert!(state.entries.is_empty());
-            assert!(state.deadlines.is_empty());
-            assert_eq!(state.referenced, 0);
-        }
-        assert!(!timers::has_timers());
-        assert_eq!(actual, expected, "registrations={count}");
-    }
+    })
+    .unwrap();
 }
 
 #[test]
@@ -173,97 +177,106 @@ fn cold_timer_queries_and_empty_dispatch_allocate_nothing() {
 
 #[test]
 fn ready_timer_dispatch_allocates_no_callback_snapshots() {
-    assert!(!timers::has_timers());
-    let observed = Rc::new(Cell::new(0));
-    for _ in 0..2 {
+    tsonic_rust_js::event_loop::block_on(async {
+        assert!(!timers::has_timers());
+        let observed = Rc::new(Cell::new(0));
+        for _ in 0..2 {
+            let recorded = observed.clone();
+            timers::with_default(|timers| {
+                timers::set_timeout_callable(
+                    timers,
+                    Callable::new(move |()| {
+                        recorded.set(recorded.get() + 1);
+                        Ok::<(), TsonicError>(())
+                    }),
+                    0.0,
+                )
+            })
+            .unwrap();
+        }
+        let allocations = measure(|| assert!(timers::poll_timers().unwrap()));
+        assert_eq!(allocations, (0, 0));
+        assert_eq!(observed.get(), 2);
+        assert!(!timers::has_timers());
+    })
+    .unwrap();
+}
+
+#[test]
+fn ready_timer_cancellation_and_reentrant_admission_follow_the_live_store() {
+    tsonic_rust_js::event_loop::block_on(async {
+        assert!(!timers::has_timers());
+        let observed = Rc::new(Cell::new(0));
+        let cancelled = Rc::new(Cell::new(0_u64));
+        let handle = cancelled.clone();
         let recorded = observed.clone();
         timers::with_default(|timers| {
             timers::set_timeout_callable(
                 timers,
                 Callable::new(move |()| {
-                    recorded.set(recorded.get() + 1);
+                    timers::with_default(|timers| timers::clear_timeout(timers, handle.get()));
+                    let later = recorded.clone();
+                    timers::with_default(|timers| {
+                        timers::set_timeout_callable(
+                            timers,
+                            Callable::new(move |()| {
+                                later.set(7);
+                                Ok::<(), TsonicError>(())
+                            }),
+                            0.0,
+                        )
+                    })
+                    .unwrap();
                     Ok::<(), TsonicError>(())
                 }),
                 0.0,
             )
         })
         .unwrap();
-    }
-    let allocations = measure(|| assert!(timers::poll_timers().unwrap()));
-    assert_eq!(allocations, (0, 0));
-    assert_eq!(observed.get(), 2);
-    assert!(!timers::has_timers());
-}
-
-#[test]
-fn ready_timer_cancellation_and_reentrant_admission_follow_the_live_store() {
-    assert!(!timers::has_timers());
-    let observed = Rc::new(Cell::new(0));
-    let cancelled = Rc::new(Cell::new(0_u64));
-    let handle = cancelled.clone();
-    let recorded = observed.clone();
-    timers::with_default(|timers| {
-        timers::set_timeout_callable(
-            timers,
-            Callable::new(move |()| {
-                timers::with_default(|timers| timers::clear_timeout(timers, handle.get()));
-                let later = recorded.clone();
-                timers::with_default(|timers| {
-                    timers::set_timeout_callable(
-                        timers,
-                        Callable::new(move |()| {
-                            later.set(7);
-                            Ok::<(), TsonicError>(())
-                        }),
-                        0.0,
-                    )
-                })
-                .unwrap();
-                Ok::<(), TsonicError>(())
-            }),
-            0.0,
-        )
+        cancelled.set(
+            timers::with_default(|timers| {
+                timers::set_timeout_callable(
+                    timers,
+                    Callable::new(|()| -> TsonicResult<()> {
+                        panic!("a cancelled ready timer must not execute")
+                    }),
+                    0.0,
+                )
+            })
+            .unwrap(),
+        );
+        assert!(timers::poll_timers().unwrap());
+        assert_eq!(observed.get(), 0);
+        assert!(timers::has_timers());
+        assert!(timers::poll_timers().unwrap());
+        assert_eq!(observed.get(), 7);
+        assert!(!timers::has_timers());
     })
     .unwrap();
-    cancelled.set(
-        timers::with_default(|timers| {
-            timers::set_timeout_callable(
-                timers,
-                Callable::new(|()| -> TsonicResult<()> {
-                    panic!("a cancelled ready timer must not execute")
-                }),
-                0.0,
-            )
-        })
-        .unwrap(),
-    );
-    assert!(timers::poll_timers().unwrap());
-    assert_eq!(observed.get(), 0);
-    assert!(timers::has_timers());
-    assert!(timers::poll_timers().unwrap());
-    assert_eq!(observed.get(), 7);
-    assert!(!timers::has_timers());
 }
 
 #[test]
 fn cancellation_releases_the_callback_without_invoking_it() {
-    let drops = Rc::new(Cell::new(0));
-    let probe = DropProbe(Rc::clone(&drops));
-    let timer = timers::with_default(|timers| {
-        timers::set_timeout_callable(
-            timers,
-            Callable::new(move |()| -> TsonicResult<()> {
-                black_box(&probe);
-                panic!("cancelled timer executed");
-            }),
-            0.0,
-        )
+    tsonic_rust_js::event_loop::block_on(async {
+        let drops = Rc::new(Cell::new(0));
+        let probe = DropProbe(Rc::clone(&drops));
+        let timer = timers::with_default(|timers| {
+            timers::set_timeout_callable(
+                timers,
+                Callable::new(move |()| -> TsonicResult<()> {
+                    black_box(&probe);
+                    panic!("cancelled timer executed");
+                }),
+                0.0,
+            )
+        })
+        .unwrap();
+        assert_eq!(drops.get(), 0);
+        timers::with_default(|timers| timers::clear_timeout(timers, timer));
+        assert_eq!(drops.get(), 1);
+        assert!(!timers::poll_timers().unwrap());
     })
     .unwrap();
-    assert_eq!(drops.get(), 0);
-    timers::with_default(|timers| timers::clear_timeout(timers, timer));
-    assert_eq!(drops.get(), 1);
-    assert!(!timers::poll_timers().unwrap());
 }
 
 #[test]
@@ -272,32 +285,34 @@ fn shared_callbacks_can_schedule_and_poll_without_a_borrowed_registry() {
     let drops = Rc::new(Cell::new(0));
     let probe = DropProbe(Rc::clone(&drops));
     let callback_calls = Rc::clone(&calls);
-    timers::with_default(|timers| {
-        timers::set_timeout_callable(
-            timers,
-            Callable::new(move |()| {
-                black_box(&probe);
-                callback_calls.set(callback_calls.get() + 1);
-                let nested_calls = Rc::clone(&callback_calls);
-                timers::with_default(|timers| {
-                    timers::set_timeout_callable(
-                        timers,
-                        Callable::new(move |()| {
-                            nested_calls.set(nested_calls.get() + 1);
-                            Ok::<(), TsonicError>(())
-                        }),
-                        0.0,
-                    )
-                })
-                .unwrap();
-                assert!(timers::poll_timers()?);
-                Ok::<(), TsonicError>(())
-            }),
-            0.0,
-        )
+    tsonic_rust_js::event_loop::block_on(async {
+        timers::with_default(|timers| {
+            timers::set_timeout_callable(
+                timers,
+                Callable::new(move |()| {
+                    black_box(&probe);
+                    callback_calls.set(callback_calls.get() + 1);
+                    let nested_calls = Rc::clone(&callback_calls);
+                    timers::with_default(|timers| {
+                        timers::set_timeout_callable(
+                            timers,
+                            Callable::new(move |()| {
+                                nested_calls.set(nested_calls.get() + 1);
+                                Ok::<(), TsonicError>(())
+                            }),
+                            0.0,
+                        )
+                    })
+                    .unwrap();
+                    assert!(timers::poll_timers()?);
+                    Ok::<(), TsonicError>(())
+                }),
+                0.0,
+            )
+        })
+        .unwrap();
     })
     .unwrap();
-    timers::run_timers().unwrap();
     assert_eq!(calls.get(), 2);
     assert_eq!(drops.get(), 1);
     assert!(!timers::has_timers());
@@ -311,26 +326,28 @@ fn intervals_retain_state_until_self_cancellation_and_release_after_dispatch() {
     let probe = DropProbe(Rc::clone(&drops));
     let callback_calls = Rc::clone(&calls);
     let callback_handle = Rc::clone(&handle);
-    handle.set(
-        timers::with_default(|timers| {
-            timers::set_interval_callable(
-                timers,
-                Callable::new(move |()| {
-                    black_box(&probe);
-                    callback_calls.set(callback_calls.get() + 1);
-                    if callback_calls.get() == 2 {
-                        timers::with_default(|timers| {
-                            timers::clear_interval(timers, callback_handle.get())
-                        });
-                    }
-                    Ok::<(), TsonicError>(())
-                }),
-                1.0,
-            )
-        })
-        .unwrap(),
-    );
-    timers::run_timers().unwrap();
+    tsonic_rust_js::event_loop::block_on(async {
+        handle.set(
+            timers::with_default(|timers| {
+                timers::set_interval_callable(
+                    timers,
+                    Callable::new(move |()| {
+                        black_box(&probe);
+                        callback_calls.set(callback_calls.get() + 1);
+                        if callback_calls.get() == 2 {
+                            timers::with_default(|timers| {
+                                timers::clear_interval(timers, callback_handle.get())
+                            });
+                        }
+                        Ok::<(), TsonicError>(())
+                    }),
+                    1.0,
+                )
+            })
+            .unwrap(),
+        );
+    })
+    .unwrap();
     assert_eq!(calls.get(), 2);
     assert_eq!(drops.get(), 1);
     assert!(!timers::has_timers());
@@ -338,28 +355,34 @@ fn intervals_retain_state_until_self_cancellation_and_release_after_dispatch() {
 
 #[test]
 fn fallible_interval_retains_its_owner_until_cancelled() {
-    let timers = timers::new::<std::io::Error>();
-    let drops = Rc::new(Cell::new(0));
-    let probe = DropProbe(Rc::clone(&drops));
-    let timer = timers::set_interval_callable(
-        &timers,
-        Callable::new(move |()| {
-            black_box(&probe);
-            Err::<(), _>(std::io::Error::other("expected timer error"))
-        }),
-        1.0,
-    )
+    tsonic_rust_js::event_loop::block_on(async {
+        let timers = timers::new::<std::io::Error>();
+        let owner = tsonic_rust_js::event_loop::require_dispatch_owner();
+        assert!(timers.enter(owner));
+        let drops = Rc::new(Cell::new(0));
+        let probe = DropProbe(Rc::clone(&drops));
+        let timer = timers::set_interval_callable(
+            &timers,
+            Callable::new(move |()| {
+                black_box(&probe);
+                Err::<(), _>(std::io::Error::other("expected timer error"))
+            }),
+            1.0,
+        )
+        .unwrap();
+        std::thread::sleep(Duration::from_millis(2));
+        assert!(timers
+            .poll()
+            .unwrap_err()
+            .to_string()
+            .contains("expected timer error"));
+        assert_eq!(drops.get(), 0);
+        timers::clear_interval(&timers, timer);
+        assert_eq!(drops.get(), 1);
+        assert!(!timers.has_pending_work());
+        timers.close(owner);
+    })
     .unwrap();
-    std::thread::sleep(Duration::from_millis(2));
-    assert!(timers
-        .poll()
-        .unwrap_err()
-        .to_string()
-        .contains("expected timer error"));
-    assert_eq!(drops.get(), 0);
-    timers::clear_interval(&timers, timer);
-    assert_eq!(drops.get(), 1);
-    assert!(!timers.has_pending_work());
 }
 
 #[test]
