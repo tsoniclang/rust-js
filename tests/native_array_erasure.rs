@@ -1,4 +1,6 @@
-use std::alloc::{GlobalAlloc, Layout, System};
+#[path = "../../rust-runtime/tests/helpers/allocation_counts.rs"]
+pub mod allocation_counts;
+
 use std::cell::Cell;
 use std::hint::black_box;
 use std::rc::Rc;
@@ -7,30 +9,9 @@ use tsonic_rust_js::equality::JsStrictEqual;
 use tsonic_rust_js::value::{closed_value_string, js_value_from_array};
 use tsonic_rust_js::{json, JsArray, JsValue};
 
-struct CountingAllocator;
-
 thread_local! {
-    static TRACKED_ALLOCATIONS: Cell<Option<usize>> = const { Cell::new(None) };
     static PROJECTIONS: Cell<usize> = const { Cell::new(0) };
 }
-
-unsafe impl GlobalAlloc for CountingAllocator {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        TRACKED_ALLOCATIONS.with(|count| {
-            if let Some(value) = count.get() {
-                count.set(Some(value + 1));
-            }
-        });
-        unsafe { System.alloc(layout) }
-    }
-
-    unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
-        unsafe { System.dealloc(pointer, layout) }
-    }
-}
-
-#[global_allocator]
-static ALLOCATOR: CountingAllocator = CountingAllocator;
 
 struct ObservedClone(i32);
 
@@ -78,7 +59,7 @@ fn strings(
 fn typed_erasure_retains_native_backing_and_rejects_invariant_element_layouts() {
     let original = JsArray::from_dense(vec![String::from("first")]);
     PROJECTIONS.with(|count| count.set(0));
-    TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
+    let measurement = allocation_counts::Measurement::start();
     let erased = js_value_from_array(&original, strings);
     let alias = erased.clone();
     for _iteration in 0..10_000 {
@@ -90,7 +71,7 @@ fn typed_erasure_retains_native_backing_and_rejects_invariant_element_layouts() 
         assert!(erased.as_array().unwrap().restore::<JsValue>().is_none());
         assert!(erased.as_array().unwrap().restore::<u64>().is_none());
     }
-    let allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
+    let allocations = measurement.finish().allocation_requests();
     assert_eq!(allocations, 0);
     assert_eq!(PROJECTIONS.with(Cell::get), 0);
     assert!(erased.cast_array::<JsValue>().is_err());
@@ -114,13 +95,13 @@ fn erased_indexed_write_checks_real_backing_without_allocating_or_copying() {
     let original = JsArray::from_dense(vec![JsValue::Number(1.0)]);
     let erased = JsValue::array(original.clone());
     let alias = erased.as_array().unwrap();
-    TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
+    let measurement = allocation_counts::Measurement::start();
     for iteration in 0..10_000 {
         alias
             .set_number(0_i32, JsValue::Number(f64::from(iteration)))
             .unwrap();
     }
-    let allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
+    let allocations = measurement.finish().allocation_requests();
     assert_eq!(allocations, 0);
     assert!(matches!(original.get(0), Some(JsValue::Number(9999.0))));
     assert!(alias.set_number(2_i32, JsValue::Null).is_err());
@@ -169,10 +150,10 @@ fn non_clone_payload_is_destroyed_only_after_the_last_actual_owner() {
         text: String::from("retained"),
         drops: drops.clone(),
     }]);
-    TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
+    let measurement = allocation_counts::Measurement::start();
     let erased = js_value_from_array(&original, payloads);
     let restored = erased.cast_array::<OwnedPayload>().unwrap();
-    let allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
+    let allocations = measurement.finish().allocation_requests();
     assert_eq!(allocations, 0);
     assert!(restored.ptr_eq(&original));
     drop(original);
@@ -188,7 +169,7 @@ fn borrowed_reads_do_not_copy_string_buffers_or_allocate_projection_storage() {
     let original = JsArray::from_dense(vec!["native 🧠".repeat(1000)]);
     let erased = js_value_from_array(&original, strings);
     original.with_values(|values| {
-        TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
+        let measurement = allocation_counts::Measurement::start();
         for _iteration in 0..1000 {
             erased.as_array().unwrap().visit_element(0, &mut |element| {
                 let JsArrayElement::String(value) = element else {
@@ -198,7 +179,7 @@ fn borrowed_reads_do_not_copy_string_buffers_or_allocate_projection_storage() {
                 assert_eq!(value.len(), values[0].len());
             });
         }
-        let allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
+        let allocations = measurement.finish().allocation_requests();
         assert_eq!(allocations, 0);
     });
 }
