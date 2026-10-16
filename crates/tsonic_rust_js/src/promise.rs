@@ -49,6 +49,9 @@ impl<T> PromiseState<T> {
     }
 
     fn observe_discarded(&mut self) -> bool {
+        if !matches!(self, Self::Fulfilled(_)) && !crate::promise_jobs::active() {
+            panic!("{}", crate::promise_jobs::NO_LOOP);
+        }
         match self {
             Self::Rejected { reported, .. } if !*reported => {
                 *reported = true;
