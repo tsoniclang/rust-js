@@ -1,6 +1,7 @@
 use std::cell::Cell;
 use std::process::Command;
 use std::rc::Rc;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use tsonic_rust_js::event_loop::{block_on, run_entry_with_contexts};
 use tsonic_rust_js::promise::JsPromise;
@@ -168,12 +169,35 @@ fn a_rejection_discarded_without_an_owner_child() {
     if std::env::var_os(NO_OWNER_CHILD).is_none() {
         return;
     }
-    JsPromise::<i32>::rejected(JsValue::String(String::from("no owner"))).observe_discarded();
-    println!("the caller continued after the report");
+    struct UnwindWitness(Rc<Cell<bool>>);
+
+    impl Drop for UnwindWitness {
+        fn drop(&mut self) {
+            self.0.set(true);
+        }
+    }
+
+    let unwound = Rc::new(Cell::new(false));
+    let observed = Rc::clone(&unwound);
+    let failure = catch_unwind(AssertUnwindSafe(|| {
+        let _guard = UnwindWitness(observed);
+        JsPromise::<i32>::rejected(JsValue::String(String::from("no owner")))
+            .observe_discarded();
+        panic!("the discarded rejection returned instead of panicking");
+    }))
+    .expect_err("missing loop ownership must panic");
+    let message = failure
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .or_else(|| failure.downcast_ref::<&str>().copied());
+    assert_eq!(message, Some("No JavaScript event loop is running on this thread."));
+    assert!(unwound.get(), "native destructors run during the ownership panic");
+    assert!(tsonic_rust_js::event_loop::ensure_running().is_err());
+    println!("the native caller caught the ownership panic and its destructor ran");
 }
 
 #[test]
-fn a_rejection_discarded_without_an_owner_is_reported_and_exits_one() {
+fn a_rejection_discarded_without_an_owner_reports_and_unwinds_without_exiting() {
     let output = Command::new(std::env::current_exe().expect("the test binary"))
         .args([
             "--exact",
@@ -187,7 +211,7 @@ fn a_rejection_discarded_without_an_owner_is_reported_and_exits_one() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        output.status.code() == Some(1),
+        output.status.success(),
         "child status {:?}; stderr: {stderr}",
         output.status
     );
@@ -195,5 +219,12 @@ fn a_rejection_discarded_without_an_owner_is_reported_and_exits_one() {
         stderr.lines().any(|line| line == "no owner"),
         "stderr: {stderr}"
     );
-    assert!(!stdout.contains("the caller continued"), "stdout: {stdout}");
+    assert!(
+        stdout.contains("the native caller caught the ownership panic and its destructor ran"),
+        "stdout: {stdout}"
+    );
+    assert!(
+        stderr.contains("No JavaScript event loop is running on this thread."),
+        "stderr: {stderr}"
+    );
 }

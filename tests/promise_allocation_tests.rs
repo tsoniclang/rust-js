@@ -568,11 +568,11 @@ fn observing_a_discarded_rejection_admits_one_reporting_job() {
 }
 
 #[test]
-fn observing_a_discarded_string_rejection_also_copies_the_reason() {
+fn observing_a_unique_discarded_string_rejection_moves_the_reason() {
     assert_row(
         "observe_discarded, rejected (String reason, 15 bytes)",
         observed_discard(JsValue::String(String::from("an owned reason"))),
-        counts(2, 2, 0, 135),
+        counts(1, 1, 0, 120),
     );
 }
 
