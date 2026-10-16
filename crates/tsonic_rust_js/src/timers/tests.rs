@@ -14,8 +14,7 @@ fn a_public_timer_without_an_owner_panics_before_admitting_a_callback() {
             0.0,
         )
     }))
-    .err()
-    .expect("public timer admission must panic synchronously");
+    .expect_err("public timer admission must panic synchronously");
     let message = failure
         .downcast_ref::<String>()
         .map(String::as_str)
@@ -116,8 +115,7 @@ fn selected_js_timer_driver_keeps_non_display_non_send_error_identity() {
     .unwrap();
     let contexts = tsonic_rust_runtime::dispatch::prepend(&timers, DispatchEnd::<Failure>::new());
     match crate::event_loop::run_with_contexts(&contexts)
-        .err()
-        .expect("original source timer error")
+        .expect_err("original source timer error")
     {
         Failure::Source(value) => {
             assert!(Rc::ptr_eq(&value, &original));
