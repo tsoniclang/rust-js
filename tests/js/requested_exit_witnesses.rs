@@ -146,6 +146,39 @@ impl Drop for DiscardOnDrop {
     }
 }
 
+struct ReportingRoot {
+    _report: DiscardOnDrop,
+}
+
+impl std::future::Future for ReportingRoot {
+    type Output = i32;
+
+    fn poll(
+        self: std::pin::Pin<&mut Self>,
+        _context: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<i32> {
+        std::task::Poll::Ready(17)
+    }
+}
+
+#[test]
+fn a_rejection_from_root_destruction_returns_the_loop_status_instead_of_panicking() {
+    let (output, status) = tsonic_rust_js::event_loop::block_on_with_contexts(
+        ReportingRoot {
+            _report: DiscardOnDrop,
+        },
+        no_contexts(),
+    )
+    .unwrap();
+    assert_eq!(output, Some(17));
+    assert!(status.exit_requested());
+    assert_eq!(
+        std::process::ExitCode::from(status),
+        std::process::ExitCode::from(1)
+    );
+    assert!(tsonic_rust_js::event_loop::ensure_running().is_err());
+}
+
 #[test]
 fn a_rejection_observed_while_the_owner_closes_requests_exit_one() {
     let ((), status) = run_entry_with_contexts(
