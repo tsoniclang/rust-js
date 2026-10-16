@@ -6,7 +6,7 @@ use std::task::{Context, Poll, Wake, Waker};
 use std::thread::{self, Thread, ThreadId};
 
 use tsonic_rust_runtime::dispatch::DispatchOwner;
-use tsonic_rust_runtime::dispatch::{DispatchContexts, DispatchEnd};
+use tsonic_rust_runtime::dispatch::{DispatchContexts, DispatchEnd, DispatchPhase};
 use tsonic_rust_runtime::TsonicResult;
 
 pub use crate::promise_jobs::{dispatch_handle, dispatch_owner, ensure_running, DispatchHandle};
@@ -92,7 +92,7 @@ where
 
     fn poll(&mut self) -> Result<bool, Self::Error> {
         crate::timers::with_default(|native| {
-            tsonic_rust_runtime::dispatch::poll_phase(
+            poll_phase_with_jobs(
                 &tsonic_rust_runtime::dispatch::prepend(native, &self.contexts),
                 crate::timers::PHASE,
             )
@@ -123,21 +123,75 @@ where
     }
 }
 
+pub const STOPPED_BEFORE_COMPLETION: &str =
+    "The event loop stopped on a requested exit before the awaited future completed.";
+pub const STOPPED_ON_REQUESTED_EXIT: &str = "The event loop stopped on a requested exit.";
+
+pub fn poll_phase_with_jobs<TContexts: DispatchContexts>(
+    contexts: &TContexts,
+    phase: DispatchPhase,
+) -> Result<bool, TContexts::Error> {
+    let mut did_work = crate::promise_jobs::checkpoint();
+    if crate::promise_jobs::exit_requested() {
+        return Ok(did_work);
+    }
+    let frontier = contexts.prepare(phase)?;
+    while contexts.next_ready(&frontier).is_some() {
+        did_work |= contexts.poll_next(&frontier)?;
+        did_work |= crate::promise_jobs::checkpoint();
+        if crate::promise_jobs::exit_requested() {
+            break;
+        }
+    }
+    Ok(did_work)
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct LoopExitStatus {
+    requested: Option<u8>,
+}
+
+impl LoopExitStatus {
+    pub fn exit_requested(&self) -> bool {
+        self.requested.is_some()
+    }
+}
+
+impl From<LoopExitStatus> for std::process::ExitCode {
+    fn from(status: LoopExitStatus) -> Self {
+        match status.requested {
+            Some(code) => Self::from(code),
+            None => Self::SUCCESS,
+        }
+    }
+}
+
 pub fn block_on<Output>(future: impl Future<Output = Output>) -> TsonicResult<Output> {
-    block_on_with_contexts(
+    let (output, status) = block_on_with_contexts(
         future,
         DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
-    )
+    )?;
+    match output {
+        Some(_) if status.exit_requested() => {
+            Err(tsonic_rust_runtime::JsError::error(STOPPED_ON_REQUESTED_EXIT).into())
+        }
+        Some(output) => Ok(output),
+        None => Err(tsonic_rust_runtime::JsError::error(STOPPED_BEFORE_COMPLETION).into()),
+    }
 }
 
 pub fn run_event_loop() -> TsonicResult<()> {
-    run_with_contexts(DispatchEnd::<tsonic_rust_runtime::TsonicError>::new())
+    let status = run_with_contexts(DispatchEnd::<tsonic_rust_runtime::TsonicError>::new())?;
+    if status.exit_requested() {
+        return Err(tsonic_rust_runtime::JsError::error(STOPPED_ON_REQUESTED_EXIT).into());
+    }
+    Ok(())
 }
 
 pub fn block_on_with_contexts<TOutput, TContexts: DispatchContexts>(
     future: impl Future<Output = TOutput>,
     contexts: TContexts,
-) -> Result<TOutput, TContexts::Error>
+) -> Result<(Option<TOutput>, LoopExitStatus), TContexts::Error>
 where
     TContexts::Error: From<tsonic_rust_runtime::TsonicError>,
 {
@@ -146,29 +200,56 @@ where
 
 pub fn run_with_contexts<TContexts: DispatchContexts>(
     contexts: TContexts,
-) -> Result<(), TContexts::Error>
+) -> Result<LoopExitStatus, TContexts::Error>
 where
     TContexts::Error: From<tsonic_rust_runtime::TsonicError>,
 {
     run_with_driver(&mut TimerDriver { contexts })
 }
 
+pub fn run_entry_with_contexts<TOutput, TContexts: DispatchContexts>(
+    entry: impl FnOnce() -> TOutput,
+    contexts: TContexts,
+) -> Result<(TOutput, LoopExitStatus), TContexts::Error>
+where
+    TContexts::Error: From<tsonic_rust_runtime::TsonicError>,
+{
+    run_entry_with_driver(entry, &mut TimerDriver { contexts })
+}
+
 pub fn block_on_with_driver<Output, Driver: EventLoopDriver>(
     future: impl Future<Output = Output>,
     driver: &mut Driver,
-) -> Result<Output, Driver::Error> {
+) -> Result<(Option<Output>, LoopExitStatus), Driver::Error> {
     let mut future = pin!(future);
-    Ok(drive(Some(future.as_mut()), driver)?.expect("a driven root future returns its output"))
+    drive(Some(future.as_mut()), None, driver)
 }
 
-pub fn run_with_driver<Driver: EventLoopDriver>(driver: &mut Driver) -> Result<(), Driver::Error> {
-    drive::<std::future::Pending<()>, Driver>(None, driver).map(|_| ())
+pub fn run_with_driver<Driver: EventLoopDriver>(
+    driver: &mut Driver,
+) -> Result<LoopExitStatus, Driver::Error> {
+    drive::<std::future::Pending<()>, Driver>(None, None, driver).map(|(_, status)| status)
+}
+
+pub fn run_entry_with_driver<TOutput, Driver: EventLoopDriver>(
+    entry: impl FnOnce() -> TOutput,
+    driver: &mut Driver,
+) -> Result<(TOutput, LoopExitStatus), Driver::Error> {
+    let mut entry = Some(entry);
+    let mut output = None;
+    let mut run = || output = Some((entry.take().expect("the entry runs once"))());
+    let (_, status) = drive::<std::future::Pending<()>, Driver>(None, Some(&mut run), driver)?;
+    Ok((
+        output.expect("the entry runs inside the owner before the loop drains"),
+        status,
+    ))
 }
 
 fn drive<Root: Future, Driver: EventLoopDriver>(
-    mut root: Option<Pin<&mut Root>>,
+    root: Option<Pin<&mut Root>>,
+    entry: Option<&mut dyn FnMut()>,
     driver: &mut Driver,
-) -> Result<Option<Root::Output>, Driver::Error> {
+) -> Result<(Option<Root::Output>, LoopExitStatus), Driver::Error> {
     if crate::promise_jobs::active() {
         return Err(Driver::admission_error(
             tsonic_rust_runtime::JsError::error(
@@ -176,8 +257,8 @@ fn drive<Root: Future, Driver: EventLoopDriver>(
             ),
         ));
     }
-    if root.is_none() && !driver.has_work() {
-        return Ok(None);
+    if root.is_none() && entry.is_none() && !driver.has_work() {
+        return Ok((None, LoopExitStatus::default()));
     }
     let driver_waker = driver.waker()?;
     let owner = crate::promise_jobs::Owner::enter(driver_waker).map_err(Driver::admission_error)?;
@@ -188,7 +269,26 @@ fn drive<Root: Future, Driver: EventLoopDriver>(
         identity,
         closed: false,
     };
-    scope.driver.lifecycle(LoopLifecycle::Enter(identity))?;
+    let output = run_turns(&mut scope, root, entry);
+    drop(scope);
+    let status = LoopExitStatus {
+        requested: crate::promise_jobs::take_exit(),
+    };
+    output.map(|output| (output, status))
+}
+
+fn run_turns<Root: Future, Driver: EventLoopDriver>(
+    scope: &mut LoopScope<'_, Driver>,
+    mut root: Option<Pin<&mut Root>>,
+    entry: Option<&mut dyn FnMut()>,
+) -> Result<Option<Root::Output>, Driver::Error> {
+    scope
+        .driver
+        .lifecycle(LoopLifecycle::Enter(scope.identity))?;
+    if let Some(entry) = entry {
+        entry();
+        crate::promise_jobs::checkpoint();
+    }
     let wake = if root.is_some() {
         Some(Arc::new(LoopWake {
             ready: AtomicBool::new(true),
@@ -202,7 +302,15 @@ fn drive<Root: Future, Driver: EventLoopDriver>(
     let mut context = Context::from_waker(waker.as_ref().unwrap_or(Waker::noop()));
     let mut output = None;
     loop {
+        if crate::promise_jobs::exit_requested() {
+            scope.close()?;
+            return Ok(output);
+        }
         let driver_work = scope.driver.poll()?;
+        if crate::promise_jobs::exit_requested() {
+            scope.close()?;
+            return Ok(output);
+        }
         let root_polled = wake
             .as_ref()
             .is_some_and(|wake| wake.ready.swap(false, Ordering::AcqRel))
@@ -216,6 +324,10 @@ fn drive<Root: Future, Driver: EventLoopDriver>(
             }
         }
         let job_work = crate::promise_jobs::poll();
+        if crate::promise_jobs::exit_requested() {
+            scope.close()?;
+            return Ok(output);
+        }
         let ready = crate::promise_jobs::has_ready();
         if root.is_none() && !scope.driver.has_work() && !ready {
             scope.close()?;
