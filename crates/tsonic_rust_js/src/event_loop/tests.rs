@@ -6,6 +6,8 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::rc::Rc;
 use tsonic_rust_runtime::{Callable, JsError};
 
+mod root_lifetime;
+
 #[test]
 fn ready_root_retains_output_while_reentrant_reactions_drain() {
     let order = Rc::new(RefCell::new(Vec::new()));
