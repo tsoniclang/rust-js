@@ -1,14 +1,14 @@
 use super::*;
-use std::panic::{catch_unwind, AssertUnwindSafe};
 
-fn assert_missing_owner(failure: Box<dyn std::any::Any + Send>) {
-    let message = failure
-        .downcast_ref::<String>()
-        .map(String::as_str)
-        .or_else(|| failure.downcast_ref::<&str>().copied());
-    assert_eq!(message, Some(NO_LOOP));
-    assert!(!crate::promise_jobs::active());
-    assert!(!crate::promise_jobs::has_ready());
+fn externally_settled_promise() -> (JsPromise<i32>, PromiseResolve<i32>, PromiseReject) {
+    let callbacks = Rc::new(RefCell::new(None));
+    let captured = Rc::clone(&callbacks);
+    let promise = JsPromise::create(Callable::new(move |(resolve, reject)| {
+        captured.replace(Some((resolve, reject)));
+        Ok(())
+    }));
+    let (resolve, reject) = callbacks.borrow_mut().take().expect("the executor ran");
+    (promise, resolve, reject)
 }
 
 #[test]
@@ -142,4 +142,78 @@ fn repeated_rejected_observation_still_requires_a_live_owner() {
         take_reports().is_empty(),
         "the failed observation produces no second report"
     );
+}
+
+#[test]
+fn a_closed_owner_observation_cannot_report_a_later_external_rejection() {
+    let (promise, _resolve, reject) = externally_settled_promise();
+    let retained = promise.clone();
+    let ((), status) =
+        run_entry_with_contexts(|| promise.observe_discarded(), no_contexts()).unwrap();
+    assert!(!status.exit_requested());
+    let reason = JsValue::from_error(MutableJsError::error("late external rejection"));
+    reject.call((reason.clone(),)).unwrap();
+    assert!(!crate::promise_jobs::active());
+    assert!(!crate::promise_jobs::has_ready());
+    assert!(take_reports().is_empty());
+    assert!(tsonic_rust_runtime::block_on(retained.into_result())
+        .unwrap_err()
+        .strict_equal(&reason));
+}
+
+#[test]
+fn a_closed_owner_observation_cannot_report_inside_the_next_loop_generation() {
+    let (promise, _resolve, reject) = externally_settled_promise();
+    let retained = promise.clone();
+    let ((), first_status) =
+        run_entry_with_contexts(|| promise.observe_discarded(), no_contexts()).unwrap();
+    assert!(!first_status.exit_requested());
+    let reason = JsValue::from_error(MutableJsError::error("next generation rejection"));
+    let ((), second_status) = run_entry_with_contexts(
+        || {
+            reject.call((reason.clone(),)).unwrap();
+            assert!(!crate::promise_jobs::has_ready());
+            assert!(take_reports().is_empty());
+        },
+        no_contexts(),
+    )
+    .unwrap();
+    assert!(!second_status.exit_requested());
+    assert!(take_reports().is_empty());
+    assert!(tsonic_rust_runtime::block_on(retained.into_result())
+        .unwrap_err()
+        .strict_equal(&reason));
+}
+
+#[test]
+fn a_pending_promise_can_be_explicitly_observed_by_the_next_loop_generation() {
+    let (promise, _resolve, reject) = externally_settled_promise();
+    let retained = promise.clone();
+    let ((), first_status) =
+        run_entry_with_contexts(|| promise.observe_discarded(), no_contexts()).unwrap();
+    assert!(!first_status.exit_requested());
+    let ((), second_status) = run_entry_with_contexts(
+        || {
+            retained.observe_discarded();
+            assert!(!crate::promise_jobs::has_ready());
+            reject.call((JsValue::Bool(false),)).unwrap();
+        },
+        no_contexts(),
+    )
+    .unwrap();
+    assert!(second_status.exit_requested());
+    assert_eq!(take_reports(), "false\n");
+}
+
+#[test]
+fn a_closed_owner_observation_does_not_restrict_later_external_fulfillment() {
+    let (promise, resolve, _reject) = externally_settled_promise();
+    let retained = promise.clone();
+    let ((), status) =
+        run_entry_with_contexts(|| promise.observe_discarded(), no_contexts()).unwrap();
+    assert!(!status.exit_requested());
+    resolve.call((PromiseResolution::Value(31),)).unwrap();
+    assert_eq!(tsonic_rust_runtime::block_on(retained.into_result()).unwrap(), 31);
+    assert!(!crate::promise_jobs::active());
+    assert!(take_reports().is_empty());
 }

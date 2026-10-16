@@ -4,6 +4,7 @@ use crate::event_loop::{block_on, block_on_with_contexts, run_entry_with_context
 use crate::{JsArray, JsValue};
 use std::cell::Cell;
 use std::future::{poll_fn, Future};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::rc::Rc;
 use std::task::{Context, Poll, Waker};
 use tsonic_rust_runtime::dispatch::DispatchEnd;
@@ -17,6 +18,16 @@ mod observation;
 
 fn no_contexts() -> DispatchEnd<TsonicError> {
     DispatchEnd::<TsonicError>::new()
+}
+
+fn assert_missing_owner(failure: Box<dyn std::any::Any + Send>) {
+    let message = failure
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .or_else(|| failure.downcast_ref::<&str>().copied());
+    assert_eq!(message, Some(NO_LOOP));
+    assert!(!crate::promise_jobs::active());
+    assert!(!crate::promise_jobs::has_ready());
 }
 
 #[test]
@@ -133,16 +144,20 @@ fn a_synchronous_body_settles_before_the_factory_returns() {
 }
 
 #[test]
-fn a_factory_without_an_owner_calls_no_create_and_rejects_with_the_exact_message() {
+fn a_factory_without_an_owner_panics_before_create_with_the_exact_message() {
     let created = Cell::new(false);
-    let promise = JsPromise::from_infallible_factory(|| {
-        created.set(true);
-        async { 7 }
-    });
+    assert_missing_owner(
+        catch_unwind(AssertUnwindSafe(|| {
+            JsPromise::from_infallible_factory(|| {
+                created.set(true);
+                async { 7 }
+            })
+        }))
+        .err()
+        .expect("owned factory admission must panic synchronously"),
+    );
     assert!(!created.get(), "no Create body runs without an owner");
     assert!(!crate::promise_jobs::active());
-    let error = tsonic_rust_runtime::block_on(promise.into_result()).unwrap_err();
-    assert_eq!(error.error_value().error_message(), NO_LOOP);
 }
 
 #[test]
@@ -917,19 +932,24 @@ fn asynchronous_then_adopts_success_and_failure_without_rewrapping_reasons() {
 }
 
 #[test]
-fn a_reaction_without_an_owner_rejects_and_does_not_become_lazy() {
+fn a_reaction_without_an_owner_panics_and_does_not_become_lazy() {
     let calls = Rc::new(Cell::new(0));
     let observed = Rc::clone(&calls);
-    let reaction = JsPromise::resolved(1).then(
-        Callable::new(move |(_value,)| {
-            observed.set(1);
-            Ok(2)
-        }),
-        None,
+    assert_missing_owner(
+        catch_unwind(AssertUnwindSafe(|| {
+            JsPromise::resolved(1).then(
+                Callable::new(move |(_value,)| {
+                    observed.set(1);
+                    Ok(2)
+                }),
+                None,
+            )
+        }))
+        .err()
+        .expect("reaction admission must panic synchronously"),
     );
-    let error = tsonic_rust_runtime::block_on(reaction.into_result()).unwrap_err();
-    assert_eq!(error.error_value().error_message(), NO_LOOP);
     assert_eq!(calls.get(), 0);
+    assert_eq!(Rc::strong_count(&calls), 1);
 }
 
 use std::cell::RefCell;

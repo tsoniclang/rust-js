@@ -1,6 +1,30 @@
 use super::timer_id;
 
 #[test]
+fn a_public_timer_without_an_owner_panics_before_admitting_a_callback() {
+    let calls = std::cell::Cell::new(0);
+    let timers = super::new::<std::convert::Infallible>();
+    let failure = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        super::set_timeout_callable(
+            &timers,
+            tsonic_rust_runtime::Callable::new(|()| {
+                calls.set(calls.get() + 1);
+                Ok(())
+            }),
+            0.0,
+        )
+    }))
+    .err()
+    .expect("public timer admission must panic synchronously");
+    let message = failure.downcast_ref::<String>().map(String::as_str)
+        .or_else(|| failure.downcast_ref::<&str>().copied());
+    assert_eq!(message, Some("No JavaScript event loop is running on this thread."));
+    assert_eq!(calls.get(), 0);
+    assert!(!timers.has_pending_work());
+    assert!(!crate::promise_jobs::active());
+}
+
+#[test]
 fn local_timer_context_retains_borrowed_callback_environment() {
     let calls = std::cell::Cell::new(0);
     let timers = super::new::<std::convert::Infallible>();
