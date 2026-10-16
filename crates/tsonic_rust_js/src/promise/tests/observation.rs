@@ -102,6 +102,31 @@ fn fulfilled_observation_without_an_owner_needs_no_owner_or_report() {
 }
 
 #[test]
+fn pending_observation_while_its_owner_closes_preserves_shutdown_status() {
+    let owner = crate::promise_jobs::Owner::enter(Waker::noop().clone()).unwrap();
+    let promise = JsPromise::<i32>::pending();
+    let retained = promise.clone();
+    owner.stop_admission();
+    assert!(crate::promise_jobs::active());
+    assert!(crate::promise_jobs::ensure_running().is_err());
+    promise.observe_discarded();
+    assert!(
+        matches!(
+            &*retained.state.borrow(),
+            PromiseState::Pending { observed: true, .. }
+        ),
+        "the closing owner still owns the observation"
+    );
+    assert!(!crate::promise_jobs::has_ready());
+    retained.settle(Err(JsValue::Bool(false)));
+    assert!(crate::promise_jobs::exit_requested());
+    assert_eq!(take_reports(), "false\n");
+    drop(owner);
+    assert_eq!(crate::promise_jobs::take_exit(), Some(1));
+    assert!(!crate::promise_jobs::active());
+}
+
+#[test]
 fn repeated_rejected_observation_still_requires_a_live_owner() {
     let promise = JsPromise::<i32>::rejected(JsValue::Bool(false));
     let retained = promise.clone();
