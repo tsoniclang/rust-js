@@ -16,9 +16,14 @@ fn a_public_timer_without_an_owner_panics_before_admitting_a_callback() {
     }))
     .err()
     .expect("public timer admission must panic synchronously");
-    let message = failure.downcast_ref::<String>().map(String::as_str)
+    let message = failure
+        .downcast_ref::<String>()
+        .map(String::as_str)
         .or_else(|| failure.downcast_ref::<&str>().copied());
-    assert_eq!(message, Some("No JavaScript event loop is running on this thread."));
+    assert_eq!(
+        message,
+        Some("No JavaScript event loop is running on this thread.")
+    );
     assert_eq!(calls.get(), 0);
     assert!(!timers.has_pending_work());
     assert!(!crate::promise_jobs::active());
