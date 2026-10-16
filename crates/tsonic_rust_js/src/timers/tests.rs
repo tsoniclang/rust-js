@@ -114,8 +114,7 @@ fn selected_js_timer_driver_keeps_non_display_non_send_error_identity() {
     )
     .unwrap();
     let contexts = tsonic_rust_runtime::dispatch::prepend(&timers, DispatchEnd::<Failure>::new());
-    match crate::event_loop::run_with_contexts(&contexts)
-        .expect_err("original source timer error")
+    match crate::event_loop::run_with_contexts(&contexts).expect_err("original source timer error")
     {
         Failure::Source(value) => {
             assert!(Rc::ptr_eq(&value, &original));
