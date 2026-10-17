@@ -32,33 +32,70 @@ fn a_public_timer_without_an_owner_panics_before_admitting_a_callback() {
 fn local_timer_context_retains_borrowed_callback_environment() {
     let calls = std::cell::Cell::new(0);
     let timers = super::new::<std::convert::Infallible>();
-    super::set_timeout_callable(
+    let contexts = tsonic_rust_runtime::dispatch::prepend(
         &timers,
-        tsonic_rust_runtime::Callable::new(|()| {
-            calls.set(calls.get() + 1);
-            Ok(())
-        }),
-        0.0,
+        tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+    );
+    crate::event_loop::run_entry_with_contexts(
+        || {
+            super::set_timeout_callable(
+                &timers,
+                tsonic_rust_runtime::Callable::new(|()| {
+                    calls.set(calls.get() + 1);
+                    Ok(())
+                }),
+                0.0,
+            )
+            .unwrap();
+            assert_eq!(calls.get(), 0);
+            assert!(timers.poll().unwrap());
+            assert_eq!(calls.get(), 1);
+            assert!(!timers.has_pending_work());
+        },
+        &contexts,
     )
     .unwrap();
-    assert_eq!(calls.get(), 0);
-    assert!(timers.poll().unwrap());
-    assert_eq!(calls.get(), 1);
-    assert!(!timers.has_pending_work());
 }
 
 #[test]
 fn local_timer_context_preserves_borrowed_failure_identity() {
+    enum DispatchFailure<'environment> {
+        Native(tsonic_rust_runtime::TsonicError),
+        Source(&'environment String),
+    }
+    impl From<tsonic_rust_runtime::TsonicError> for DispatchFailure<'_> {
+        fn from(error: tsonic_rust_runtime::TsonicError) -> Self {
+            Self::Native(error)
+        }
+    }
+    impl<'environment> From<&'environment String> for DispatchFailure<'environment> {
+        fn from(error: &'environment String) -> Self {
+            Self::Source(error)
+        }
+    }
     let failure = String::from("scoped timer failure");
     let timers = super::new::<&String>();
-    super::set_timeout_callable(
+    let contexts = tsonic_rust_runtime::dispatch::prepend(
         &timers,
-        tsonic_rust_runtime::Callable::new(|()| Err(&failure)),
-        0.0,
+        tsonic_rust_runtime::dispatch::DispatchEnd::<DispatchFailure<'_>>::new(),
+    );
+    crate::event_loop::run_entry_with_contexts(
+        || {
+            super::set_timeout_callable(
+                &timers,
+                tsonic_rust_runtime::Callable::new(|()| Err(&failure)),
+                0.0,
+            )
+            .unwrap();
+            assert!(std::ptr::eq(timers.poll().unwrap_err(), &failure));
+            assert!(!timers.has_pending_work());
+        },
+        &contexts,
     )
-    .unwrap();
-    assert!(std::ptr::eq(timers.poll().unwrap_err(), &failure));
-    assert!(!timers.has_pending_work());
+    .unwrap_or_else(|error| match error {
+        DispatchFailure::Native(error) => panic!("unexpected native failure: {error}"),
+        DispatchFailure::Source(error) => panic!("unexpected unobserved source failure: {error}"),
+    });
 }
 
 #[test]
@@ -96,26 +133,32 @@ fn selected_js_timer_driver_keeps_non_display_non_send_error_identity() {
     let timers = new::<Failure>();
     let original = Rc::new(Cell::new(9_007_199_254_740_993));
     let captured = Rc::clone(&original);
-    set_timeout_callable(
-        &timers,
-        Callable::new(move |()| Err(Failure::Source(Rc::clone(&captured)))),
-        0.0,
-    )
-    .unwrap();
     let observed = Rc::new(Cell::new(false));
     let recorded = Rc::clone(&observed);
-    set_timeout_callable(
-        &timers,
-        Callable::new(move |()| {
-            recorded.set(true);
-            Ok(())
-        }),
-        0.0,
-    )
-    .unwrap();
+    let mut previous_owner = None;
     let contexts = tsonic_rust_runtime::dispatch::prepend(&timers, DispatchEnd::<Failure>::new());
-    match crate::event_loop::run_with_contexts(&contexts).expect_err("original source timer error")
-    {
+    let result = crate::event_loop::run_entry_with_contexts(
+        || {
+            previous_owner = Some(crate::event_loop::dispatch_handle().unwrap());
+            set_timeout_callable(
+                &timers,
+                Callable::new(move |()| Err(Failure::Source(Rc::clone(&captured)))),
+                0.0,
+            )
+            .unwrap();
+            set_timeout_callable(
+                &timers,
+                Callable::new(move |()| {
+                    recorded.set(true);
+                    Ok(())
+                }),
+                0.0,
+            )
+            .unwrap();
+        },
+        &contexts,
+    );
+    match result.expect_err("original source timer error") {
         Failure::Source(value) => {
             assert!(Rc::ptr_eq(&value, &original));
             assert_eq!(value.get(), 9_007_199_254_740_993);
@@ -123,7 +166,17 @@ fn selected_js_timer_driver_keeps_non_display_non_send_error_identity() {
         Failure::Native(error) => panic!("unexpected native failure: {error}"),
     }
     assert!(!observed.get());
-    assert!(crate::event_loop::run_with_contexts(&contexts).is_ok());
-    assert!(observed.get());
+    let previous_owner = previous_owner.expect("the original explicit owner admitted both callbacks");
+    assert!(previous_owner.wake().is_err());
+    assert!(!timers.has_pending_work());
+    assert!(crate::event_loop::run_entry_with_contexts(
+        || {
+            assert!(previous_owner.wake().is_err());
+            assert!(!observed.get());
+        },
+        &contexts,
+    )
+    .is_ok());
+    assert!(!observed.get());
     assert!(!timers.has_pending_work());
 }
