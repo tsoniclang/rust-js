@@ -432,6 +432,45 @@ fn released_slots_and_queue_storage_are_reused_with_finite_growth() {
 }
 
 #[test]
+fn retiring_an_owner_releases_its_task_and_ready_storage_before_the_next_generation() {
+    let drops = Rc::new(Cell::new(0));
+    let mut previous: Option<DispatchHandle> = None;
+    for generation in 0..3 {
+        let activation = owner();
+        let handle = dispatch_handle().unwrap();
+        if let Some(previous) = previous.take() {
+            assert_ne!(previous.owner(), handle.owner());
+            assert_eq!(previous.wake().unwrap_err().message(), NO_LOOP);
+        }
+        let capture = DropProbe::new(&drops);
+        start(async move {
+            pending::<()>().await;
+            drop(capture);
+        })
+        .unwrap();
+        enqueue(async {}).unwrap();
+        JOBS.with(|owner| {
+            let jobs = owner.get().unwrap();
+            assert!(jobs.tasks.borrow().capacity() > 0);
+            assert!(jobs.ready.borrow().capacity() > 0);
+            assert!(handle.0.lock().ready.capacity() > 0);
+        });
+        drop(activation);
+        assert_eq!(drops.get(), generation + 1);
+        JOBS.with(|owner| {
+            let jobs = owner.get().unwrap();
+            assert_eq!(jobs.live.get(), 0);
+            assert_eq!(jobs.capacity.get(), 0);
+            assert_eq!(jobs.tasks.borrow().capacity(), 0);
+            assert_eq!(jobs.ready.borrow().capacity(), 0);
+            assert!(jobs.handle.borrow().is_none());
+        });
+        assert_eq!(handle.0.lock().ready.capacity(), 0);
+        previous = Some(handle);
+    }
+}
+
+#[test]
 fn racing_foreign_wakes_and_owner_cancellation_release_non_send_frames_exactly_once() {
     for _ in 0..64 {
         let drops = Rc::new(Cell::new(0));
