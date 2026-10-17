@@ -166,7 +166,8 @@ fn selected_js_timer_driver_keeps_non_display_non_send_error_identity() {
         Failure::Native(error) => panic!("unexpected native failure: {error}"),
     }
     assert!(!observed.get());
-    let previous_owner = previous_owner.expect("the original explicit owner admitted both callbacks");
+    let previous_owner =
+        previous_owner.expect("the original explicit owner admitted both callbacks");
     assert!(previous_owner.wake().is_err());
     assert!(!timers.has_pending_work());
     assert!(crate::event_loop::run_entry_with_contexts(
