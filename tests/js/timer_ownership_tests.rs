@@ -1,54 +1,13 @@
-use std::alloc::{GlobalAlloc, Layout, System};
+#[path = "../../../rust-runtime/tests/helpers/allocation_counts.rs"]
+pub mod allocation_counts;
+use allocation_counts::measure_requests;
+
 use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 use std::hint::black_box;
 use std::num::NonZeroUsize;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
-
-struct CountingAllocator;
-
-thread_local! {
-    static ALLOCATIONS: Cell<Option<(usize, usize)>> = const { Cell::new(None) };
-}
-
-fn record_allocation(bytes: usize) {
-    ALLOCATIONS.with(|counter| {
-        if let Some((count, total)) = counter.get() {
-            counter.set(Some((count + 1, total + bytes)));
-        }
-    });
-}
-
-unsafe impl GlobalAlloc for CountingAllocator {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        record_allocation(layout.size());
-        unsafe { System.alloc(layout) }
-    }
-
-    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
-        record_allocation(layout.size());
-        unsafe { System.alloc_zeroed(layout) }
-    }
-
-    unsafe fn realloc(&self, pointer: *mut u8, layout: Layout, size: usize) -> *mut u8 {
-        record_allocation(size);
-        unsafe { System.realloc(pointer, layout, size) }
-    }
-
-    unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
-        unsafe { System.dealloc(pointer, layout) }
-    }
-}
-
-#[global_allocator]
-static ALLOCATOR: CountingAllocator = CountingAllocator;
-
-fn measure(operation: impl FnOnce()) -> (usize, usize) {
-    ALLOCATIONS.set(Some((0, 0)));
-    operation();
-    ALLOCATIONS.replace(None).unwrap()
-}
 
 struct DropProbe(Rc<Cell<usize>>);
 
@@ -100,7 +59,7 @@ fn retained_timer_allocations_match_one_native_callback_owner() {
             let expected_callbacks = callbacks(count);
             let mut handles = Vec::with_capacity(count);
             let delay = Duration::from_secs(60);
-            let actual = measure(|| {
+            let actual = measure_requests(|| {
                 for callback in actual_callbacks {
                     handles.push(
                         timers::with_default(|timers| {
@@ -110,7 +69,7 @@ fn retained_timer_allocations_match_one_native_callback_owner() {
                     );
                 }
             });
-            let expected = measure(|| {
+            let expected = measure_requests(|| {
                 for (index, callback) in expected_callbacks.into_iter().enumerate() {
                     let reservation = budget
                         .get_or_init(|| TaskBudget::new(NonZeroUsize::new(1 << 20).unwrap()))
@@ -166,7 +125,7 @@ fn retained_timer_allocations_match_one_native_callback_owner() {
 
 #[test]
 fn cold_timer_queries_and_empty_dispatch_allocate_nothing() {
-    let cost = measure(|| {
+    let cost = measure_requests(|| {
         assert!(!timers::has_timers());
         assert_eq!(timers::next_timer_delay(), None);
         assert!(!timers::poll_timers().unwrap());
@@ -194,7 +153,7 @@ fn ready_timer_dispatch_allocates_no_callback_snapshots() {
             })
             .unwrap();
         }
-        let allocations = measure(|| assert!(timers::poll_timers().unwrap()));
+        let allocations = measure_requests(|| assert!(timers::poll_timers().unwrap()));
         assert_eq!(allocations, (0, 0));
         assert_eq!(observed.get(), 2);
         assert!(!timers::has_timers());
