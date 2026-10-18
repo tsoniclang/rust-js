@@ -1,59 +1,12 @@
-use std::alloc::{GlobalAlloc, Layout, System};
+#[path = "../../rust-runtime/tests/helpers/allocation_counts.rs"]
+pub mod allocation_counts;
+
 use std::cell::Cell;
 use std::hint::black_box;
 
 use tsonic_rust_js::abi::SourceNumeric;
 use tsonic_rust_js::number::JsNumberValue;
 use tsonic_rust_runtime::BigInt;
-
-struct CountingAllocator;
-
-thread_local! {
-    static TRACKED_ALLOCATIONS: Cell<Option<usize>> = const { Cell::new(None) };
-    static TRACKED_BYTES: Cell<Option<usize>> = const { Cell::new(None) };
-    static TRACKED_ALIGNMENT: Cell<Option<usize>> = const { Cell::new(None) };
-}
-
-unsafe impl GlobalAlloc for CountingAllocator {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        TRACKED_ALLOCATIONS.with(|count| {
-            if let Some(value) = count.get() {
-                count.set(Some(value + 1));
-            }
-        });
-        TRACKED_BYTES.with(|count| {
-            if let Some(value) = count.get() {
-                count.set(Some(value + layout.size()));
-            }
-        });
-        TRACKED_ALIGNMENT.with(|alignment| {
-            if let Some(value) = alignment.get() {
-                alignment.set(Some(value.max(layout.align())));
-            }
-        });
-        unsafe { System.alloc(layout) }
-    }
-
-    unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
-        unsafe { System.dealloc(pointer, layout) }
-    }
-}
-
-#[global_allocator]
-static ALLOCATOR: CountingAllocator = CountingAllocator;
-
-fn measured_allocation<Output>(
-    operation: impl FnOnce() -> Output,
-) -> (Output, usize, usize, usize) {
-    TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
-    TRACKED_BYTES.with(|count| count.set(Some(0)));
-    TRACKED_ALIGNMENT.with(|alignment| alignment.set(Some(0)));
-    let output = operation();
-    let allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
-    let bytes = TRACKED_BYTES.with(|count| count.replace(None).unwrap());
-    let alignment = TRACKED_ALIGNMENT.with(|value| value.replace(None).unwrap());
-    (output, allocations, bytes, alignment)
-}
 
 #[test]
 fn broad_empty_object_freeze_keeps_aliases_and_native_zero_allocation_cost() {
@@ -68,7 +21,7 @@ fn broad_empty_object_freeze_keeps_aliases_and_native_zero_allocation_cost() {
     let original = EmptyObject::new();
     let other = EmptyObject::new();
     let first = JsValue::from(original.clone());
-    let (result, allocations, bytes, _) = measured_allocation(|| {
+    let (result, allocations, bytes, _) = allocation_counts::measure_layout(|| {
         let alias = retain(first.clone());
         let initially_unfrozen = !alias.object_state_is_frozen();
         let frozen = first.freeze_object_state();
@@ -118,13 +71,14 @@ fn broad_empty_object_freeze_keeps_aliases_and_native_zero_allocation_cost() {
 fn broad_empty_object_construction_and_freeze_match_direct_native_cost_and_layout() {
     use tsonic_rust_js::{equality::JsStrictEqual, JsClosedValue, JsValue};
     use tsonic_rust_runtime::EmptyObject;
-    let (direct, direct_count, direct_bytes, direct_alignment) = measured_allocation(|| {
-        let first = EmptyObject::new();
-        let alias = first.clone();
-        let frozen = first.freeze();
-        (first, alias, frozen)
-    });
-    let (broad, count, bytes, alignment) = measured_allocation(|| {
+    let (direct, direct_count, direct_bytes, direct_alignment) =
+        allocation_counts::measure_layout(|| {
+            let first = EmptyObject::new();
+            let alias = first.clone();
+            let frozen = first.freeze();
+            (first, alias, frozen)
+        });
+    let (broad, count, bytes, alignment) = allocation_counts::measure_layout(|| {
         let first = JsValue::from(EmptyObject::new());
         let alias = first.clone();
         let frozen = first.freeze_object_state();
@@ -156,9 +110,9 @@ fn native_payload_does_not_grow_closed_js_carriers_or_their_allocation() {
         let direct = create();
         let closed = create();
         let (direct, direct_count, direct_bytes, direct_alignment) =
-            measured_allocation(|| Rc::new(direct));
+            allocation_counts::measure_layout(|| Rc::new(direct));
         let (closed, closed_count, closed_bytes, closed_alignment) =
-            measured_allocation(|| JsValue::from_closed(closed));
+            allocation_counts::measure_layout(|| JsValue::from_closed(closed));
         assert_eq!(direct_count, 1);
         assert_eq!(closed_count, 1);
         assert_eq!(closed_bytes, direct_bytes);
@@ -217,12 +171,12 @@ fn native_passive_aliases_and_queries_preserve_exact_clone_and_drop_costs() {
         value: u64::MAX,
     });
     let identity = value.reference_identity_key();
-    let (alias, count, bytes, _) = measured_allocation(|| value.clone());
+    let (alias, count, bytes, _) = allocation_counts::measure_layout(|| value.clone());
     assert_eq!(count, 0);
     assert_eq!(bytes, 0);
     assert_eq!(clones.get(), 0);
     assert_eq!(alias.reference_identity_key(), identity);
-    let (observations, count, bytes, _) = measured_allocation(|| {
+    let (observations, count, bytes, _) = allocation_counts::measure_layout(|| {
         (
             value.strict_equal(&alias),
             value.same_value(&alias),
@@ -235,7 +189,8 @@ fn native_passive_aliases_and_queries_preserve_exact_clone_and_drop_costs() {
     assert_eq!(count, 0);
     assert_eq!(bytes, 0);
     assert_eq!(clones.get(), 0);
-    let (recovered, count, bytes, _) = measured_allocation(|| alias.native_value::<Probe>());
+    let (recovered, count, bytes, _) =
+        allocation_counts::measure_layout(|| alias.native_value::<Probe>());
     assert_eq!(count, 0);
     assert_eq!(bytes, 0);
     assert_eq!(clones.get(), 1);
@@ -255,9 +210,9 @@ fn exact_native_string_recovery_clones_only_the_requested_payload() {
     let original = String::from("one explicitly requested native string clone");
     let retained = JsValue::from_closed(original.clone());
     let (direct, direct_count, direct_bytes, direct_alignment) =
-        measured_allocation(|| original.clone());
+        allocation_counts::measure_layout(|| original.clone());
     let (recovered, count, bytes, alignment) =
-        measured_allocation(|| retained.native_value::<String>().unwrap());
+        allocation_counts::measure_layout(|| retained.native_value::<String>().unwrap());
     assert_eq!(count, 1);
     assert_eq!(count, direct_count);
     assert_eq!(bytes, direct_bytes);
@@ -273,7 +228,7 @@ fn generic_number_predicates_borrow_existing_numeric_storage_without_allocations
     }
     let large = tsonic_rust_js::bigint::from_string("9007199254740993").unwrap();
     let union = tsonic_rust_js::number::JsNumeric::from_bigint(&large);
-    TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
+    let measurement = allocation_counts::Measurement::start();
     for _iteration in 0..10_000 {
         assert!(integer(black_box(&large)));
         assert!(integer(black_box(&union)));
@@ -283,7 +238,7 @@ fn generic_number_predicates_borrow_existing_numeric_storage_without_allocations
         assert!(number::is_finite(black_box(&union)));
         assert!(!number::is_nan(black_box(&union)));
     }
-    let allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
+    let allocations = measurement.finish().allocation_requests();
     assert_eq!(allocations, 0);
     assert_eq!(large.to_string(), "9007199254740993");
 }
@@ -298,14 +253,14 @@ fn native_record_json_borrows_scalar_keys_instead_of_snapshotting_every_string()
             JsValue::Bool(true),
         )
     }));
-    TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
+    let measurement = allocation_counts::Measurement::start();
     let requested_keys = black_box(&record).keys();
-    let snapshot_allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
+    let snapshot_allocations = measurement.finish().allocation_requests();
     assert_eq!(snapshot_allocations, 1001);
     let value = JsValue::from(record.clone());
-    TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
+    let measurement = allocation_counts::Measurement::start();
     let rendered = json::stringify(black_box(&value)).unwrap().unwrap();
-    let allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
+    let allocations = measurement.finish().allocation_requests();
     eprintln!("1000 native keys: requested snapshot allocations={snapshot_allocations}; default JSON allocations={allocations}");
     assert!(
         allocations <= 24,
@@ -317,9 +272,9 @@ fn native_record_json_borrows_scalar_keys_instead_of_snapshotting_every_string()
             JsValue::array(JsArray::from_dense(vec![JsValue::Bool(true)])),
         )
     })));
-    TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
+    let measurement = allocation_counts::Measurement::start();
     let nested_rendered = json::stringify(black_box(&nested)).unwrap().unwrap();
-    let nested_allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
+    let nested_allocations = measurement.finish().allocation_requests();
     eprintln!("1000 native keys with nested arrays: conservative default JSON allocations={nested_allocations}");
     for key in requested_keys {
         assert!(rendered.contains(&format!("\"{key}\":true")));
@@ -337,7 +292,7 @@ fn native_record_admission_reuses_one_backing_with_zero_additional_allocations()
     let distinct =
         Record::from_entries([(String::from("value"), JsValue::UnsignedInteger(u64::MAX))]);
     let identity = original.storage_identity_key();
-    TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
+    let measurement = allocation_counts::Measurement::start();
     let value = JsValue::from(original.clone());
     let alias = JsValue::from(original.clone());
     let other = JsValue::from(distinct);
@@ -350,7 +305,7 @@ fn native_record_admission_reuses_one_backing_with_zero_additional_allocations()
             JsValue::UnsignedInteger(u64::MAX)
         );
     }
-    let allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
+    let allocations = measurement.finish().allocation_requests();
     assert_eq!(allocations, 0);
     if usize::BITS == 64 {
         assert_eq!(std::mem::size_of::<JsValue>(), 40);
@@ -371,7 +326,7 @@ fn native_shared_identity_admission_preserves_the_original_owner_without_allocat
     let drops = Rc::new(Cell::new(0));
     let object = ObjectHandle::new(Dropped(drops.clone()));
     let empty = EmptyObject::new();
-    TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
+    let measurement = allocation_counts::Measurement::start();
     let left = JsValue::from_shared_identity(object.clone().into_shared());
     let right = JsValue::from_shared_identity(object.clone().into_shared());
     let empty_value = JsValue::from(empty.clone());
@@ -380,7 +335,7 @@ fn native_shared_identity_admission_preserves_the_original_owner_without_allocat
         assert!(black_box(&left).strict_equal(black_box(&right)));
         assert!(black_box(&empty_value).strict_equal(black_box(&empty_alias)));
     }
-    let allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
+    let allocations = measurement.finish().allocation_requests();
     assert_eq!(allocations, 0);
     if usize::BITS == 64 {
         assert_eq!(std::mem::size_of::<JsValue>(), 40);
@@ -411,11 +366,11 @@ fn native_passive_erasure_allocates_one_owner_and_never_inspects_its_payload() {
     }
     let drops = Rc::new(Cell::new(0));
     let payload = Dropped(drops.clone());
-    TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
+    let measurement = allocation_counts::Measurement::start();
     let value = JsValue::from_closed(payload);
     let alias = value.clone();
     let equals = value.strict_equal(&alias);
-    let allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
+    let allocations = measurement.finish().allocation_requests();
     assert_eq!(allocations, 1);
     assert!(equals);
     assert_eq!(value.inspect(), "[Native value]");
@@ -454,7 +409,7 @@ fn native_shared_object_conversions_retain_aliases_without_additional_allocation
         count: Cell::new(u64::MAX),
         drops: drops.clone(),
     });
-    TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
+    let measurement = allocation_counts::Measurement::start();
     let left = JsValue::from(handle.clone());
     let right = JsValue::from(handle.clone());
     let shared = JsValue::from(reference.clone());
@@ -467,7 +422,7 @@ fn native_shared_object_conversions_retain_aliases_without_additional_allocation
     let recovered_reference = ObjectRef::from_shared(reference_projection);
     handle.with_mut(|value| value.count.set(7));
     reference.with(|value| value.count.set(11));
-    let allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
+    let allocations = measurement.finish().allocation_requests();
     assert_eq!(allocations, 0);
     for _iteration in 0..10_000 {
         assert!(black_box(&left).strict_equal(black_box(&right)));
@@ -497,14 +452,14 @@ fn closed_string_conversion_allocates_only_its_requested_result() {
         JsValue::Integer(42),
         JsValue::Null,
     ]));
-    TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
+    let measurement = allocation_counts::Measurement::start();
     let result = abi::closed_value_string(black_box(&value)).unwrap();
-    let scalar_allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
+    let scalar_allocations = measurement.finish().allocation_requests();
     assert_eq!(scalar_allocations, 1);
     assert_eq!(result, "a native string with enough bytes");
-    TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
+    let measurement = allocation_counts::Measurement::start();
     let result = abi::closed_value_string(black_box(&values)).unwrap();
-    let array_allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
+    let array_allocations = measurement.finish().allocation_requests();
     assert_eq!(array_allocations, 1);
     assert_eq!(result, "42,");
 }
@@ -515,7 +470,7 @@ fn optional_primitive_conversion_avoids_boxing_and_intermediate_strings() {
     let optional_text = Some(" 42 ".to_owned());
     let integer = Some(9_007_199_254_740_993_i64);
     let mut buffer = String::with_capacity(32);
-    TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
+    let measurement = allocation_counts::Measurement::start();
     for _ in 0..1000 {
         black_box(abi::number_from_value(black_box(&optional_text)));
         black_box(abi::number_from_value(black_box(&integer)));
@@ -524,7 +479,7 @@ fn optional_primitive_conversion_avoids_boxing_and_intermediate_strings() {
         black_box(&integer).write_js_string(&mut buffer);
         black_box(&buffer);
     }
-    let allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
+    let allocations = measurement.finish().allocation_requests();
     assert_eq!(allocations, 0);
     assert_eq!(buffer, "9007199254740993");
 }
@@ -532,7 +487,7 @@ fn optional_primitive_conversion_avoids_boxing_and_intermediate_strings() {
 #[test]
 fn closed_native_primitives_box_without_allocating() {
     use tsonic_rust_js::{equality::JsHash, JsValue};
-    TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
+    let measurement = allocation_counts::Measurement::start();
     for _ in 0..1000 {
         macro_rules! check {
             ($($value:expr),+ $(,)?) => {$({
@@ -558,7 +513,7 @@ fn closed_native_primitives_box_without_allocating() {
             0.1_f64
         );
     }
-    let allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
+    let allocations = measurement.finish().allocation_requests();
     assert_eq!(allocations, 0);
 }
 
@@ -567,14 +522,14 @@ fn typed_array_search_does_not_allocate_for_native_or_unrepresentable_queries() 
     use tsonic_rust_js::{Float64Array, Uint8Array};
     let bytes = Uint8Array::from_bytes(vec![0, 1, 255]);
     let doubles = Float64Array::from_vec(vec![9_007_199_254_740_992_f64, u64::MAX as f64]).unwrap();
-    TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
+    let measurement = allocation_counts::Measurement::start();
     for _ in 0..1000 {
         black_box(bytes.includes_from_start(black_box(255_u8)));
         black_box(bytes.index_of_from_start(black_box(u64::MAX)));
         black_box(doubles.includes_from_start(black_box(9_007_199_254_740_993_u64)));
         black_box(doubles.index_of_from_start(black_box(u64::MAX)));
     }
-    let allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
+    let allocations = measurement.finish().allocation_requests();
     assert_eq!(allocations, 0);
 }
 
@@ -583,11 +538,11 @@ fn numeric_array_copy_borrows_without_allocating_or_boxing_elements() {
     use tsonic_rust_js::{array::JsArray, Uint8Array};
     let values = JsArray::from_dense(vec![9_007_199_254_740_993_u64, u64::MAX]);
     let bytes = Uint8Array::new(2_usize).unwrap();
-    TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
+    let measurement = allocation_counts::Measurement::start();
     for _ in 0..1000 {
         bytes.set_from_array(black_box(&values), 0_usize).unwrap();
     }
-    let allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
+    let allocations = measurement.finish().allocation_requests();
     assert_eq!(allocations, 0);
     assert_eq!(bytes.get_number(0_usize), Some(1));
     assert_eq!(bytes.get_number(1_usize), Some(255));
@@ -603,11 +558,11 @@ fn numeric_formatting_allocates_only_the_result_string() {
         || u128::MAX.precision_string(100),
     ];
     for format in formats {
-        TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
+        let measurement = allocation_counts::Measurement::start();
         for _ in 0..1000 {
             black_box(format());
         }
-        let allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
+        let allocations = measurement.finish().allocation_requests();
         assert_eq!(allocations, 1000);
     }
 }
@@ -617,13 +572,14 @@ fn json_native_integer_formatting_matches_direct_native_output_cost() {
     use std::fmt::{Display, Write};
     use tsonic_rust_js::{json, JsValue};
     fn check<Value: Display>(value: Value, carrier: JsValue) {
-        let (expected, native_count, native_bytes, native_alignment) = measured_allocation(|| {
-            let mut result = String::new();
-            write!(&mut result, "{value}").unwrap();
-            result
-        });
+        let (expected, native_count, native_bytes, native_alignment) =
+            allocation_counts::measure_layout(|| {
+                let mut result = String::new();
+                write!(&mut result, "{value}").unwrap();
+                result
+            });
         let (actual, count, bytes, alignment) =
-            measured_allocation(|| json::stringify(&carrier).unwrap().unwrap());
+            allocation_counts::measure_layout(|| json::stringify(&carrier).unwrap().unwrap());
         assert_eq!(actual, expected);
         assert_eq!(count, native_count, "{expected}");
         assert_eq!(bytes, native_bytes, "{expected}");
@@ -657,7 +613,7 @@ fn json_native_integer_formatting_matches_direct_native_output_cost() {
 fn native_numeric_conversion_and_borrowed_comparison_do_not_allocate() {
     let explicit_bigint = BigInt::from_decimal_literal("9007199254740993");
     let enormous = BigInt::from_decimal_literal("340282366920938463463374607431768211456");
-    TRACKED_ALLOCATIONS.with(|count| count.set(Some(0)));
+    let measurement = allocation_counts::Measurement::start();
     let mut valid = true;
     for _ in 0..1000 {
         macro_rules! native {
@@ -693,7 +649,7 @@ fn native_numeric_conversion_and_borrowed_comparison_do_not_allocate() {
         valid &= tsonic_rust_js::bigint::as_int_n(256.0, &enormous).unwrap() == enormous;
         valid &= tsonic_rust_js::bigint::as_uint_n(129.0, &enormous).unwrap() == enormous;
     }
-    let allocations = TRACKED_ALLOCATIONS.with(|count| count.replace(None).unwrap());
+    let allocations = measurement.finish().allocation_requests();
     assert!(valid);
     assert_eq!(allocations, 0);
 }
