@@ -262,11 +262,10 @@ impl Jobs {
             state.closed = true;
             std::mem::take(&mut state.ready)
         };
-        let mut local = std::mem::take(&mut *self.ready.borrow_mut());
+        let local = std::mem::take(&mut *self.ready.borrow_mut());
         drop(late);
-        local.clear();
-        *self.ready.borrow_mut() = local;
-        *self.tasks.borrow_mut() = tasks;
+        drop(local);
+        drop(tasks);
         self.handle.borrow_mut().take();
         self.polling.set(false);
         self.capacity.set(0);
