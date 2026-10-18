@@ -349,20 +349,23 @@ fn intl_is_deterministic_and_rejects_unapproved_locale_data() {
 
 #[test]
 fn timer_inventory_tracks_live_callbacks_exactly() {
-    assert!(!tsonic_rust_js::timers::has_timers());
-    let timer = tsonic_rust_js::timers::with_default(|timers| {
-        tsonic_rust_js::timers::set_timeout_callable(
-            timers,
-            Callable::new(|()| Ok::<(), tsonic_rust_runtime::TsonicError>(())),
-            1_000.0,
-        )
+    tsonic_rust_js::event_loop::block_on(async {
+        assert!(!tsonic_rust_js::timers::has_timers());
+        let timer = tsonic_rust_js::timers::with_default(|timers| {
+            tsonic_rust_js::timers::set_timeout_callable(
+                timers,
+                Callable::new(|()| Ok::<(), tsonic_rust_runtime::TsonicError>(())),
+                1_000.0,
+            )
+        })
+        .unwrap();
+        assert!(tsonic_rust_js::timers::has_timers());
+        tsonic_rust_js::timers::with_default(|timers| {
+            tsonic_rust_js::timers::clear_timeout(timers, timer)
+        });
+        assert!(!tsonic_rust_js::timers::has_timers());
     })
     .unwrap();
-    assert!(tsonic_rust_js::timers::has_timers());
-    tsonic_rust_js::timers::with_default(|timers| {
-        tsonic_rust_js::timers::clear_timeout(timers, timer)
-    });
-    assert!(!tsonic_rust_js::timers::has_timers());
 }
 
 #[test]
