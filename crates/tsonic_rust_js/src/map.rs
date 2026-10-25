@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use tsonic_rust_runtime::{ObjectIdentity, ObjectIdentityCarrier, TsonicResult};
+use tsonic_rust_runtime::{ObjectIdentity, ObjectIdentityCarrier};
 
 use crate::equality::{hash_identity, JsHash, JsSameValueZero, JsStrictEqual};
 
@@ -390,11 +390,11 @@ impl<K, V> JsMap<K, V> {
         }
     }
 
-    fn try_for_each_with<F>(&self, mut callback: F) -> TsonicResult<()>
+    fn try_for_each_with<Error, Callback>(&self, mut callback: Callback) -> Result<(), Error>
     where
         K: Clone,
         V: Clone,
-        F: FnMut(V, K, Self) -> TsonicResult<()>,
+        Callback: FnMut(V, K, Self) -> Result<(), Error>,
     {
         let _iteration = MapIteration::new(&self.state);
         let mut index = 0;
@@ -419,38 +419,41 @@ impl<K, V> JsMap<K, V> {
         Ok(())
     }
 
-    pub fn try_for_each_zero<F>(&self, mut callback: F) -> TsonicResult<()>
+    pub fn try_for_each_zero<Error, Callback>(&self, mut callback: Callback) -> Result<(), Error>
     where
         K: Clone,
         V: Clone,
-        F: FnMut() -> TsonicResult<()>,
+        Callback: FnMut() -> Result<(), Error>,
     {
         self.try_for_each_with(|_, _, _| callback())
     }
 
-    pub fn try_for_each_value<F>(&self, mut callback: F) -> TsonicResult<()>
+    pub fn try_for_each_value<Error, Callback>(&self, mut callback: Callback) -> Result<(), Error>
     where
         K: Clone,
         V: Clone,
-        F: FnMut(V) -> TsonicResult<()>,
+        Callback: FnMut(V) -> Result<(), Error>,
     {
         self.try_for_each_with(|value, _, _| callback(value))
     }
 
-    pub fn try_for_each_value_key<F>(&self, mut callback: F) -> TsonicResult<()>
+    pub fn try_for_each_value_key<Error, Callback>(
+        &self,
+        mut callback: Callback,
+    ) -> Result<(), Error>
     where
         K: Clone,
         V: Clone,
-        F: FnMut(V, K) -> TsonicResult<()>,
+        Callback: FnMut(V, K) -> Result<(), Error>,
     {
         self.try_for_each_with(|value, key, _| callback(value, key))
     }
 
-    pub fn try_for_each<F>(&self, callback: F) -> TsonicResult<()>
+    pub fn try_for_each<Error, Callback>(&self, callback: Callback) -> Result<(), Error>
     where
         K: Clone,
         V: Clone,
-        F: FnMut(V, K, Self) -> TsonicResult<()>,
+        Callback: FnMut(V, K, Self) -> Result<(), Error>,
     {
         self.try_for_each_with(callback)
     }

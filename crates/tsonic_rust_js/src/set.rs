@@ -1,4 +1,4 @@
-use tsonic_rust_runtime::{ObjectIdentity, ObjectIdentityCarrier, TsonicResult};
+use tsonic_rust_runtime::{ObjectIdentity, ObjectIdentityCarrier};
 
 use crate::equality::{JsHash, JsSameValueZero, JsStrictEqual};
 
@@ -265,43 +265,46 @@ impl<T> JsSet<T> {
         self.values().iter().all(|value| !other.has(value))
     }
 
-    fn try_for_each_with<F>(&self, mut callback: F) -> TsonicResult<()>
+    fn try_for_each_with<Error, Callback>(&self, mut callback: Callback) -> Result<(), Error>
     where
         T: Clone,
-        F: FnMut(T, T, Self) -> TsonicResult<()>,
+        Callback: FnMut(T, T, Self) -> Result<(), Error>,
     {
         self.entries
             .try_for_each(|(), value, _| callback(value.clone(), value, self.clone()))
     }
 
-    pub fn try_for_each_zero<F>(&self, mut callback: F) -> TsonicResult<()>
+    pub fn try_for_each_zero<Error, Callback>(&self, mut callback: Callback) -> Result<(), Error>
     where
         T: Clone,
-        F: FnMut() -> TsonicResult<()>,
+        Callback: FnMut() -> Result<(), Error>,
     {
         self.try_for_each_with(|_, _, _| callback())
     }
 
-    pub fn try_for_each_value<F>(&self, mut callback: F) -> TsonicResult<()>
+    pub fn try_for_each_value<Error, Callback>(&self, mut callback: Callback) -> Result<(), Error>
     where
         T: Clone,
-        F: FnMut(T) -> TsonicResult<()>,
+        Callback: FnMut(T) -> Result<(), Error>,
     {
         self.try_for_each_with(|value, _, _| callback(value))
     }
 
-    pub fn try_for_each_value_key<F>(&self, mut callback: F) -> TsonicResult<()>
+    pub fn try_for_each_value_key<Error, Callback>(
+        &self,
+        mut callback: Callback,
+    ) -> Result<(), Error>
     where
         T: Clone,
-        F: FnMut(T, T) -> TsonicResult<()>,
+        Callback: FnMut(T, T) -> Result<(), Error>,
     {
         self.try_for_each_with(|value, key, _| callback(value, key))
     }
 
-    pub fn try_for_each<F>(&self, callback: F) -> TsonicResult<()>
+    pub fn try_for_each<Error, Callback>(&self, callback: Callback) -> Result<(), Error>
     where
         T: Clone,
-        F: FnMut(T, T, Self) -> TsonicResult<()>,
+        Callback: FnMut(T, T, Self) -> Result<(), Error>,
     {
         self.try_for_each_with(callback)
     }

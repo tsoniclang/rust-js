@@ -175,6 +175,57 @@ fn fallible_map_callbacks_preserve_arity_live_mutation_and_short_circuiting() {
 }
 
 #[test]
+fn fallible_map_callbacks_preserve_borrowed_native_errors_at_every_arity() {
+    struct NativeFailure<'identity>(&'identity u128);
+
+    let identity = (1_u128 << 100) + 7;
+    for arity in 0..4 {
+        let map = JsMap::from_entries([(1, 10), (2, 20)]);
+        let alias = map.clone();
+        let mut visits = 0;
+        let result = match arity {
+            0 => map.try_for_each_zero(|| {
+                visits += 1;
+                Err(NativeFailure(&identity))
+            }),
+            1 => map.try_for_each_value(|value| {
+                visits += 1;
+                assert_eq!(value, 10);
+                Err(NativeFailure(&identity))
+            }),
+            2 => map.try_for_each_value_key(|value, key| {
+                visits += 1;
+                assert_eq!((key, value), (1, 10));
+                Err(NativeFailure(&identity))
+            }),
+            _ => map.try_for_each(|value, key, current| {
+                visits += 1;
+                assert_eq!((key, value), (1, 10));
+                assert!(current.ptr_eq(&alias));
+                current.set(3, 30);
+                current.delete(&2);
+                Err(NativeFailure(&identity))
+            }),
+        };
+        let failure = result.expect_err("the native error must propagate unchanged");
+        assert!(std::ptr::eq(failure.0, &identity));
+        assert_eq!(*failure.0, (1_u128 << 100) + 7);
+        assert_eq!(visits, 1);
+        assert!(map.ptr_eq(&alias));
+        let mut after = Vec::new();
+        map.for_each(|value, key, _| after.push((key, value)));
+        assert_eq!(
+            after,
+            if arity == 3 {
+                vec![(1, 10), (3, 30)]
+            } else {
+                vec![(1, 10), (2, 20)]
+            }
+        );
+    }
+}
+
+#[test]
 fn map_indexes_same_value_zero_keys_without_linear_scans() {
     let comparisons = Rc::new(Cell::new(0));
     let map = JsMap::new();
