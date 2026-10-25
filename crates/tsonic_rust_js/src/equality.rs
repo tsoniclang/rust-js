@@ -1,6 +1,7 @@
 //! Equality helpers for JS-compatible comparison behavior.
 
 use crate::js_string::JsString;
+use tsonic_rust_runtime::Callable;
 
 /// JS SameValueZero comparison.
 pub trait JsSameValueZero<Rhs: ?Sized = Self> {
@@ -42,6 +43,18 @@ fn hash_bytes(bytes: &[u8]) -> u64 {
 
 pub(crate) fn hash_identity(identity: usize) -> u64 {
     hash_bytes(&identity.to_ne_bytes())
+}
+
+impl<TArguments, TResult> JsSameValueZero for Callable<'_, TArguments, TResult> {
+    fn same_value_zero(&self, other: &Self) -> bool {
+        Self::same(self, other)
+    }
+}
+
+impl<TArguments, TResult> JsHash for Callable<'_, TArguments, TResult> {
+    fn js_hash(&self) -> u64 {
+        hash_identity(self.identity_key())
+    }
 }
 
 pub fn same_value_zero_f64(left: f64, right: f64) -> bool {
