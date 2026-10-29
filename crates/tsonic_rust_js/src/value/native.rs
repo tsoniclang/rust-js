@@ -1,8 +1,6 @@
 use super::{JsClosedValue, JsClosedValuePayload, JsValue};
 use std::rc::Rc;
-use tsonic_rust_runtime::{
-    EmptyObject, NativePayload, ObjectHandle, ObjectIdentityCarrier, ObjectRef,
-};
+use tsonic_rust_runtime::{EmptyObject, NativePayload, ObjectHandle, ObjectIdentityCarrier, ObjectRef};
 
 impl JsValue {
     pub fn native_shared<Payload: ?Sized + 'static>(&self) -> Option<Rc<Payload>> {
