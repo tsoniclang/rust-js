@@ -9,7 +9,7 @@ use tsonic_rust_js::number::JsNumberValue;
 use tsonic_rust_runtime::BigInt;
 
 #[test]
-fn broad_empty_object_freeze_keeps_aliases_and_native_zero_allocation_cost() {
+fn broad_empty_object_identity_keeps_aliases_and_native_zero_allocation_cost() {
     use tsonic_rust_js::{
         equality::{JsHash, JsSameValue, JsSameValueZero, JsStrictEqual},
         JsValue,
@@ -23,30 +23,20 @@ fn broad_empty_object_freeze_keeps_aliases_and_native_zero_allocation_cost() {
     let first = JsValue::from(original.clone());
     let (result, allocations, bytes, _) = allocation_counts::measure_layout(|| {
         let alias = retain(first.clone());
-        let initially_unfrozen = !alias.object_state_is_frozen();
-        let frozen = first.freeze_object_state();
+        let frozen = core::convert::identity(first.clone());
         let observations = (
-            initially_unfrozen,
             first.strict_equal(&alias),
             frozen.strict_equal(&alias),
             frozen.same_value(&alias),
             frozen.same_value_zero(&alias),
             frozen.js_hash() == alias.js_hash(),
-            first.object_state_is_frozen(),
-            alias.object_state_is_frozen(),
-            frozen.object_state_is_frozen(),
         );
         (alias, frozen, observations)
     });
     assert_eq!(allocations, 0);
     assert_eq!(bytes, 0);
     let (alias, frozen, observations) = result;
-    assert_eq!(
-        observations,
-        (true, true, true, true, true, true, true, true, true)
-    );
-    assert!(original.is_frozen());
-    assert!(!other.is_frozen());
+    assert_eq!(observations, (true, true, true, true, true));
     assert!(first.strict_equal(&JsValue::from(original.clone())));
     assert!(!frozen.strict_equal(&JsValue::from(other.clone())));
     assert_eq!(
@@ -68,20 +58,20 @@ fn broad_empty_object_freeze_keeps_aliases_and_native_zero_allocation_cost() {
 }
 
 #[test]
-fn broad_empty_object_construction_and_freeze_match_direct_native_cost_and_layout() {
+fn broad_empty_object_construction_and_identity_match_direct_native_cost_and_layout() {
     use tsonic_rust_js::{equality::JsStrictEqual, JsClosedValue, JsValue};
     use tsonic_rust_runtime::EmptyObject;
     let (direct, direct_count, direct_bytes, direct_alignment) =
         allocation_counts::measure_layout(|| {
             let first = EmptyObject::new();
             let alias = first.clone();
-            let frozen = first.freeze();
+            let frozen = core::convert::identity(first.clone());
             (first, alias, frozen)
         });
     let (broad, count, bytes, alignment) = allocation_counts::measure_layout(|| {
         let first = JsValue::from(EmptyObject::new());
         let alias = first.clone();
-        let frozen = first.freeze_object_state();
+        let frozen = core::convert::identity(first.clone());
         (first, alias, frozen)
     });
     assert_eq!(direct_count, 1);

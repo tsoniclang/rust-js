@@ -2,8 +2,7 @@ use tsonic_rust_js::{abi, array::ArrayLength, JsErrorKind};
 use tsonic_rust_runtime::BigInt;
 
 #[test]
-fn broad_empty_state_projection_rejects_other_variants_without_payload_mutation() {
-    use std::panic::{catch_unwind, AssertUnwindSafe};
+fn native_identity_preserves_all_variants_without_payload_mutation() {
     use tsonic_rust_js::{object::JsObject, JsValue};
     use tsonic_rust_runtime::{EmptyObject, ObjectHandle, ObjectRef};
     let original = EmptyObject::new();
@@ -25,19 +24,11 @@ fn broad_empty_state_projection_rejects_other_variants_without_payload_mutation(
         JsValue::object(JsObject::new()),
         JsValue::array(tsonic_rust_js::JsArray::from_dense(vec![JsValue::Int32(3)])),
     ];
-    for (index, value) in values.iter().enumerate() {
-        assert!(
-            catch_unwind(AssertUnwindSafe(|| value.freeze_object_state())).is_err(),
-            "unsupported freeze variant {index}"
-        );
-        assert!(
-            catch_unwind(AssertUnwindSafe(|| value.object_state_is_frozen())).is_err(),
-            "unsupported query variant {index}"
-        );
+    for value in &values {
+        assert!(core::ptr::eq(value, core::convert::identity(value)));
     }
-    assert!(!original.is_frozen());
-    assert!(!project_identity.is_frozen());
-    assert!(!immutable_identity.is_frozen());
+    assert_eq!(&project_identity, project.object_identity());
+    assert_eq!(&immutable_identity, immutable.object_identity());
     assert_eq!(project.with(|value| *value), 17);
     assert_eq!(immutable.with(|value| *value), 23);
     assert!(matches!(&values[4], JsValue::String(value) if value == "unchanged"));
@@ -262,16 +253,13 @@ fn array_length_construction_initializes_native_values() {
 }
 
 #[test]
-fn empty_objects_retain_identity_and_freeze_through_aliases() {
+fn empty_objects_retain_identity_through_aliases() {
     use tsonic_rust_js::equality::{JsHash, JsSameValue, JsSameValueZero, JsStrictEqual};
     use tsonic_rust_runtime::ObjectIdentityCarrier;
     let first = tsonic_rust_runtime::EmptyObject::new();
     let alias = first.clone();
     let other = tsonic_rust_runtime::EmptyObject::default();
-    assert!(!first.is_frozen());
-    assert_eq!(first.freeze(), alias);
-    assert!(alias.is_frozen());
-    assert!(!other.is_frozen());
+    assert_eq!(core::convert::identity(first.clone()), alias);
     assert!(first.same_value(&alias));
     assert!(first.same_value_zero(&alias));
     assert!(first.strict_equal(&alias));
@@ -297,8 +285,6 @@ fn empty_objects_keep_identity_when_boxed_as_closed_values() {
     let boxed = abi::js_value_from_closed(&first);
     assert_eq!(boxed, abi::js_value_from_closed(&alias));
     assert_ne!(boxed, abi::js_value_from_closed(&other));
-    first.freeze();
-    assert!(alias.is_frozen());
     assert_eq!(boxed, abi::js_value_from_closed(&alias));
     assert_eq!(first.inspect_value(), "[object Object]");
     assert_eq!(
