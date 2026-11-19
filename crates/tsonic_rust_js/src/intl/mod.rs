@@ -858,19 +858,18 @@ fn first_locale(locales: &JsArray<String>) -> JsResult<String> {
         .ok_or_else(|| range_error("Intl locale list must contain at least one locale"))
 }
 
-fn options_object(options: &JsValue) -> JsResult<Option<std::cell::Ref<'_, crate::JsObject>>> {
+fn option_value(options: &JsValue, name: &str) -> JsResult<JsValue> {
     match options {
-        JsValue::Null => Ok(None),
+        JsValue::Null => Ok(JsValue::Null),
         JsValue::Object(object) => object
             .try_borrow()
-            .map(Some)
+            .map(|object| object.get(name))
             .map_err(|_| type_error("Intl options object is already mutably borrowed")),
+        JsValue::Record(record) => {
+            Ok(record.with_entries(|entries| entries.get(name).cloned().unwrap_or_default()))
+        }
         _ => Err(type_error("Intl options must be an object")),
     }
-}
-
-fn option_value(options: &JsValue, name: &str) -> JsResult<JsValue> {
-    Ok(options_object(options)?.map_or(JsValue::Null, |object| object.get(name)))
 }
 
 fn string_option(options: &JsValue, name: &str) -> JsResult<Option<String>> {
@@ -908,25 +907,33 @@ fn integer_option(
     minimum: u16,
     maximum: u16,
 ) -> JsResult<Option<u16>> {
-    match option_value(options, name)? {
-        JsValue::Null => Ok(None),
-        JsValue::Number(value)
+    let value = option_value(options, name)?;
+    if matches!(value, JsValue::Null) {
+        return Ok(None);
+    }
+    let selected = match value.numeric_ref() {
+        Some(crate::number::NumericRef::Float(value))
             if value.is_finite() && value >= f64::from(minimum) && value <= f64::from(maximum) =>
         {
-            Ok(Some(value as u16))
+            Some(value as u16)
         }
-        JsValue::Integer(value) if value >= i64::from(minimum) && value <= i64::from(maximum) => {
-            Ok(Some(value as u16))
-        }
-        JsValue::UnsignedInteger(value)
-            if value >= u64::from(minimum) && value <= u64::from(maximum) =>
+        Some(crate::number::NumericRef::Signed(value))
+            if value >= i128::from(minimum) && value <= i128::from(maximum) =>
         {
-            Ok(Some(value as u16))
+            Some(value as u16)
         }
-        _ => Err(range_error(format!(
+        Some(crate::number::NumericRef::Unsigned(value))
+            if value >= u128::from(minimum) && value <= u128::from(maximum) =>
+        {
+            Some(value as u16)
+        }
+        _ => None,
+    };
+    selected.map(Some).ok_or_else(|| {
+        range_error(format!(
             "Intl option '{name}' is outside its supported range"
-        ))),
-    }
+        ))
+    })
 }
 
 fn append_separated(

@@ -1,6 +1,11 @@
-use tsonic_rust_js::equality::{JsSameValueZero, JsStrictEqual};
+#[path = "../../../rust-runtime/tests/helpers/allocation_counts.rs"]
+mod allocation_counts;
+
+use std::cell::Cell;
+use std::hint::black_box;
+use tsonic_rust_js::equality::{JsHash, JsSameValueZero, JsStrictEqual};
 use tsonic_rust_js::{JsMap, JsObject, JsSet, JsString, JsValue};
-use tsonic_rust_runtime::BigInt;
+use tsonic_rust_runtime::{BigInt, Callable};
 
 fn sample_object() -> JsValue {
     JsValue::object(JsObject::from_pairs([("x", JsValue::Number(1.0))]))
@@ -40,6 +45,76 @@ fn aliased_object_handles_are_identical() {
         alias.as_object().expect("object handle").borrow().get("y"),
         JsValue::Number(2.0)
     );
+}
+
+#[test]
+fn aliased_callables_share_identity_and_hash() {
+    let invocations = Cell::new(0);
+    let original = Callable::new(|()| invocations.set(invocations.get() + 1));
+    let alias = original.clone();
+
+    assert!(original.same_value_zero(&alias));
+    assert_eq!(original.js_hash(), alias.js_hash());
+    assert_eq!(invocations.get(), 0);
+}
+
+#[test]
+fn callable_set_keys_deduplicate_aliases_not_distinct_implementations() {
+    let original = Callable::new(|()| 7_i32);
+    let alias = original.clone();
+    let distinct = Callable::new(|()| 7_i32);
+    assert!(!original.same_value_zero(&distinct));
+
+    let values = JsSet::from_values([original.clone(), alias.clone(), distinct.clone()]);
+    assert_eq!(values.len(), 2);
+    assert!(values.has(&original));
+    assert!(values.has(&alias));
+    assert!(values.has(&distinct));
+    assert!(values.delete(&alias));
+    assert_eq!(values.len(), 1);
+    assert!(!values.has(&original));
+    assert!(values.has(&distinct));
+}
+
+#[test]
+fn callable_identity_does_not_require_argument_or_result_traits() {
+    struct NonCloneInput;
+    struct NonCloneOutput;
+
+    let original = Callable::new(|(_input,): (NonCloneInput,)| NonCloneOutput);
+    let alias = original.clone();
+    assert!(original.same_value_zero(&alias));
+    assert_eq!(original.js_hash(), alias.js_hash());
+
+    let values = JsSet::from_values([original, alias]);
+    assert_eq!(values.len(), 1);
+}
+
+#[test]
+fn callable_identity_operations_allocate_nothing_and_do_not_invoke() {
+    let invocations = Cell::new(0);
+    let original = Callable::new(|()| invocations.set(invocations.get() + 1));
+    let alias = original.clone();
+    let distinct = Callable::new(|()| invocations.set(invocations.get() + 1));
+
+    let ((same, different, original_hash, alias_hash), counts) = allocation_counts::measure(|| {
+        let measured_alias = black_box(&original).clone();
+        (
+            black_box(&measured_alias).same_value_zero(black_box(&alias)),
+            black_box(&original).same_value_zero(black_box(&distinct)),
+            black_box(&original).js_hash(),
+            black_box(&alias).js_hash(),
+        )
+    });
+
+    assert!(same);
+    assert!(!different);
+    assert_eq!(original_hash, alias_hash);
+    assert_eq!(counts.allocations, 0);
+    assert_eq!(counts.deallocations, 0);
+    assert_eq!(counts.reallocations, 0);
+    assert_eq!(counts.requested_bytes(), 0);
+    assert_eq!(invocations.get(), 0);
 }
 
 #[test]

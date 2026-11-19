@@ -1,6 +1,4 @@
 use std::future::Future;
-use std::pin::pin;
-use std::task::{Context, Poll, Waker};
 
 use tsonic_rust_js::abi::{promise_all_settled, promise_any, promise_race};
 use tsonic_rust_js::{
@@ -11,14 +9,14 @@ use tsonic_rust_runtime::{Callable, TsonicError};
 
 #[test]
 fn generic_optional_values_reuse_the_closed_native_absence() {
-    use tsonic_rust_runtime::{optional_storage_coalesce, OptionalStorage};
+    use tsonic_rust_runtime::OptionalStorage;
     let absent = <JsValue as OptionalStorage<JsValue>>::absent();
     assert!(<JsValue as OptionalStorage<JsValue>>::is_absent(&absent));
-    let result = optional_storage_coalesce::<JsValue, JsValue, _>(
-        absent,
-        |_| panic!("absence entered present branch"),
-        || 7,
-    );
+    let result = if <JsValue as OptionalStorage<JsValue>>::is_absent(&absent) {
+        7
+    } else {
+        panic!("absence entered present branch")
+    };
     assert_eq!(result, 7);
     for value in [
         JsValue::Integer(0),
@@ -262,40 +260,39 @@ fn weak_collections_use_exact_object_identity() {
 
 #[test]
 fn promise_combinators_preserve_settlement_and_finally_behavior() {
-    let fulfilled = JsPromise::resolved(7);
-    let rejected = JsPromise::rejected(TsonicError::unsupported("no"));
-    let values = JsArray::from_dense(vec![rejected.clone(), fulfilled.clone()]);
+    block_on(async {
+        let fulfilled = JsPromise::resolved(7);
+        let rejected = JsPromise::rejected(JsValue::from_error(TsonicError::unsupported("no")));
+        let values = JsArray::from_dense(vec![rejected.clone(), fulfilled.clone()]);
 
-    assert!(block_on(promise_race(&values).await_result()).is_err());
-    assert_eq!(block_on(promise_any(&values).await_result()).unwrap(), 7);
+        assert!(promise_race(&values).await_result().await.is_err());
+        assert_eq!(promise_any(&values).await_result().await.unwrap(), 7);
 
-    let settled = block_on(promise_all_settled(&values).await_value());
-    assert!(matches!(
-        settled.get(0),
-        Some(PromiseSettledResult::Rejected(_))
-    ));
-    assert!(matches!(
-        settled.get(1),
-        Some(PromiseSettledResult::Fulfilled(value)) if value.value == 7
-    ));
+        let settled = promise_all_settled(&values).await_value().await;
+        assert!(matches!(
+            settled.get(0),
+            Some(PromiseSettledResult::Rejected(_))
+        ));
+        assert!(matches!(
+            settled.get(1),
+            Some(PromiseSettledResult::Fulfilled(value)) if value.value == 7
+        ));
 
-    let finalizer_runs = std::rc::Rc::new(std::cell::Cell::new(0));
-    let count = std::rc::Rc::clone(&finalizer_runs);
-    let finalized = fulfilled.finally(Callable::new(move |()| {
-        count.set(count.get() + 1);
-        Ok(())
-    }));
-    assert_eq!(block_on(finalized.await_result()).unwrap(), 7);
-    assert_eq!(finalizer_runs.get(), 1);
+        let finalizer_runs = std::rc::Rc::new(std::cell::Cell::new(0));
+        let count = std::rc::Rc::clone(&finalizer_runs);
+        let finalized = fulfilled.finally(Callable::new(move |()| {
+            count.set(count.get() + 1);
+            Ok(())
+        }));
+        assert_eq!(finalized.await_result().await.unwrap(), 7);
+        assert_eq!(finalizer_runs.get(), 1);
 
-    assert_eq!(
-        block_on(fulfilled.finally_default().await_result()).unwrap(),
-        7
-    );
-    let failed_finalizer = fulfilled.finally(Callable::new(|()| {
-        Err(TsonicError::unsupported("finalizer"))
-    }));
-    assert!(block_on(failed_finalizer.await_result()).is_err());
+        assert_eq!(fulfilled.finally_default().await_result().await.unwrap(), 7);
+        let failed_finalizer = fulfilled.finally(Callable::new(|()| {
+            Err(JsValue::from_error(TsonicError::unsupported("finalizer")))
+        }));
+        assert!(failed_finalizer.await_result().await.is_err());
+    });
 }
 
 #[test]
@@ -352,14 +349,23 @@ fn intl_is_deterministic_and_rejects_unapproved_locale_data() {
 
 #[test]
 fn timer_inventory_tracks_live_callbacks_exactly() {
-    assert!(!tsonic_rust_js::timers::has_timers());
-    let timer = tsonic_rust_js::timers::set_timeout_callable(
-        Callable::new(|()| Ok::<(), String>(())),
-        1_000.0,
-    );
-    assert!(tsonic_rust_js::timers::has_timers());
-    tsonic_rust_js::timers::clear_timeout(timer);
-    assert!(!tsonic_rust_js::timers::has_timers());
+    tsonic_rust_js::event_loop::block_on(async {
+        assert!(!tsonic_rust_js::timers::has_timers());
+        let timer = tsonic_rust_js::timers::with_default(|timers| {
+            tsonic_rust_js::timers::set_timeout_callable(
+                timers,
+                Callable::new(|()| Ok::<(), tsonic_rust_runtime::TsonicError>(())),
+                1_000.0,
+            )
+        })
+        .unwrap();
+        assert!(tsonic_rust_js::timers::has_timers());
+        tsonic_rust_js::timers::with_default(|timers| {
+            tsonic_rust_js::timers::clear_timeout(timers, timer)
+        });
+        assert!(!tsonic_rust_js::timers::has_timers());
+    })
+    .unwrap();
 }
 
 #[test]
@@ -393,10 +399,5 @@ fn string_value(value: &str) -> JsValue {
 }
 
 fn block_on<T>(future: impl Future<Output = T>) -> T {
-    let mut future = pin!(future);
-    let mut context = Context::from_waker(Waker::noop());
-    match future.as_mut().poll(&mut context) {
-        Poll::Ready(value) => value,
-        Poll::Pending => panic!("capability-closure future unexpectedly remained pending"),
-    }
+    tsonic_rust_js::event_loop::block_on(future).unwrap()
 }

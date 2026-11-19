@@ -1,6 +1,63 @@
 use tsonic_rust_js::{Int16Array, JsArray, Uint8Array};
 
 #[test]
+fn owned_byte_view_moves_unique_whole_and_sliced_allocations() {
+    let bytes = vec![1, 2, 3, 4, 5];
+    let pointer = bytes.as_ptr();
+    let owned = Uint8Array::from_bytes(bytes).into_owned_bytes();
+    assert_eq!(owned.as_ptr(), pointer);
+    assert_eq!(&*owned, &[1, 2, 3, 4, 5]);
+    let returned = std::thread::spawn(move || owned).join().unwrap();
+    assert_eq!(returned.as_ptr(), pointer);
+
+    let bytes = vec![7, 8, 9, 10, 11];
+    let pointer = bytes.as_ptr().wrapping_add(1);
+    let array = Uint8Array::from_bytes(bytes);
+    let view = array.subarray(1_usize, Some(4_usize));
+    drop(array);
+    let owned = view.into_owned_bytes();
+    assert_eq!(owned.as_ptr(), pointer);
+    assert_eq!(&*owned, &[8, 9, 10]);
+}
+
+#[test]
+fn owned_byte_snapshot_preserves_mutable_view_and_backing_aliases() {
+    let array = Uint8Array::from_bytes(vec![3, 4, 5]);
+    let alias = array.clone();
+    let pointer = array.with_bytes(|bytes| bytes.as_ptr());
+    let owned = array.into_owned_bytes();
+    assert_ne!(owned.as_ptr(), pointer);
+    alias.set_number(0_usize, 9_u8);
+    assert_eq!(&*owned, &[3, 4, 5]);
+    assert_eq!(alias.get_number(0_usize), Some(9));
+
+    let array = Uint8Array::from_bytes(vec![1, 2, 3, 4, 5]);
+    let view = array.subarray(1_usize, Some(4_usize));
+    let owned = view.into_owned_bytes();
+    array.set_number(1_usize, 8_u8);
+    assert_eq!(&*owned, &[2, 3, 4]);
+    assert_eq!(array.get_number(1_usize), Some(8));
+}
+
+#[test]
+fn owned_shared_byte_storage_moves_only_without_live_aliases() {
+    let buffer = tsonic_rust_js::ArrayBuffer::new_shared(3_usize).unwrap();
+    buffer.as_mut_bytes().copy_from_slice(&[2, 4, 6]);
+    let pointer = buffer.as_bytes().as_ptr();
+    let array = Uint8Array::from_buffer_length(buffer, 0_usize, 3_usize).unwrap();
+    let owned = array.into_owned_bytes();
+    assert_eq!(owned.as_ptr(), pointer);
+    assert_eq!(&*owned, &[2, 4, 6]);
+
+    let buffer = tsonic_rust_js::ArrayBuffer::new_shared(3_usize).unwrap();
+    buffer.as_mut_bytes().copy_from_slice(&[1, 3, 5]);
+    let array = Uint8Array::from_buffer_length(buffer.clone(), 0_usize, 3_usize).unwrap();
+    let owned = array.into_owned_bytes();
+    buffer.as_mut_bytes()[0] = 7;
+    assert_eq!(&*owned, &[1, 3, 5]);
+}
+
+#[test]
 fn typed_array_search_keeps_exact_query_values_and_native_elements() {
     use tsonic_rust_js::{Float32Array, Float64Array, Uint8ClampedArray};
     let doubles = Float64Array::from_vec(vec![

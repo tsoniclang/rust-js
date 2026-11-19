@@ -96,7 +96,7 @@ macro_rules! numeric_sources {
 }
 
 numeric_sources!(Float, f64, false, f32, f64);
-numeric_sources!(Signed, i128, false, i8, i16, i32);
-numeric_sources!(Unsigned, u128, false, u8, u16, u32);
+numeric_sources!(Signed, i128, false, i8, i16, i32, isize);
+numeric_sources!(Unsigned, u128, false, u8, u16, u32, usize);
 numeric_sources!(Signed, i128, true, i64, i128);
 numeric_sources!(Unsigned, u128, true, u64, u128);

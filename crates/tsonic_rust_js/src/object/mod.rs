@@ -10,6 +10,7 @@ use crate::JsString;
 
 mod identity;
 mod key;
+pub mod records;
 pub(crate) use key::PropertyKey;
 
 pub type JsPropertyValue = JsValue;

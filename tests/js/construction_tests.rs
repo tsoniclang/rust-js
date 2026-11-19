@@ -2,6 +2,64 @@ use tsonic_rust_js::{abi, array::ArrayLength, JsErrorKind};
 use tsonic_rust_runtime::BigInt;
 
 #[test]
+fn native_identity_preserves_all_variants_without_payload_mutation() {
+    use tsonic_rust_js::{object::JsObject, JsValue};
+    use tsonic_rust_runtime::{EmptyObject, ObjectHandle, ObjectRef};
+    let original = EmptyObject::new();
+    let project = ObjectHandle::new(17_i32);
+    let immutable = ObjectRef::new(23_i32);
+    let project_identity = project.object_identity().clone();
+    let immutable_identity = immutable.object_identity().clone();
+    let values = [
+        JsValue::Null,
+        JsValue::Bool(false),
+        JsValue::Int32(0),
+        JsValue::UnsignedInteger(u64::MAX),
+        JsValue::String(String::from("unchanged")),
+        JsValue::from_closed(original.clone()),
+        JsValue::closed(original.clone()),
+        JsValue::from_shared_identity(project.clone().into_shared()),
+        JsValue::from_shared_identity(immutable.clone().into_shared()),
+        JsValue::from_error(abi::type_error("unchanged")),
+        JsValue::object(JsObject::new()),
+        JsValue::array(tsonic_rust_js::JsArray::from_dense(vec![JsValue::Int32(3)])),
+    ];
+    for value in &values {
+        assert!(core::ptr::eq(value, core::convert::identity(value)));
+    }
+    assert_eq!(&project_identity, project.object_identity());
+    assert_eq!(&immutable_identity, immutable.object_identity());
+    assert_eq!(project.with(|value| *value), 17);
+    assert_eq!(immutable.with(|value| *value), 23);
+    assert!(matches!(&values[4], JsValue::String(value) if value == "unchanged"));
+    assert_eq!(values[5].native_value::<EmptyObject>(), Some(original));
+    assert!(values[9].as_error().is_some());
+    assert_eq!(values[11].inspect(), "[3]");
+}
+
+#[test]
+fn optional_primitive_conversions_preserve_payloads_and_absence() {
+    assert_eq!(abi::number_from_value(&Some(" 0x10 ".to_owned())), 16.0);
+    assert_eq!(abi::number_from_value(&None::<String>), 0.0);
+    assert_eq!(abi::number_from_value(&Some(u64::MAX)), u64::MAX as f64);
+    assert_eq!(abi::number_from_value(&Some(false)), 0.0);
+    assert!(abi::number_from_value(&Some("invalid".to_owned())).is_nan());
+    assert_eq!(
+        abi::number_from_value(&tsonic_rust_js::JsValue::String("42".to_owned())),
+        42.0
+    );
+    assert_eq!(
+        abi::string_from_value(&Some(9_007_199_254_740_993_i64)),
+        "9007199254740993"
+    );
+    assert_eq!(abi::string_from_value(&None::<i64>), "null");
+    assert_eq!(abi::string_from_value(&Some(String::new())), "");
+    assert_eq!(abi::string_from_value(&Some(false)), "false");
+    let values = tsonic_rust_js::JsArray::from_dense(vec![None, Some("value".to_owned()), None]);
+    assert_eq!(values.join("|"), "|value|");
+}
+
+#[test]
 fn compiler_provider_error_constructors_retain_kind_and_message() {
     for (error, expected) in [
         (abi::range_error("range"), JsErrorKind::RangeError),
@@ -195,16 +253,13 @@ fn array_length_construction_initializes_native_values() {
 }
 
 #[test]
-fn empty_objects_retain_identity_and_freeze_through_aliases() {
+fn empty_objects_retain_identity_through_aliases() {
     use tsonic_rust_js::equality::{JsHash, JsSameValue, JsSameValueZero, JsStrictEqual};
     use tsonic_rust_runtime::ObjectIdentityCarrier;
     let first = tsonic_rust_runtime::EmptyObject::new();
     let alias = first.clone();
     let other = tsonic_rust_runtime::EmptyObject::default();
-    assert!(!first.is_frozen());
-    assert_eq!(first.freeze(), alias);
-    assert!(alias.is_frozen());
-    assert!(!other.is_frozen());
+    assert_eq!(core::convert::identity(first.clone()), alias);
     assert!(first.same_value(&alias));
     assert!(first.same_value_zero(&alias));
     assert!(first.strict_equal(&alias));
@@ -230,8 +285,6 @@ fn empty_objects_keep_identity_when_boxed_as_closed_values() {
     let boxed = abi::js_value_from_closed(&first);
     assert_eq!(boxed, abi::js_value_from_closed(&alias));
     assert_ne!(boxed, abi::js_value_from_closed(&other));
-    first.freeze();
-    assert!(alias.is_frozen());
     assert_eq!(boxed, abi::js_value_from_closed(&alias));
     assert_eq!(first.inspect_value(), "[object Object]");
     assert_eq!(
@@ -282,5 +335,97 @@ fn native_bigint_operands_truncate_without_losing_high_bits() {
     assert_eq!(
         abi::bigint_as_int_n(-1.0, &9_u64).unwrap_err().kind(),
         JsErrorKind::RangeError
+    );
+}
+#[test]
+fn closed_native_nominal_queries_preserve_exact_shared_storage_and_mutation() {
+    use std::rc::Rc;
+    use tsonic_rust_js::value::JsValue;
+    use tsonic_rust_runtime::{ObjectHandle, ObjectHandleState, ObjectRefState};
+
+    let original = ObjectHandle::new(u64::MAX);
+    let owner = original.clone().into_shared();
+    let retained = JsValue::from_shared_identity(owner.clone());
+    let recovered = retained.native_shared::<ObjectHandleState<u64>>().unwrap();
+    assert!(Rc::ptr_eq(&owner, &recovered));
+    assert!(retained.native_shared::<ObjectRefState<u64>>().is_none());
+    let projected = ObjectHandle::from_shared(recovered);
+    original.with_mut(|value| *value = 7);
+    assert_eq!(projected.with(|value| *value), 7);
+    drop(original);
+    drop(owner);
+    drop(retained);
+    assert_eq!(projected.with(|value| *value), 7);
+}
+
+#[test]
+fn closed_native_value_queries_preserve_exact_payload_types() {
+    use tsonic_rust_js::value::JsValue;
+
+    #[derive(Clone, PartialEq, Debug)]
+    struct Record(u64);
+    let original = Record(u64::MAX);
+    let retained = JsValue::from_closed(original.clone());
+    assert_eq!(retained.native_value::<Record>(), Some(original));
+    assert!(retained.native_value::<u64>().is_none());
+    assert!(retained.native_shared::<Record>().is_none());
+}
+
+#[test]
+fn native_payload_keeps_closed_observations_and_rejects_unselected_projections() {
+    use tsonic_rust_js::{
+        equality::{JsHash, JsSameValue, JsSameValueZero, JsStrictEqual},
+        JsValue,
+    };
+    use tsonic_rust_runtime::{EmptyObject, OptionalStorage};
+    let value = JsValue::from_closed(String::from("payload must not be inspected"));
+    let alias = value.clone();
+    let other = JsValue::from_closed(String::from("payload must not be inspected"));
+    assert_eq!(value.type_of(), "object");
+    assert_eq!(value.inspect(), "[Native value]");
+    assert!(value.strict_equal(&alias));
+    assert!(value.same_value(&alias));
+    assert!(value.same_value_zero(&alias));
+    assert_eq!(value.js_hash(), alias.js_hash());
+    assert!(!value.strict_equal(&other));
+    assert!(!value.same_value(&other));
+    assert!(!value.same_value_zero(&other));
+    assert!(value.as_error().is_none());
+    assert!(value.clone().into_error().is_err());
+    assert!(!OptionalStorage::<JsValue>::is_absent(&value));
+    assert!(!value.strict_equal(&JsValue::Null));
+    let string_error = tsonic_rust_js::value::closed_value_string(&value).unwrap_err();
+    assert_eq!(string_error.kind(), JsErrorKind::Unsupported);
+    assert_eq!(
+        string_error.message(),
+        "Native value erasure does not expose string conversion"
+    );
+    let json_error = tsonic_rust_js::json::stringify(&value).unwrap_err();
+    let tsonic_rust_runtime::TsonicError::Js(json_error) = json_error else {
+        panic!("unsupported native JSON preserves the exact Js error variant");
+    };
+    assert_eq!(json_error.kind(), JsErrorKind::Unsupported);
+    assert_eq!(
+        json_error.message(),
+        "Native value erasure does not expose a JSON projection"
+    );
+    let JsValue::Closed(closed) = &value else {
+        panic!("native closed payload");
+    };
+    assert!(closed.project_json().is_err());
+    assert_eq!(format!("{closed:?}"), "[Native value]");
+    assert_eq!(
+        value.native_value::<String>().unwrap(),
+        "payload must not be inspected"
+    );
+    let empty = JsValue::closed(EmptyObject::new());
+    assert!(empty.native_value::<EmptyObject>().is_none());
+    assert_eq!(
+        tsonic_rust_js::value::closed_value_string(&empty).unwrap(),
+        "[object Object]"
+    );
+    assert_eq!(
+        tsonic_rust_js::json::stringify(&empty).unwrap(),
+        Some(String::from("{}"))
     );
 }

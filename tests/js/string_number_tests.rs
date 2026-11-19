@@ -1,6 +1,51 @@
 use tsonic_rust_js::{JsArray, JsStringNumber};
 
 #[test]
+fn native_conversion_traits_forward_borrowed_and_optional_values() {
+    use tsonic_rust_js::abi::{number_from_value, string_from_value};
+
+    let text = String::from("12.5");
+    let view = text.as_str();
+    assert_eq!(string_from_value(&view), "12.5");
+    assert_eq!(string_from_value(&Some(view)), "12.5");
+    assert_eq!(string_from_value(&None::<&str>), "null");
+    assert_eq!(string_from_value(&Some(None::<&str>)), "null");
+    assert_eq!(number_from_value(&view), 12.5);
+    assert_eq!(number_from_value(&Some(view)), 12.5);
+    assert_eq!(number_from_value(&None::<&str>), 0.0);
+    assert_eq!(number_from_value(&Some(None::<&str>)), 0.0);
+    assert_eq!(number_from_value(&&42_i64), 42.0);
+}
+
+#[test]
+fn borrowed_string_writing_forwards_the_referent_without_owned_temporaries() {
+    use tsonic_rust_js::string::JsToString;
+
+    struct DirectWriter;
+
+    impl JsToString for DirectWriter {
+        fn to_js_string(&self) -> String {
+            panic!("borrowed writing must not request an owned string")
+        }
+
+        fn write_js_string(&self, output: &mut String) {
+            output.push_str("native");
+        }
+
+        fn write_js_join_value(&self, output: &mut String) {
+            output.push_str("join");
+        }
+    }
+
+    let writer = DirectWriter;
+    let reference = &writer;
+    let mut output = String::with_capacity(32);
+    <&DirectWriter as JsToString>::write_js_string(&reference, &mut output);
+    <&DirectWriter as JsToString>::write_js_join_value(&reference, &mut output);
+    assert_eq!(output, "nativejoin");
+}
+
+#[test]
 fn string_number_arrays_keep_native_strings_and_live_aliases() {
     let values = JsArray::from_dense(vec![JsStringNumber::from_string("😀".to_owned())]);
     let alias = values.clone();

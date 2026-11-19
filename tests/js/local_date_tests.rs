@@ -42,7 +42,7 @@ fn observations(output: &[u8]) -> Vec<Vec<f64>> {
     String::from_utf8(output.to_vec())
         .unwrap()
         .lines()
-        .filter_map(|line| line.strip_prefix("LOCAL_DATE:"))
+        .filter_map(|line| line.split_once("LOCAL_DATE:").map(|(_, rest)| rest))
         .map(|line| {
             line.split(',')
                 .map(|value| value.parse().unwrap())

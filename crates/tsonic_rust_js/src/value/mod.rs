@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use std::fmt;
 use std::rc::Rc;
 
-use crate::array::JsArray;
+use crate::array::{JsArray, JsArrayProjection, JsArrayValue};
 use crate::equality::{
     hash_identity, same_value_f64, same_value_zero_f64, strict_equal_f64, JsHash, JsSameValue,
     JsSameValueZero, JsStrictEqual,
@@ -13,13 +13,22 @@ use crate::equality::{
 use crate::errors::JsResult;
 use crate::object::JsObject;
 use crate::{JsString, JsSymbol};
-use tsonic_rust_runtime::{JsError, JsErrorKind, ToSourceString};
+use tsonic_rust_runtime::{
+    EmptyObject, ErrorObject, JsErrorKind, NativePayload, ObjectIdentityCarrier, Record,
+    RetainedError, TsonicResult,
+};
 
+mod native;
 mod numbers;
+mod primitives;
+mod string;
+
+pub use string::closed_value_string;
 
 pub trait JsClosedValueCarrier: fmt::Debug {
     fn identity_key(&self) -> usize;
     fn inspect_value(&self) -> String;
+    fn write_string(&self, output: &mut String) -> JsResult<()>;
     fn project_json(&self) -> JsResult<JsValue>;
 }
 
@@ -29,7 +38,10 @@ pub struct JsClosedValue(JsClosedValuePayload);
 #[derive(Clone)]
 enum JsClosedValuePayload {
     Object(Rc<dyn JsClosedValueCarrier>),
-    Error(JsError),
+    Native(NativePayload),
+    Empty(EmptyObject),
+    NativeShared(Rc<dyn ObjectIdentityCarrier>),
+    Error(RetainedError),
 }
 
 impl fmt::Debug for JsClosedValue {
@@ -49,28 +61,70 @@ impl JsClosedValue {
     pub fn identity_key(&self) -> usize {
         match &self.0 {
             JsClosedValuePayload::Object(value) => value.identity_key(),
-            JsClosedValuePayload::Error(error) => error.identity_key(),
+            JsClosedValuePayload::Native(value) => value.identity_key(),
+            JsClosedValuePayload::Empty(value) => value.identity_key(),
+            JsClosedValuePayload::NativeShared(value) => value.object_identity_key(),
+            JsClosedValuePayload::Error(error) => error.error_identity_key(),
         }
+    }
+
+    fn same(&self, other: &Self) -> bool {
+        if let (
+            JsClosedValuePayload::NativeShared(left),
+            JsClosedValuePayload::NativeShared(right),
+        ) = (&self.0, &other.0)
+        {
+            if Rc::ptr_eq(left, right) {
+                return true;
+            }
+        }
+        self.identity_key() == other.identity_key()
     }
 
     pub fn inspect(&self) -> String {
         match &self.0 {
             JsClosedValuePayload::Object(value) => value.inspect_value(),
-            JsClosedValuePayload::Error(error) => error.to_source_string(),
+            JsClosedValuePayload::Native(_) => "[Native value]".to_owned(),
+            JsClosedValuePayload::Empty(value) => value.inspect_value(),
+            JsClosedValuePayload::NativeShared(_) => "[Native object]".to_owned(),
+            JsClosedValuePayload::Error(error) => {
+                let mut output = String::new();
+                string::write_error(error, &mut output);
+                output
+            }
         }
     }
 
     pub fn project_json(&self) -> JsResult<JsValue> {
         match &self.0 {
             JsClosedValuePayload::Object(value) => value.project_json(),
-            JsClosedValuePayload::Error(_) => Ok(JsValue::object(JsObject::new())),
+            JsClosedValuePayload::Native(_) => Err(crate::errors::unsupported(
+                "Native value erasure does not expose a JSON projection",
+            )),
+            JsClosedValuePayload::Empty(value) => value.project_json(),
+            JsClosedValuePayload::NativeShared(_) => Err(crate::errors::unsupported(
+                "Native object erasure does not expose a JSON projection",
+            )),
+            JsClosedValuePayload::Error(RetainedError::Native(_) | RetainedError::Created(_)) => {
+                Ok(JsValue::object(JsObject::new()))
+            }
+            JsClosedValuePayload::Error(
+                RetainedError::Runtime(_)
+                | RetainedError::Project(_)
+                | RetainedError::WritableProject(_),
+            ) => Err(crate::errors::unsupported(
+                "Retained Error transport does not expose a JSON projection",
+            )),
         }
     }
 
-    fn as_error(&self) -> Option<&JsError> {
+    fn as_error(&self) -> Option<&RetainedError> {
         match &self.0 {
             JsClosedValuePayload::Error(error) => Some(error),
-            JsClosedValuePayload::Object(_) => None,
+            JsClosedValuePayload::Object(_)
+            | JsClosedValuePayload::Native(_)
+            | JsClosedValuePayload::Empty(_)
+            | JsClosedValuePayload::NativeShared(_) => None,
         }
     }
 }
@@ -79,7 +133,7 @@ impl JsClosedValue {
 pub struct JsonProjection(Rc<JsonProjectionInner>);
 
 struct JsonProjectionInner {
-    project: Box<dyn Fn(String) -> JsResult<JsValue>>,
+    project: Box<dyn Fn(String) -> TsonicResult<JsValue>>,
 }
 
 impl fmt::Debug for JsonProjection {
@@ -92,14 +146,14 @@ impl JsonProjection {
     pub fn new<T, F>(source: T, project: F) -> Self
     where
         T: 'static,
-        F: Fn(&T, String) -> JsResult<JsValue> + 'static,
+        F: Fn(&T, String) -> TsonicResult<JsValue> + 'static,
     {
         Self(Rc::new(JsonProjectionInner {
             project: Box::new(move |key| project(&source, key)),
         }))
     }
 
-    pub fn project(&self, key: String) -> JsResult<JsValue> {
+    pub fn project(&self, key: String) -> TsonicResult<JsValue> {
         (self.0.project)(key)
     }
 
@@ -119,11 +173,21 @@ pub enum JsValue {
     Number(f64),
     Integer(i64),
     UnsignedInteger(u64),
+    Int8(i8),
+    Uint8(u8),
+    Int16(i16),
+    Uint16(u16),
+    Int32(i32),
+    Uint32(u32),
+    NativeInt(isize),
+    NativeUint(usize),
+    Float32(f32),
     String(String),
     Utf16String(JsString),
     Symbol(JsSymbol),
     Object(Rc<RefCell<JsObject>>),
-    Array(JsArray<JsValue>),
+    Record(Record<String, JsValue>),
+    Array(JsArrayValue),
     Closed(JsClosedValue),
     JsonProjection(JsonProjection),
 }
@@ -166,26 +230,37 @@ impl tsonic_rust_runtime::OptionalStorage<JsValue> for JsValue {
 }
 
 impl JsValue {
-    pub fn from_error(error: &JsError) -> Self {
-        Self::Closed(JsClosedValue(JsClosedValuePayload::Error(error.clone())))
+    pub fn from_error(error: impl Into<RetainedError>) -> Self {
+        Self::Closed(JsClosedValue(JsClosedValuePayload::Error(error.into())))
+    }
+
+    pub fn as_error(&self) -> Option<&RetainedError> {
+        match self {
+            Self::Closed(value) => value.as_error(),
+            _ => None,
+        }
+    }
+
+    pub fn into_error(self) -> Result<RetainedError, Self> {
+        match self {
+            Self::Closed(JsClosedValue(JsClosedValuePayload::Error(error))) => Ok(error),
+            original => Err(original),
+        }
     }
 
     pub fn is_error(&self) -> bool {
-        matches!(self, Self::Closed(value) if value.as_error().is_some())
+        self.as_error().is_some()
     }
 
     pub fn is_error_kind(&self, kind: JsErrorKind) -> bool {
-        matches!(self, Self::Closed(value) if value.as_error().is_some_and(|error| error.kind() == kind))
+        self.as_error()
+            .is_some_and(|error| error.error_kind() == kind)
     }
 
-    pub fn error_value(&self) -> JsError {
-        match self {
-            Self::Closed(value) => value
-                .as_error()
-                .expect("checked Error projection selected a non-error payload")
-                .clone(),
-            _ => panic!("checked Error projection selected a non-error payload"),
-        }
+    pub fn error_value(&self) -> RetainedError {
+        self.as_error()
+            .expect("checked Error projection selected a non-error payload")
+            .clone()
     }
 
     pub const fn undefined() -> Self {
@@ -203,7 +278,10 @@ impl JsValue {
 
     /// Wraps an array reference-identity handle.
     pub fn array(values: JsArray<JsValue>) -> Self {
-        Self::Array(values)
+        Self::Array(JsArrayValue::new(
+            &values,
+            crate::array::js_array::project_broad_array_element,
+        ))
     }
 
     pub fn symbol(value: JsSymbol) -> Self {
@@ -232,17 +310,33 @@ impl JsValue {
         }
     }
 
+    pub fn as_record(&self) -> Option<&Record<String, JsValue>> {
+        match self {
+            Self::Record(record) => Some(record),
+            _ => None,
+        }
+    }
+
     /// Returns the array handle when the value is an array.
-    pub fn as_array(&self) -> Option<&JsArray<JsValue>> {
+    pub fn as_array(&self) -> Option<&JsArrayValue> {
         match self {
             Self::Array(values) => Some(values),
             _ => None,
         }
     }
 
+    pub fn cast_array<Value: 'static>(&self) -> JsResult<JsArray<Value>> {
+        self.as_array()
+            .ok_or_else(|| {
+                crate::errors::type_error("An array assertion requires a native array backing.")
+            })?
+            .cast()
+    }
+
     pub fn reference_identity_key(&self) -> Option<usize> {
         match self {
             Self::Object(value) => Some(Rc::as_ptr(value) as usize),
+            Self::Record(value) => Some(value.storage_identity_key()),
             Self::Array(value) => Some(value.identity()),
             Self::Closed(value) => Some(value.identity_key()),
             Self::JsonProjection(value) => Some(value.identity()),
@@ -272,13 +366,8 @@ impl JsValue {
     }
 }
 
-pub fn js_value_from_array<T, F>(values: &JsArray<T>, mut convert: F) -> JsValue
-where
-    T: Clone,
-    F: FnMut(T) -> JsValue,
-{
-    let converted = values.entries().map(|(_, value)| convert(value)).collect();
-    JsValue::array(JsArray::from_dense(converted))
+pub fn js_value_from_array<T: 'static>(values: &JsArray<T>, project: JsArrayProjection) -> JsValue {
+    JsValue::Array(JsArrayValue::new(values, project))
 }
 
 pub fn js_value_from_optional_pairs<K>(pairs: Vec<Option<(K, JsValue)>>) -> JsValue
@@ -291,7 +380,7 @@ where
 pub fn js_value_from_json_projection<T, F>(source: T, project: F) -> JsValue
 where
     T: 'static,
-    F: Fn(&T, String) -> JsResult<JsValue> + 'static,
+    F: Fn(&T, String) -> TsonicResult<JsValue> + 'static,
 {
     JsValue::JsonProjection(JsonProjection::new(source, project))
 }
@@ -301,6 +390,7 @@ const MAX_INSPECT_DEPTH: usize = 64;
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum ContainerId {
     Object(usize),
+    Record(usize),
     Array(usize),
 }
 
@@ -318,10 +408,20 @@ impl InspectState {
             JsValue::Number(value) => format_js_number(*value),
             JsValue::Integer(value) => value.to_string(),
             JsValue::UnsignedInteger(value) => value.to_string(),
+            JsValue::Int8(value) => crate::number::to_string(*value),
+            JsValue::Uint8(value) => crate::number::to_string(*value),
+            JsValue::Int16(value) => crate::number::to_string(*value),
+            JsValue::Uint16(value) => crate::number::to_string(*value),
+            JsValue::Int32(value) => crate::number::to_string(*value),
+            JsValue::Uint32(value) => crate::number::to_string(*value),
+            JsValue::NativeInt(value) => crate::number::to_string(*value),
+            JsValue::NativeUint(value) => crate::number::to_string(*value),
+            JsValue::Float32(value) => crate::number::to_string(*value),
             JsValue::String(value) => format!("{:?}", value),
             JsValue::Utf16String(value) => value.inspect_quoted(),
             JsValue::Symbol(value) => format!("{value:?}"),
             JsValue::Object(object) => self.render_object(object, depth),
+            JsValue::Record(record) => self.render_record(record, depth),
             JsValue::Array(values) => self.render_array(values, depth),
             JsValue::Closed(value) => value.inspect(),
             JsValue::JsonProjection(_) => "[JSON projection]".to_string(),
@@ -360,7 +460,7 @@ impl InspectState {
         format!("{{{}}}", rendered.join(", "))
     }
 
-    fn render_array(&mut self, values: &JsArray<JsValue>, depth: usize) -> String {
+    fn render_array(&mut self, values: &JsArrayValue, depth: usize) -> String {
         if depth > self.max_depth {
             return "[Array]".to_string();
         }
@@ -378,6 +478,29 @@ impl InspectState {
         append_remaining(&mut rendered, total, self.max_entries);
         self.active.remove(&id);
         format!("[{}]", rendered.join(", "))
+    }
+
+    fn render_record(&mut self, record: &Record<String, JsValue>, depth: usize) -> String {
+        if depth > self.max_depth {
+            return "[Object]".to_string();
+        }
+        let identity = ContainerId::Record(record.storage_identity_key());
+        if !self.active.insert(identity) {
+            return "[Circular]".to_string();
+        }
+        let keys = record.keys();
+        let total = keys.len();
+        let mut rendered = keys
+            .into_iter()
+            .take(self.max_entries)
+            .map(|key| {
+                let value = record.get_or_default(&key);
+                format!("{}: {}", key, self.render(&value, depth + 1))
+            })
+            .collect::<Vec<_>>();
+        append_remaining(&mut rendered, total, self.max_entries);
+        self.active.remove(&identity);
+        format!("{{{}}}", rendered.join(", "))
     }
 }
 
@@ -405,12 +528,11 @@ impl JsSameValue for JsValue {
             (Self::Utf16String(left), Self::Utf16String(right)) => left == right,
             (Self::Symbol(left), Self::Symbol(right)) => left == right,
             (Self::Object(left), Self::Object(right)) => Rc::ptr_eq(left, right),
+            (Self::Record(left), Self::Record(right)) => left == right,
             (Self::Array(left), Self::Array(right)) => left.ptr_eq(right),
-            (Self::Closed(left), Self::Closed(right)) => {
-                left.identity_key() == right.identity_key()
-            }
+            (Self::Closed(left), Self::Closed(right)) => left.same(right),
             (Self::JsonProjection(left), Self::JsonProjection(right)) => left.ptr_eq(right),
-            _ => numbers::integer_equal(self, other, true),
+            _ => numbers::equal(self, other, true, true),
         }
     }
 }
@@ -425,12 +547,11 @@ impl JsSameValueZero for JsValue {
             (Self::Utf16String(left), Self::Utf16String(right)) => left == right,
             (Self::Symbol(left), Self::Symbol(right)) => left == right,
             (Self::Object(left), Self::Object(right)) => Rc::ptr_eq(left, right),
+            (Self::Record(left), Self::Record(right)) => left == right,
             (Self::Array(left), Self::Array(right)) => left.ptr_eq(right),
-            (Self::Closed(left), Self::Closed(right)) => {
-                left.identity_key() == right.identity_key()
-            }
+            (Self::Closed(left), Self::Closed(right)) => left.same(right),
             (Self::JsonProjection(left), Self::JsonProjection(right)) => left.ptr_eq(right),
-            _ => numbers::integer_equal(self, other, false),
+            _ => numbers::equal(self, other, false, true),
         }
     }
 }
@@ -443,10 +564,20 @@ impl JsHash for JsValue {
             Self::Number(value) => numbers::float_hash(*value),
             Self::Integer(value) => value.js_hash(),
             Self::UnsignedInteger(value) => value.js_hash(),
+            Self::Int8(value) => i64::from(*value).js_hash(),
+            Self::Uint8(value) => u64::from(*value).js_hash(),
+            Self::Int16(value) => i64::from(*value).js_hash(),
+            Self::Uint16(value) => u64::from(*value).js_hash(),
+            Self::Int32(value) => i64::from(*value).js_hash(),
+            Self::Uint32(value) => u64::from(*value).js_hash(),
+            Self::NativeInt(value) => (*value as i64).js_hash(),
+            Self::NativeUint(value) => (*value as u64).js_hash(),
+            Self::Float32(value) => numbers::float_hash(f64::from(*value)),
             Self::String(value) => value.js_hash(),
             Self::Utf16String(value) => value.js_hash(),
             Self::Symbol(value) => value.js_hash(),
             Self::Object(value) => hash_identity(Rc::as_ptr(value) as usize),
+            Self::Record(value) => hash_identity(value.storage_identity_key()),
             Self::Array(value) => value.js_hash(),
             Self::Closed(value) => hash_identity(value.identity_key()),
             Self::JsonProjection(value) => hash_identity(value.identity()),
@@ -464,12 +595,11 @@ impl JsStrictEqual for JsValue {
             (Self::Utf16String(left), Self::Utf16String(right)) => left == right,
             (Self::Symbol(left), Self::Symbol(right)) => left == right,
             (Self::Object(left), Self::Object(right)) => Rc::ptr_eq(left, right),
+            (Self::Record(left), Self::Record(right)) => left == right,
             (Self::Array(left), Self::Array(right)) => left.ptr_eq(right),
-            (Self::Closed(left), Self::Closed(right)) => {
-                left.identity_key() == right.identity_key()
-            }
+            (Self::Closed(left), Self::Closed(right)) => left.same(right),
             (Self::JsonProjection(left), Self::JsonProjection(right)) => left.ptr_eq(right),
-            _ => numbers::integer_equal(self, other, false),
+            _ => numbers::equal(self, other, false, false),
         }
     }
 }
@@ -480,35 +610,15 @@ impl From<Vec<JsValue>> for JsValue {
     }
 }
 
+impl From<Record<String, JsValue>> for JsValue {
+    fn from(record: Record<String, JsValue>) -> Self {
+        Self::Record(record)
+    }
+}
+
 impl From<bool> for JsValue {
     fn from(value: bool) -> Self {
         Self::Bool(value)
-    }
-}
-
-macro_rules! impl_native_number_from {
-    ($variant:ident, $carrier:ty; $($source:ty),+ $(,)?) => {
-        $(impl From<$source> for JsValue {
-            fn from(value: $source) -> Self {
-                Self::$variant(<$carrier>::from(value))
-            }
-        })+
-    };
-}
-
-impl_native_number_from!(Integer, i64; i8, i16, i32, i64);
-impl_native_number_from!(UnsignedInteger, u64; u8, u16, u32, u64);
-impl_native_number_from!(Number, f64; f32, f64);
-
-impl From<isize> for JsValue {
-    fn from(value: isize) -> Self {
-        Self::Integer(value as i64)
-    }
-}
-
-impl From<usize> for JsValue {
-    fn from(value: usize) -> Self {
-        Self::UnsignedInteger(value as u64)
     }
 }
 

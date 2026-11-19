@@ -5,12 +5,11 @@ pub enum IntlGrouping {
 }
 
 impl IntlGrouping {
-    pub fn type_of(&self) -> String {
+    pub fn type_of(&self) -> &'static str {
         match self {
             Self::Disabled => "boolean",
             Self::Strategy(_) => "string",
         }
-        .to_owned()
     }
 
     pub fn as_string(&self) -> String {

@@ -1,5 +1,8 @@
 use tsonic_rust_js::JsString;
 
+#[path = "js/record_tests.rs"]
+mod record_tests;
+
 fn js(value: impl AsRef<str>) -> JsString {
     JsString::from_utf8(value.as_ref())
 }
@@ -16,6 +19,8 @@ mod array_location_tests;
 mod atomics_tests;
 #[path = "js/capability_closure_tests.rs"]
 mod capability_closure_tests;
+#[path = "js/closed_string_tests.rs"]
+mod closed_string_tests;
 #[path = "js/console_tests.rs"]
 mod console_tests;
 #[path = "js/construction_tests.rs"]
@@ -26,6 +31,8 @@ mod date_tests;
 mod equality_tests;
 #[path = "js/error_value_tests.rs"]
 mod error_value_tests;
+#[path = "js/event_loop_tests.rs"]
+mod event_loop_tests;
 #[path = "js/fallible_callback_tests.rs"]
 mod fallible_callback_tests;
 #[path = "js/globals_uri_dataview_tests.rs"]
@@ -52,8 +59,14 @@ mod number_tests;
 mod numeric_union_tests;
 #[path = "js/object_tests.rs"]
 mod object_tests;
+#[path = "js/promise_contract_witnesses.rs"]
+mod promise_contract_witnesses;
+#[path = "js/promise_execution_tests.rs"]
+mod promise_execution_tests;
 #[path = "js/regexp_tests.rs"]
 mod regexp_tests;
+#[path = "js/requested_exit_witnesses.rs"]
+mod requested_exit_witnesses;
 #[path = "js/set_tests.rs"]
 mod set_tests;
 #[path = "js/string_number_tests.rs"]

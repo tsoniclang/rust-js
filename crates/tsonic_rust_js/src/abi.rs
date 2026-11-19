@@ -19,6 +19,7 @@ pub use crate::array::{
     from_vec_try_map_zero as array_from_vec_try_map_zero, is_array_value as array_is_array_value,
     of as array_of, JsArray, JsArrayConcatItem,
 };
+pub use crate::array::{JsArrayElement, JsArrayIndex, JsArrayValue};
 pub use crate::array_buffer::ArrayBuffer;
 pub use crate::atomics::{
     load as atomics_load, notify as atomics_notify, notify_all as atomics_notify_all,
@@ -53,7 +54,7 @@ pub use crate::console::{
 pub use crate::data_view::DataView;
 pub use crate::date::JsDate;
 pub use crate::errors::{range_error, type_error, uri_error};
-pub use crate::globals::{is_finite, is_nan, to_number};
+pub use crate::globals::{is_finite, is_nan, number_from_value, to_number};
 pub use crate::intl::{
     integer_to_locale_string, integer_to_locale_string_with_locale,
     integer_to_locale_string_with_locales, integer_to_locale_string_with_locales_options,
@@ -90,21 +91,26 @@ pub use crate::number::{
     bigint_to_number, is_finite as number_is_finite, is_integer as number_is_integer,
     is_nan as number_is_nan, is_safe_integer as number_is_safe_integer,
     numeric_string as number_from_string, parse_float as number_parse_float,
-    parse_int_default as number_parse_int, parse_int_radix as number_parse_int_radix,
-    to_exponential_default as number_to_exponential,
+    parse_int as number_parse_int_optional, parse_int_default as number_parse_int,
+    parse_int_radix as number_parse_int_radix, to_exponential_default as number_to_exponential,
     to_exponential_digits as number_to_exponential_digits, to_fixed_default as number_to_fixed,
     to_fixed_digits as number_to_fixed_digits, to_precision_default as number_to_precision,
     to_precision_digits as number_to_precision_digits, to_string as number_to_string,
     to_string_radix as number_to_string_radix, value_of as number_value_of, JsNumeric,
-    SourceNumeric, EPSILON as NUMBER_EPSILON, MAX_SAFE_INTEGER as NUMBER_MAX_SAFE_INTEGER,
-    MAX_VALUE as NUMBER_MAX_VALUE, MIN_SAFE_INTEGER as NUMBER_MIN_SAFE_INTEGER,
-    MIN_VALUE as NUMBER_MIN_VALUE, NAN as NUMBER_NAN,
+    NativeNumberPredicate, SourceNumeric, EPSILON as NUMBER_EPSILON,
+    MAX_SAFE_INTEGER as NUMBER_MAX_SAFE_INTEGER, MAX_VALUE as NUMBER_MAX_VALUE,
+    MIN_SAFE_INTEGER as NUMBER_MIN_SAFE_INTEGER, MIN_VALUE as NUMBER_MIN_VALUE, NAN as NUMBER_NAN,
     NEGATIVE_INFINITY as NUMBER_NEGATIVE_INFINITY, POSITIVE_INFINITY as NUMBER_POSITIVE_INFINITY,
+};
+pub use crate::object::records::{
+    assign as record_assign, entries as record_entries, keys as record_keys,
+    values as record_values,
 };
 pub use crate::object::{is as object_is, JsObject};
 pub use crate::promise::{
-    promise_all_settled, promise_any, promise_race, JsPromise, PromiseFulfilledResult,
-    PromiseRejectedResult, PromiseSettledResult,
+    promise_all, promise_all_settled, promise_any, promise_race, JsPromise, PromiseExecutor,
+    PromiseFulfilledResult, PromiseReject, PromiseRejectedResult, PromiseResolution,
+    PromiseResolve, PromiseSettledResult,
 };
 pub use crate::regexp::{
     regexp_call_from_regexp_native, regexp_call_from_regexp_with_flags_native,
@@ -169,6 +175,7 @@ pub use crate::typed_array::{
     Uint8Array, Uint8ClampedArray,
 };
 pub use crate::uri::{decode_uri, decode_uri_component, encode_uri, encode_uri_component};
+pub use crate::value::closed_value_string;
 pub use crate::value::{
     clone_value as clone_js_value, from_closed as js_value_from_closed,
     from_exact_string as js_value_from_exact_string, from_string as js_value_from_string,

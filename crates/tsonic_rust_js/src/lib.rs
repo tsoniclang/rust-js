@@ -13,6 +13,7 @@ pub mod data_view;
 pub mod date;
 pub mod equality;
 pub mod errors;
+pub mod event_loop;
 pub mod exact_string;
 pub mod globals;
 pub mod intl;
@@ -25,6 +26,7 @@ pub mod number;
 pub mod numeric;
 pub mod object;
 pub mod promise;
+mod promise_jobs;
 pub mod regexp;
 pub mod set;
 pub mod string;
@@ -55,7 +57,11 @@ pub use js_string::JsString;
 pub use map::JsMap;
 pub use native_integer::Integer32;
 pub use object::{JsObject, JsPropertyValue};
-pub use promise::{JsPromise, PromiseFulfilledResult, PromiseRejectedResult, PromiseSettledResult};
+pub use promise::{
+    promise_all, promise_all_settled, promise_any, promise_race, JsPromise, PromiseExecutor,
+    PromiseFulfilledResult, PromiseReject, PromiseRejectedResult, PromiseResolution,
+    PromiseResolve, PromiseSettledResult,
+};
 pub use set::JsSet;
 pub use string_number::JsStringNumber;
 pub use symbol::JsSymbol;

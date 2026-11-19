@@ -18,6 +18,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-task"
+version = "4.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b75356056920673b02621b35afd0f7dda9306d03c79a30f5c56c44cf256e3de"
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -294,11 +300,16 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 name = "tsonic_rust_js"
 version = "0.1.0"
 dependencies = [
+ "async-task",
+ "futures-util",
  "hashbrown",
  "num-bigint",
  "num-traits",
+ "proc-macro2",
  "regress",
  "ryu-js",
+ "slab",
+ "syn 2.0.119",
  "tinyvec",
  "tsonic_rust_runtime",
  "tz-rs",
@@ -312,6 +323,7 @@ version = "0.1.0"
 dependencies = [
  "libm",
  "num-bigint",
+ "num-traits",
 ]
 
 [[package]]

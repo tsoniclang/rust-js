@@ -15,12 +15,11 @@ impl JsStringNumber {
         Self::Number(f64::from(value))
     }
 
-    pub fn type_of(&self) -> String {
+    pub fn type_of(&self) -> &'static str {
         match self {
             Self::String(_) => "string",
             Self::Number(_) => "number",
         }
-        .to_owned()
     }
 
     pub fn as_string(&self) -> String {

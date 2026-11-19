@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+async-task = "=4.7.1"
+futures-util = { version = "=0.3.34", default-features = false, features = ["std"] }
+slab = "=0.4.12"
 hashbrown = "=0.17.1"
 num-bigint = "=0.4.8"
 num-traits = "=0.2.19"
@@ -15,9 +18,17 @@ unicode-normalization = "=0.1.24"
 tz-rs = "=0.7.3"
 tzdb = { version = "=0.7.3", default-features = false, features = ["local"] }
 
+[dev-dependencies]
+syn = { version = "2.0.118", features = ["full", "visit"] }
+proc-macro2 = { version = "1.0.106", features = ["span-locations"] }
+
 [[test]]
 name = "numeric_allocation_tests"
 path = "../../tests/numeric_allocation_tests.rs"
+
+[[test]]
+name = "promise_allocation_tests"
+path = "../../tests/promise_allocation_tests.rs"
 
 [[test]]
 name = "timer_ownership_tests"
@@ -26,6 +37,10 @@ path = "../../tests/js/timer_ownership_tests.rs"
 [[test]]
 name = "native_result_carriers"
 path = "../../tests/native_result_carriers.rs"
+
+[[test]]
+name = "native_array_erasure"
+path = "../../tests/native_array_erasure.rs"
 
 [[test]]
 name = "native_index_inputs"

@@ -143,30 +143,94 @@ fn typed_comparators_receive_native_elements() {
 #[test]
 fn closed_native_integer_construction_never_uses_the_floating_variant() {
     use tsonic_rust_js::JsValue;
-    macro_rules! check_signed {
-        ($($source:ty),+ $(,)?) => {
+    macro_rules! check_integer {
+        ($($variant:ident: $source:ty),+ $(,)?) => {
             $(for value in [<$source>::MIN, 0, <$source>::MAX] {
-                assert!(matches!(JsValue::from(value), JsValue::Integer(actual) if actual == i64::from(value)));
+                assert!(matches!(JsValue::from(value), JsValue::$variant(actual) if actual == value));
             })+
         };
     }
-    macro_rules! check_unsigned {
-        ($($source:ty),+ $(,)?) => {
-            $(for value in [0, <$source>::MAX] {
-                assert!(matches!(JsValue::from(value), JsValue::UnsignedInteger(actual) if actual == u64::from(value)));
-            })+
-        };
-    }
-    check_signed!(i8, i16, i32, i64);
-    check_unsigned!(u8, u16, u32, u64);
-    assert!(
-        matches!(JsValue::from(isize::MIN), JsValue::Integer(actual) if actual == isize::MIN as i64)
+    check_integer!(
+        Int8: i8, Uint8: u8, Int16: i16, Uint16: u16, Int32: i32, Uint32: u32,
+        Integer: i64, UnsignedInteger: u64, NativeInt: isize, NativeUint: usize,
     );
-    assert!(
-        matches!(JsValue::from(usize::MAX), JsValue::UnsignedInteger(actual) if actual == usize::MAX as u64)
-    );
-    assert!(matches!(JsValue::from(1.5_f32), JsValue::Number(1.5)));
+    assert!(matches!(JsValue::from(1.5_f32), JsValue::Float32(1.5)));
     assert!(matches!(JsValue::from(1.5_f64), JsValue::Number(1.5)));
+}
+
+#[test]
+fn closed_native_categories_hashes_and_formatting_preserve_selected_primitives() {
+    use tsonic_rust_js::{
+        equality::{JsHash, JsSameValue, JsSameValueZero},
+        JsValue,
+    };
+    for value in [
+        JsValue::from(1_i8),
+        JsValue::from(1_u8),
+        JsValue::from(1_i16),
+        JsValue::from(1_u16),
+        JsValue::from(1_i32),
+        JsValue::from(1_u32),
+        JsValue::from(1_isize),
+        JsValue::from(1_usize),
+        JsValue::from(1_f32),
+        JsValue::from(1_f64),
+    ] {
+        assert_eq!(value.type_of(), "number");
+        assert_eq!(value, JsValue::from(1_i64));
+        assert_eq!(value.js_hash(), JsValue::from(1_i64).js_hash());
+        assert_eq!(value.inspect(), "1");
+        assert_eq!(
+            tsonic_rust_js::json::stringify(&value).unwrap(),
+            Some("1".to_owned())
+        );
+    }
+    for value in [JsValue::from(i64::MIN), JsValue::from(u64::MAX)] {
+        assert_eq!(value.type_of(), "bigint");
+    }
+    for value in [
+        JsValue::from(-1_i8),
+        JsValue::from(-1_i16),
+        JsValue::from(-1_i32),
+        JsValue::from(-1_isize),
+    ] {
+        assert_eq!(value, JsValue::from(-1_i64));
+        assert_eq!(value.js_hash(), JsValue::from(-1_i64).js_hash());
+    }
+    assert_eq!(JsValue::from(true).type_of(), "boolean");
+    assert_eq!(JsValue::from("native".to_owned()).type_of(), "string");
+    assert_eq!(JsValue::Null.type_of(), "object");
+    assert_eq!(
+        JsValue::from(tsonic_rust_js::JsString::from_units(vec![
+            101, 120, 97, 99, 116
+        ]))
+        .type_of(),
+        "object"
+    );
+    assert_eq!(
+        tsonic_rust_js::json::stringify(&JsValue::from(0.1_f32)).unwrap(),
+        Some("0.1".to_owned())
+    );
+    for value in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        assert_eq!(
+            tsonic_rust_js::json::stringify(&JsValue::from(value)).unwrap(),
+            Some("null".to_owned())
+        );
+    }
+    assert!(JsValue::from(f32::NAN).same_value(&JsValue::from(f64::NAN)));
+    assert!(JsValue::from(f32::NAN).same_value_zero(&JsValue::from(f64::NAN)));
+    assert_ne!(JsValue::from(f32::NAN), JsValue::from(f64::NAN));
+    assert_eq!(
+        JsValue::from(f32::NAN).js_hash(),
+        JsValue::from(f64::NAN).js_hash()
+    );
+    assert!(!JsValue::from(-0.0_f32).same_value(&JsValue::from(0_u8)));
+    assert!(JsValue::from(-0.0_f32).same_value(&JsValue::from(-0.0_f64)));
+    assert!(JsValue::from(-0.0_f32).same_value_zero(&JsValue::from(0_u8)));
+    assert_eq!(
+        JsValue::from(-0.0_f32).js_hash(),
+        JsValue::from(0_u8).js_hash()
+    );
 }
 
 #[test]
@@ -228,4 +292,46 @@ fn closed_native_integers_remain_exact_without_growing_the_value_carrier() {
         JsValue::from(0_i64).js_hash(),
         JsValue::Number(-0.0).js_hash()
     );
+}
+
+#[test]
+fn intl_options_accept_each_exact_primitive_and_reject_native_out_of_range_values() {
+    use tsonic_rust_js::{IntlNumberFormat, JsObject, JsValue};
+    let format = |value| {
+        IntlNumberFormat::with_locale_options(
+            "en",
+            &JsValue::object(JsObject::from_pairs([("maximumSignificantDigits", value)])),
+        )
+    };
+    for value in [
+        JsValue::from(3_i8),
+        JsValue::from(3_u8),
+        JsValue::from(3_i16),
+        JsValue::from(3_u16),
+        JsValue::from(3_i32),
+        JsValue::from(3_u32),
+        JsValue::from(3_i64),
+        JsValue::from(3_u64),
+        JsValue::from(3_isize),
+        JsValue::from(3_usize),
+        JsValue::from(3.5_f32),
+        JsValue::from(3.5_f64),
+    ] {
+        let selected = format(value).unwrap();
+        assert_eq!(
+            selected.resolved_options().maximum_significant_digits(),
+            Some(3)
+        );
+        assert_eq!(selected.format(1234.5), "1,230");
+    }
+    for value in [
+        JsValue::from(i64::MIN),
+        JsValue::from(u64::MAX),
+        JsValue::from(usize::MAX),
+        JsValue::from(-1_i8),
+        JsValue::from(f32::NAN),
+        JsValue::from(f64::INFINITY),
+    ] {
+        assert!(format(value).is_err());
+    }
 }

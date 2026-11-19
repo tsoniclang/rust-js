@@ -4,6 +4,12 @@ Rust runtime implementation for Tsonic's explicitly selected JavaScript source
 surface. The canonical crate is `tsonic_rust_js`; it depends on the installed
 `@tsonic/rust-runtime` through explicit runtime contributions.
 
+Indexed-record `Object.keys`, `Object.values`, and `Object.entries` project the
+core record's native hash-table contents into dense arrays without copying an
+intermediate array. `Object.assign` preserves the destination's reference
+identity. These operations retain native enumeration order; they do not add
+JavaScript property-order bookkeeping to every record mutation.
+
 Canonical product documentation:
 
 - [JavaScript source profile](https://github.com/tsoniclang/tsonic/blob/main/docs/reference/javascript-source-profile.md)

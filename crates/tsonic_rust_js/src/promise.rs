@@ -1,29 +1,114 @@
 use std::cell::RefCell;
-use std::future::{poll_fn, Future};
-use std::pin::Pin;
+use std::future::Future;
+use std::io::Write;
 use std::rc::Rc;
-use std::task::{Context, Poll, Waker};
 
-use tsonic_rust_runtime::{Callable, TsonicError, TsonicResult};
+use futures_util::FutureExt;
+use tsonic_rust_runtime::{dispatch::DispatchOwner, ErrorObject};
 
-use crate::array::JsArray;
-use crate::value::JsValue;
+use crate::JsValue;
 
-type PromiseFuture<'a, T> = Pin<Box<dyn Future<Output = TsonicResult<T>> + 'a>>;
+mod awaiting;
+mod combinators;
+mod settlement;
+mod waiters;
 
-enum PromiseState<'a, T> {
+pub use combinators::{promise_all, promise_all_settled, promise_any, promise_race};
+pub use settlement::{PromiseExecutor, PromiseReject, PromiseResolution, PromiseResolve};
+
+use waiters::Waiters;
+
+enum PromiseState<T> {
     Pending {
-        future: Option<PromiseFuture<'a, T>>,
-        waiters: Vec<Waker>,
+        waiters: Waiters,
+        adopted: bool,
+        observation_owner: Option<DispatchOwner>,
     },
-    Settled(TsonicResult<T>),
+    Fulfilled(T),
+    Rejected {
+        reason: JsValue,
+        reported: bool,
+    },
 }
 
-pub struct JsPromise<'a, T> {
-    state: Rc<RefCell<PromiseState<'a, T>>>,
+impl<T> PromiseState<T> {
+    fn pending() -> Self {
+        Self::Pending {
+            waiters: Waiters::default(),
+            adopted: false,
+            observation_owner: None,
+        }
+    }
+
+    fn into_settled(self) -> Result<T, JsValue> {
+        match self {
+            Self::Fulfilled(value) => Ok(value),
+            Self::Rejected { reason, .. } => Err(reason),
+            Self::Pending { .. } => unreachable!("a settled Promise is read only after settlement"),
+        }
+    }
+
+    fn observe_discarded(&mut self) -> bool {
+        if matches!(self, Self::Fulfilled(_)) {
+            return false;
+        }
+        let owner = crate::promise_jobs::current_owner()
+            .unwrap_or_else(|| panic!("{}", crate::promise_jobs::NO_LOOP));
+        match self {
+            Self::Rejected { reported, .. } if !*reported => {
+                *reported = true;
+                true
+            }
+            Self::Pending {
+                observation_owner, ..
+            } => {
+                *observation_owner = Some(owner);
+                false
+            }
+            _ => false,
+        }
+    }
+
+    fn complete(&mut self, result: Result<T, JsValue>, adoption: bool) -> Option<Waiters> {
+        let Self::Pending {
+            waiters,
+            adopted,
+            observation_owner,
+        } = self
+        else {
+            return None;
+        };
+        if *adopted && !adoption {
+            return None;
+        }
+        let waiters = std::mem::take(waiters);
+        *self = match result {
+            Ok(value) => Self::Fulfilled(value),
+            Err(reason) => Self::Rejected {
+                reason,
+                reported: observation_owner
+                    .is_some_and(|owner| crate::promise_jobs::current_owner() == Some(owner)),
+            },
+        };
+        Some(waiters)
+    }
 }
 
-impl<'a, T> Clone for JsPromise<'a, T> {
+impl<T: Clone> PromiseState<T> {
+    fn clone_settled(&self) -> Result<T, JsValue> {
+        match self {
+            Self::Fulfilled(value) => Ok(value.clone()),
+            Self::Rejected { reason, .. } => Err(reason.clone()),
+            Self::Pending { .. } => unreachable!("a settled Promise is read only after settlement"),
+        }
+    }
+}
+
+pub struct JsPromise<T> {
+    state: Rc<RefCell<PromiseState<T>>>,
+}
+
+impl<T> Clone for JsPromise<T> {
     fn clone(&self) -> Self {
         Self {
             state: Rc::clone(&self.state),
@@ -31,57 +116,155 @@ impl<'a, T> Clone for JsPromise<'a, T> {
     }
 }
 
-impl<'a, T> JsPromise<'a, T> {
-    pub fn from_infallible_factory<F, Fut>(factory: F) -> Self
-    where
-        F: FnOnce() -> Fut + 'a,
-        Fut: Future<Output = T> + 'a,
-    {
-        Self::from_fallible_future(async move { Ok(factory().await) })
-    }
-
-    pub fn from_fallible_factory<F, Fut>(factory: F) -> Self
-    where
-        F: FnOnce() -> Fut + 'a,
-        Fut: Future<Output = TsonicResult<T>> + 'a,
-    {
-        Self::from_fallible_future(factory())
-    }
-
+impl<T> JsPromise<T> {
     pub fn resolved(value: T) -> Self {
-        Self {
-            state: Rc::new(RefCell::new(PromiseState::Settled(Ok(value)))),
+        Self::with_state(PromiseState::Fulfilled(value))
+    }
+
+    pub fn rejected(reason: JsValue) -> Self {
+        Self::with_state(PromiseState::Rejected {
+            reason,
+            reported: false,
+        })
+    }
+
+    pub fn from_result(result: Result<T, JsValue>) -> Self {
+        match result {
+            Ok(value) => Self::resolved(value),
+            Err(reason) => Self::rejected(reason),
         }
     }
 
-    pub fn rejected(error: TsonicError) -> Self {
-        Self {
-            state: Rc::new(RefCell::new(PromiseState::Settled(Err(error)))),
+    pub fn observe_discarded(self) {
+        let report = match Rc::try_unwrap(self.state) {
+            Ok(state) => {
+                let mut state = state.into_inner();
+                if state.observe_discarded() {
+                    let PromiseState::Rejected { reason, .. } = state else {
+                        unreachable!("only a new discarded rejection reports")
+                    };
+                    Some(reason)
+                } else {
+                    None
+                }
+            }
+            Err(state) => {
+                let mut state = state.borrow_mut();
+                if state.observe_discarded() {
+                    let PromiseState::Rejected { reason, .. } = &*state else {
+                        unreachable!("only a new discarded rejection reports")
+                    };
+                    Some(reason.clone())
+                } else {
+                    None
+                }
+            }
+        };
+        if let Some(reason) = report {
+            report_discarded_rejection(reason);
         }
     }
 
-    fn from_fallible_future(future: impl Future<Output = TsonicResult<T>> + 'a) -> Self {
+    fn with_state(state: PromiseState<T>) -> Self {
         Self {
-            state: Rc::new(RefCell::new(PromiseState::Pending {
-                future: Some(Box::pin(future)),
-                waiters: Vec::new(),
-            })),
+            state: Rc::new(RefCell::new(state)),
+        }
+    }
+
+    pub(crate) fn pending() -> Self {
+        Self::with_state(PromiseState::pending())
+    }
+
+    pub(crate) fn settle(&self, result: Result<T, JsValue>) {
+        self.complete(result, false);
+    }
+
+    fn complete(&self, result: Result<T, JsValue>, adoption: bool) {
+        let (waiters, report) = {
+            let mut state = self.state.borrow_mut();
+            let Some(waiters) = state.complete(result, adoption) else {
+                return;
+            };
+            let report = match &*state {
+                PromiseState::Rejected {
+                    reason,
+                    reported: true,
+                } => Some(reason.clone()),
+                _ => None,
+            };
+            (waiters, report)
+        };
+        finish_completion(waiters, report);
+    }
+
+    fn complete_owned(self, result: Result<T, JsValue>, adoption: bool) {
+        match Rc::try_unwrap(self.state) {
+            Ok(state) => {
+                let mut state = state.into_inner();
+                let Some(waiters) = state.complete(result, adoption) else {
+                    return;
+                };
+                let report = match state {
+                    PromiseState::Rejected {
+                        reason,
+                        reported: true,
+                    } => Some(reason),
+                    _ => None,
+                };
+                finish_completion(waiters, report);
+            }
+            Err(state) => Self { state }.complete(result, adoption),
         }
     }
 }
 
-impl<'a, T: Clone + 'a> JsPromise<'a, T> {
-    pub async fn into_result(self) -> TsonicResult<T> {
+fn finish_completion(waiters: Waiters, report: Option<JsValue>) {
+    waiters.wake_all();
+    if let Some(reason) = report {
+        report_discarded_rejection(reason);
+    }
+}
+
+impl<T: 'static> JsPromise<T> {
+    pub fn from_infallible_factory<Create, Body>(create: Create) -> Self
+    where
+        Create: FnOnce() -> Body,
+        Body: Future<Output = T> + 'static,
+    {
+        Self::admit_body(move || create().map(Ok::<T, JsValue>))
+    }
+
+    pub fn from_fallible_factory<Create, Body>(create: Create) -> Self
+    where
+        Create: FnOnce() -> Body,
+        Body: Future<Output = Result<T, JsValue>> + 'static,
+    {
+        Self::admit_body(create)
+    }
+
+    fn admit_body<Body>(create: impl FnOnce() -> Body) -> Self
+    where
+        Body: Future<Output = Result<T, JsValue>> + 'static,
+    {
+        crate::promise_jobs::require_dispatch_owner();
+        let body = create();
+        let promise = Self::pending();
+        let completion = promise.clone();
+        if let Err(error) = crate::promise_jobs::start(
+            body.map(move |result| completion.complete_owned(result, false)),
+        ) {
+            promise.settle(Err(JsValue::from_error(error)));
+        }
+        promise
+    }
+}
+
+impl<T: Clone> JsPromise<T> {
+    pub async fn into_result(self) -> Result<T, JsValue> {
+        awaiting::PromiseWait::new(&self.state).await;
         match Rc::try_unwrap(self.state) {
-            Ok(state) => match state.into_inner() {
-                PromiseState::Settled(result) => result,
-                PromiseState::Pending { future, .. } => {
-                    future
-                        .expect("an exclusively owned Promise cannot be polling")
-                        .await
-                }
-            },
-            Err(state) => Self { state }.await_result().await,
+            Ok(state) => state.into_inner().into_settled(),
+            Err(state) => state.borrow().clone_settled(),
         }
     }
 
@@ -92,62 +275,9 @@ impl<'a, T: Clone + 'a> JsPromise<'a, T> {
         }
     }
 
-    fn poll_result(&self, context: &mut Context<'_>) -> Poll<TsonicResult<T>> {
-        let future = {
-            let mut state = self.state.borrow_mut();
-            match &mut *state {
-                PromiseState::Settled(result) => return Poll::Ready(result.clone()),
-                PromiseState::Pending { future, waiters } => {
-                    if !waiters
-                        .iter()
-                        .any(|waiter| waiter.will_wake(context.waker()))
-                    {
-                        waiters.push(context.waker().clone());
-                    }
-                    match future.take() {
-                        Some(future) => future,
-                        None => return Poll::Pending,
-                    }
-                }
-            }
-        };
-        let mut future = future;
-        match future.as_mut().poll(context) {
-            Poll::Pending => {
-                let mut state = self.state.borrow_mut();
-                match &mut *state {
-                    PromiseState::Pending {
-                        future: pending_future,
-                        ..
-                    } => *pending_future = Some(future),
-                    PromiseState::Settled(_) => {
-                        panic!("Promise settled while its retained future was being polled")
-                    }
-                }
-                Poll::Pending
-            }
-            Poll::Ready(result) => {
-                let waiters = {
-                    let mut state = self.state.borrow_mut();
-                    let waiters = match &mut *state {
-                        PromiseState::Pending { waiters, .. } => std::mem::take(waiters),
-                        PromiseState::Settled(_) => {
-                            panic!("Promise settled twice while polling its retained future")
-                        }
-                    };
-                    *state = PromiseState::Settled(result.clone());
-                    waiters
-                };
-                for waiter in waiters {
-                    waiter.wake();
-                }
-                Poll::Ready(result)
-            }
-        }
-    }
-
-    pub async fn await_result(&self) -> TsonicResult<T> {
-        poll_fn(|context| self.poll_result(context)).await
+    pub async fn await_result(&self) -> Result<T, JsValue> {
+        awaiting::PromiseWait::new(&self.state).await;
+        self.state.borrow().clone_settled()
     }
 
     pub async fn await_value(&self) -> T {
@@ -156,25 +286,54 @@ impl<'a, T: Clone + 'a> JsPromise<'a, T> {
             Err(error) => panic!("compiler-proven infallible Promise rejected: {error}"),
         }
     }
+}
 
-    pub fn finally_default(&self) -> Self {
-        self.finally_callback(None)
-    }
-
-    pub fn finally(&self, callback: Callable<(), TsonicResult<()>>) -> Self {
-        self.finally_callback(Some(callback))
-    }
-
-    fn finally_callback(&self, callback: Option<Callable<(), TsonicResult<()>>>) -> Self {
-        let source = self.clone();
-        Self::from_fallible_factory(move || async move {
-            let result = source.await_result().await;
-            if let Some(callback) = callback {
-                callback.call(())?;
-            }
-            result
+fn report_discarded_rejection(reason: JsValue) {
+    if crate::promise_jobs::can_admit().is_ok() {
+        crate::promise_jobs::enqueue(async move {
+            write_discarded_rejection(&reason);
+            crate::promise_jobs::request_exit(1);
         })
+        .expect("report admission was checked on the owning thread");
+        return;
     }
+    write_discarded_rejection(&reason);
+    if !crate::promise_jobs::request_exit(1) {
+        panic!("{}", crate::promise_jobs::NO_LOOP);
+    }
+}
+
+fn write_discarded_rejection(reason: &JsValue) {
+    #[cfg(test)]
+    REPORTS.with(|reports| {
+        let _ = write_report(&mut *reports.borrow_mut(), reason);
+    });
+    let _ = write_report(&mut std::io::stderr().lock(), reason);
+}
+
+fn write_report(output: &mut impl Write, reason: &JsValue) -> std::io::Result<()> {
+    match reason.as_error() {
+        Some(error) => writeln!(output, "{}", error.error_message()),
+        None => match reason {
+            JsValue::Null => writeln!(output, "null"),
+            JsValue::String(text) => writeln!(output, "{text}"),
+            JsValue::Utf16String(text) => match text.to_utf8() {
+                Ok(text) => writeln!(output, "{text}"),
+                Err(_) => writeln!(output, "{reason}"),
+            },
+            other => writeln!(output, "{other}"),
+        },
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static REPORTS: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+}
+
+#[cfg(test)]
+pub(crate) fn take_reports() -> String {
+    REPORTS.with(|reports| String::from_utf8(reports.take()).expect("reports are UTF-8 text"))
 }
 
 #[derive(Clone, Debug)]
@@ -204,88 +363,5 @@ impl<T> PromiseSettledResult<T> {
     }
 }
 
-pub fn promise_race<'a, T: Clone + 'a>(values: &JsArray<JsPromise<'a, T>>) -> JsPromise<'a, T> {
-    let values = values.values();
-    JsPromise::from_fallible_factory(move || async move {
-        poll_fn(move |context| {
-            for value in &values {
-                if let Poll::Ready(result) = value.poll_result(context) {
-                    return Poll::Ready(result);
-                }
-            }
-            Poll::Pending
-        })
-        .await
-    })
-}
-
-pub fn promise_any<'a, T: Clone + 'a>(values: &JsArray<JsPromise<'a, T>>) -> JsPromise<'a, T> {
-    let values = values.values();
-    JsPromise::from_fallible_factory(move || async move {
-        if values.is_empty() {
-            return Err(TsonicError::Js(crate::aggregate_error(
-                "All promises were rejected",
-            )));
-        }
-        let mut rejected = vec![false; values.len()];
-        poll_fn(move |context| {
-            for (index, value) in values.iter().enumerate() {
-                if rejected[index] {
-                    continue;
-                }
-                match value.poll_result(context) {
-                    Poll::Ready(Ok(value)) => return Poll::Ready(Ok(value)),
-                    Poll::Ready(Err(_)) => rejected[index] = true,
-                    Poll::Pending => {}
-                }
-            }
-            if rejected.iter().all(|rejected| *rejected) {
-                Poll::Ready(Err(TsonicError::Js(crate::aggregate_error(
-                    "All promises were rejected",
-                ))))
-            } else {
-                Poll::Pending
-            }
-        })
-        .await
-    })
-}
-
-pub fn promise_all_settled<'a, T: Clone + 'a>(
-    values: &JsArray<JsPromise<'a, T>>,
-) -> JsPromise<'a, JsArray<PromiseSettledResult<T>>> {
-    let values = values.values();
-    JsPromise::from_infallible_factory(move || async move {
-        let mut settled = vec![None; values.len()];
-        poll_fn(move |context| {
-            for (index, value) in values.iter().enumerate() {
-                if settled[index].is_some() {
-                    continue;
-                }
-                settled[index] = match value.poll_result(context) {
-                    Poll::Pending => None,
-                    Poll::Ready(Ok(value)) => {
-                        Some(PromiseSettledResult::Fulfilled(PromiseFulfilledResult {
-                            status: "fulfilled".to_string(),
-                            value,
-                        }))
-                    }
-                    Poll::Ready(Err(error)) => {
-                        Some(PromiseSettledResult::Rejected(PromiseRejectedResult {
-                            status: "rejected".to_string(),
-                            reason: JsValue::String(error.to_string()),
-                        }))
-                    }
-                };
-            }
-            if settled.iter().all(Option::is_some) {
-                Poll::Ready(JsArray::from_dense(
-                    settled.iter().map(|value| value.clone().unwrap()).collect(),
-                ))
-            } else {
-                Poll::Pending
-            }
-        })
-        .await
-    })
-}
+#[cfg(test)]
+mod tests;

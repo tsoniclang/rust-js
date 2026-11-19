@@ -164,6 +164,50 @@ fn fallible_set_callbacks_preserve_arity_live_mutation_and_short_circuiting() {
 }
 
 #[test]
+fn fallible_set_callbacks_preserve_borrowed_native_errors_at_every_arity() {
+    struct NativeFailure<'identity>(&'identity u128);
+
+    let identity = (1_u128 << 100) + 7;
+    for arity in 0..4 {
+        let set = JsSet::from_values([1, 2]);
+        let alias = set.clone();
+        let mut visits = 0;
+        let result = match arity {
+            0 => set.try_for_each_zero(|| {
+                visits += 1;
+                Err(NativeFailure(&identity))
+            }),
+            1 => set.try_for_each_value(|value| {
+                visits += 1;
+                assert_eq!(value, 1);
+                Err(NativeFailure(&identity))
+            }),
+            2 => set.try_for_each_value_key(|value, key| {
+                visits += 1;
+                assert_eq!((key, value), (1, 1));
+                Err(NativeFailure(&identity))
+            }),
+            _ => set.try_for_each(|value, key, current| {
+                visits += 1;
+                assert_eq!((key, value), (1, 1));
+                assert!(current.ptr_eq(&alias));
+                current.add(3);
+                current.delete(&2);
+                Err(NativeFailure(&identity))
+            }),
+        };
+        let failure = result.expect_err("the native error must propagate unchanged");
+        assert!(std::ptr::eq(failure.0, &identity));
+        assert_eq!(*failure.0, (1_u128 << 100) + 7);
+        assert_eq!(visits, 1);
+        assert!(set.ptr_eq(&alias));
+        let mut after = Vec::new();
+        set.for_each(|value, _, _| after.push(value));
+        assert_eq!(after, if arity == 3 { vec![1, 3] } else { vec![1, 2] });
+    }
+}
+
+#[test]
 fn set_algebra_predicates() {
     let small = JsSet::from_values([1, 2]);
     let big = JsSet::from_values([3, 2, 1]);
